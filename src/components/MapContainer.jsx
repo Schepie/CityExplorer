@@ -119,7 +119,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speakingId, onSpeak, onStopSpeech }) => {
+const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speakingId, onSpeak, onStopSpeech, isLoading, loadingText, loadingCount }) => {
     // Default center (Amsterdam)
     const defaultCenter = [52.3676, 4.9041];
     const [userSelectedStyle, setUserSelectedStyle] = useState('walking');
@@ -191,11 +191,11 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                 const fLat = Number(focusedLocation.lat);
 
                 // Switch profile based on map style
-                // 'foot' (pedestrian) prefers safe, smaller paths. 'bike' (cycling) prefers bike lanes/roads.
-                const profile = userSelectedStyle === 'cycling' ? 'bike' : 'foot';
+                // 'foot' (pedestrian) prefers safe, smaller paths. 'bike'/'bicycle' prefers bike lanes/roads.
+                const profile = userSelectedStyle === 'cycling' ? 'bicycle' : 'foot';
 
                 const url = `https://router.project-osrm.org/route/v1/${profile}/${uLng},${uLat};${fLng},${fLat}?overview=full&geometries=geojson&steps=true`;
-                console.log("Fetching Path:", url);
+                console.log(`Fetching Navigation Path (${profile}):`, url);
                 const res = await fetch(url);
                 const data = await res.json();
 
@@ -434,6 +434,27 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-emerald-400 text-slate-200 transition-colors"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                     </button>
+                </div>
+            )}
+
+            {/* Loading Overlay */}
+            {isLoading && (
+                <div className="absolute inset-0 z-[1000] bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
+                    <div className="relative">
+                        <div className="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div className="mt-4 text-center">
+                        <h3 className="text-xl font-bold text-white tracking-tight">{loadingText || "Exploring..."}</h3>
+                        {loadingCount > 0 && (
+                            <p className="text-blue-400 font-medium mt-1 animate-pulse">Found {loadingCount} POIs</p>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
