@@ -5,11 +5,8 @@
   --bg-gradient-start: #0f172a;
   --bg-gradient-end: #1e293b;
   --primary: #6366f1;
-  /* Indigo 500 */
   --primary-hover: #4f46e5;
-  /* Indigo 600 */
   --accent: #f472b6;
-  /* Pink 400 */
   --glass-bg: rgba(255, 255, 255, 0.1);
   --glass-border: rgba(255, 255, 255, 0.2);
   --text-main: #f8fafc;
@@ -29,10 +26,18 @@
   --anim-speed: 0.3s;
 }
 
+@theme {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-accent: var(--accent);
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);
   background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+  background-attachment: fixed;
+  /* Ensure gradient covers full height */
   color: var(--text-main);
   min-height: 100vh;
   overflow-x: hidden;

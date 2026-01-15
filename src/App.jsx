@@ -1,8 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { PoiIntelligence } from './services/PoiIntelligence';
 import MapContainer from './components/MapContainer';
 import ItinerarySidebar from './components/ItinerarySidebar';
 import './index.css'; // Ensure styles are loaded
 import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
+
+// Theme Definitions
+// Theme Definitions
+const FG_THEMES = {
+  indigo: { primary: '#6366f1', hover: '#4f46e5', accent: '#f472b6' },
+  emerald: { primary: '#10b981', hover: '#059669', accent: '#3b82f6' },
+  rose: { primary: '#f43f5e', hover: '#e11d48', accent: '#a855f7' },
+  amber: { primary: '#f59e0b', hover: '#d97706', accent: '#06b6d4' },
+  cyan: { primary: '#06b6d4', hover: '#0891b2', accent: '#f59e0b' }
+};
+
+const BG_THEMES = {
+  slate: { bgStart: '#0f172a', bgEnd: '#1e293b' }, // Default Dark Blue/Slate
+  forest: { bgStart: '#022c22', bgEnd: '#064e3b' }, // Dark Green
+  wine: { bgStart: '#4c0519', bgEnd: '#881337' },   // Dark Red
+  coffee: { bgStart: '#451a03', bgEnd: '#78350f' }, // Dark Brown
+  ocean: { bgStart: '#083344', bgEnd: '#164e63' },   // Dark Cyan/Blue
+  midnight: { bgStart: '#000000', bgEnd: '#111827' } // Pitch Black
+};
+
 
 function App() {
   const [routeData, setRouteData] = useState(null);
@@ -10,6 +31,25 @@ function App() {
   const [loadingText, setLoadingText] = useState('Exploring...');
   const [foundPoisCount, setFoundPoisCount] = useState(0);
   const [language, setLanguage] = useState('nl'); // 'en' or 'nl'
+  const [currentTheme, setCurrentTheme] = useState('indigo');
+  const [currentBgTheme, setCurrentBgTheme] = useState('slate');
+
+  // Apply Theme Effect
+  useEffect(() => {
+    const root = document.documentElement;
+    const fg = FG_THEMES[currentTheme];
+    const bg = BG_THEMES[currentBgTheme];
+
+    if (fg) {
+      root.style.setProperty('--primary', fg.primary);
+      root.style.setProperty('--primary-hover', fg.hover);
+      root.style.setProperty('--accent', fg.accent);
+    }
+    if (bg) {
+      root.style.setProperty('--bg-gradient-start', bg.bgStart);
+      root.style.setProperty('--bg-gradient-end', bg.bgEnd);
+    }
+  }, [currentTheme, currentBgTheme]);
 
   // Focused Location (for "Fly To" interaction)
   const [focusedLocation, setFocusedLocation] = useState(null);
@@ -35,6 +75,9 @@ function App() {
 
   // Limit Confirmation State
   const [limitConfirmation, setLimitConfirmation] = useState(null); // { proposedRouteData, message }
+
+  // Sidebar Visibility State (Lifted)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Haversine Distance Helper (km)
   const getDistance = (lat1, lon1, lat2, lon2) => {
@@ -194,32 +237,204 @@ function App() {
   };
 
   // Helper to fetch Wikipedia summary
-  const fetchWikipediaSummary = async (query, lang = 'en') => {
+  const fetchWikipediaSummary = async (query, lang = 'en', context = '') => {
     try {
-      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+      // Append context (City Name) to the search query to avoid generic definitions
+      // But avoid duplicating it if already present (e.g. "Museum Hasselt" + "Hasselt")
+      const hasContext = context && query.toLowerCase().includes(context.toLowerCase());
+      const fullQuery = (context && !hasContext) ? `${query} ${context}` : query;
+      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(fullQuery)}&format=json&origin=*`;
       const searchRes = await fetch(searchUrl);
       const searchData = await searchRes.json();
 
-      if (!searchData.query?.search?.length) return null;
+      if (!searchData.query?.search?.length) {
+        // Fallback 1: Try raw name, BUT only if it looks specific (multi-word) to avoid generic dictionary defs like "Park".
+        if (context && query.trim().split(' ').length > 1) {
+          return fetchWikipediaSummary(query, lang, ''); // Recursive call without context
+        }
 
-      const title = searchData.query.search[0].title;
+        // Fallback 2: Search for the POI *inside* the City's Wikipedia page.
+        // This mimics reading a guide book about the city.
+        if (context) {
+          try {
+            const citySearchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext&titles=${encodeURIComponent(context)}&format=json&origin=*`;
+            const cityRes = await fetch(citySearchUrl);
+            const cityData = await cityRes.json();
+            const cityPages = cityData.query?.pages;
+            const cityPageId = Object.keys(cityPages || {})[0];
+
+            if (cityPageId && cityPageId !== '-1') {
+              const cityText = cityPages[cityPageId].extract;
+              // Simple regex to find the POI name in the text
+              // We look for the name, allowing for case insensitivity
+              const escQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape regex chars
+              // Look for sentence containing the query
+              const regex = new RegExp(`([^.]*?${escQuery}[^.]*\\.)`, 'i');
+              const match = cityText.match(regex);
+
+              if (match && match[1]) {
+                // Found a sentence! Let's grab it and maybe the next one.
+                // Find index of match
+                const idx = match.index;
+                // Grab a chunk of text around it (e.g. 500 chars)
+                const start = Math.max(0, idx - 100);
+                const end = Math.min(cityText.length, idx + 400);
+                const snippet = cityText.substring(start, end);
+
+                // Clean up leading/trailing partial sentences
+                let validSentences = snippet.match(/[^.!?]+[.!?]+/g);
+                if (validSentences) {
+                  // Filter for the one containing the query
+                  const relSentences = validSentences.filter(s => s.toLowerCase().includes(query.toLowerCase()));
+                  if (relSentences.length > 0) {
+                    // Return the matching sentence and neighbors if possible, or just the snippet cleaned
+                    const cityLink = `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(context)}`;
+                    return { description: validSentences.join(' ').trim(), link: cityLink, source: "Wikipedia (City Mention)" };
+                  }
+                }
+              }
+            }
+          } catch (eInner) { console.warn("City fallback failed", eInner); }
+        }
+
+        // No Wiki results found. Throw error to trigger catch block and subsequent fallbacks (DDG/Google).
+        throw new Error("Wiki search returned no results.");
+      }
+
+      let title = searchData.query.search[0].title;
+
+      // REFINEMENT: If the result is just the City Name itself (but our query was more specific),
+      // it means Wiki couldn't find the POI and defaulted to the City. This is bad (results in generic city info).
+      // We should REJECT this result and try a "Clean Name" search (POI name without City).
+      if (context && title.toLowerCase() === context.toLowerCase() && query.length > context.length) {
+        // Trigger Fallback logic below by throwing error, OR try cleaned name immediately.
+        // Let's try cleaned name immediately.
+        const cleanName = query.replace(new RegExp(context, 'gi'), '').trim();
+        if (cleanName.length > 3) {
+          console.log("Wiki returned city page for specific POI. Retrying with clean name:", cleanName);
+          return fetchWikipediaSummary(cleanName, lang, ''); // Recurse without context
+        }
+      }
+      // Fetch intro. We'll handle truncation client-side to ensure sentence integrity.
       const detailsUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&explaintext&redirects=1&titles=${encodeURIComponent(title)}&format=json&origin=*`;
       const detailsRes = await fetch(detailsUrl);
       const detailsData = await detailsRes.json();
 
       const pages = detailsData.query?.pages;
-      if (!pages) return null;
+      // if (!pages) return null; // BAD: Aborts fallbacks
+      if (!pages) throw new Error("Wiki details pages missing.");
 
       const pageId = Object.keys(pages)[0];
-      if (pageId === '-1') return null;
+      if (pageId === '-1') throw new Error("Wikipedia page not found.");
 
-      const extract = pages[pageId].extract;
-      return extract ? extract.split('. ').slice(0, 2).join('. ') + '.' : null;
+      let extract = pages[pageId].extract;
+      if (!extract) throw new Error("No extract found for Wikipedia page.");
+
+      // Cleaning: Remove parenthetical text (pronunciations) and reference brackets [1], [2]
+      extract = extract.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '');
+
+      // Return a much longer summary for "Tour Guide" experience (~30-60s speech).
+      // Average speaking rate is ~130-150 words per minute.
+      // 30-60 seconds = ~75-150 words.
+      // 3 sentences is often too short. We'll try to find a natural break after ~800-1000 characters or just return the whole intro if reasonable.
+
+      // Let's aim for the first few substantial paragraphs.
+      // If we just return the cleaned extract, it might be the whole page intro, which is good!
+      // But let's cap it slightly to safeguard against massive walls of text if the intro is huge.
+      const sentences = extract.split('. ');
+
+      // If intro is short (< 8 sentences), return all of it.
+      if (sentences.length <= 8) return extract;
+
+      // Otherwise, take first 8 sentences which should be roughly 1 minute of speech.
+      const descText = sentences.slice(0, 8).join('. ') + '.';
+      const wikiLink = `https://${lang}.wikipedia.org/?curid=${pageId}`;
+      return { description: descText, link: wikiLink, source: "Wikipedia" };
+
     } catch (e) {
-      console.warn("Wiki fetch failed for", query);
-      return null;
+      console.warn("Wiki fetch failed for", query, e.message);
+    }
+
+    // Fallback: DuckDuckGo Instant Answer API (Zero-click info)
+    // This often catches smaller POIs that don't have a Wiki page but have web presence.
+    try {
+      const fullQuery = context ? `${query} ${context}` : query;
+      const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(fullQuery)}&format=json&no_html=1&skip_disambig=1`;
+      const ddgRes = await fetch(ddgUrl);
+      const ddgData = await ddgRes.json();
+
+      if (ddgData.AbstractText) {
+        return { description: ddgData.AbstractText, link: ddgData.AbstractURL, source: "DuckDuckGo" };
+      }
+    } catch (e) {
+      console.warn("DDG fallback failed", e);
+    }
+
+    // Fallback: Google Custom Search JSON API (Programmable Search Engine)
+    try {
+      const cx = import.meta.env.VITE_GOOGLE_SEARCH_CX;
+      const gKey = import.meta.env.VITE_GOOGLE_PLACES_KEY; // Using the same key used for Places
+
+      if (gKey && cx) {
+        // Construct query: Avoid duplicating city name if already in POI name
+        let fullQuery = query;
+        if (context && !query.toLowerCase().includes(context.toLowerCase())) {
+          fullQuery = `${query} ${context}`;
+        }
+
+        // Exclude social media to avoid "4287 likes" type descriptions. We want guide content.
+        // We want tourism sites, wikis, blogs.
+        fullQuery += " -site:facebook.com -site:instagram.com -site:twitter.com -site:linkedin.com";
+
+        // console.log("Attempting Google Fallback for:", fullQuery);
+
+        const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${gKey}&cx=${cx}&q=${encodeURIComponent(fullQuery)}&num=1`;
+        let gRes = await fetch(searchUrl);
+        let gData = await gRes.json();
+
+        // RETRY LOGIC: If context search failed, try raw name
+        if ((!gData.items || gData.items.length === 0) && fullQuery !== query) {
+          // console.log("Google Context Search failed. Retrying raw:", query);
+          const retryUrl = `https://www.googleapis.com/customsearch/v1?key=${gKey}&cx=${cx}&q=${encodeURIComponent(query)}&num=1`;
+          gRes = await fetch(retryUrl);
+          gData = await gRes.json();
+        }
+
+        if (gData.error) {
+          console.error("Google Search API Error:", gData.error.message);
+          // Alert user to config error
+          // alert(`Google Search Configuration Error: ${gData.error.message}`);
+        }
+
+        if (gData.items && gData.items.length > 0) {
+          const item = gData.items[0];
+          let bestText = item.snippet;
+
+          // Try to get a longer/better description from OpenGraph tags (meta description)
+          if (item.pagemap && item.pagemap.metatags && item.pagemap.metatags.length > 0) {
+            const tags = item.pagemap.metatags[0];
+            if (tags['og:description'] && tags['og:description'].length > bestText.length) {
+              bestText = tags['og:description'];
+            } else if (tags['description'] && tags['description'].length > bestText.length) {
+              bestText = tags['description'];
+            }
+          }
+
+          // Clean up text
+          const finalDesc = bestText.replace(/^\w{3} \d{1,2}, \d{4} \.\.\. /g, '').replace(/\n/g, ' ');
+          return { description: finalDesc, link: item.link, source: "Web Result" };
+        } else {
+          return null;
+        }
+      } else {
+        // console.warn("Missing Google Search Keys");
+      }
+    } catch (e) {
+      console.warn("Google Search fallback failed", e);
     }
   };
+
+
 
   const handleJourneyStart = async (e, interestOverride = null) => {
     e && e.preventDefault();
@@ -399,6 +614,7 @@ function App() {
         // Fits! Update directly
         console.log("AddJourney: Fits within limit. Updating route directly.");
         setRouteData(newRouteData);
+        setIsSidebarOpen(false); // Close sidebar to show map
       }
 
     } catch (err) {
@@ -411,6 +627,7 @@ function App() {
   const handleConfirmLimit = (proceed) => {
     if (proceed && limitConfirmation) {
       setRouteData(limitConfirmation.proposedRouteData);
+      setIsSidebarOpen(false);
     }
     setLimitConfirmation(null);
   };
@@ -530,6 +747,17 @@ function App() {
         return;
       }
 
+      // Check for partial failures (multi-keyword search)
+      if (candidates.failedKeywords && candidates.failedKeywords.length > 0) {
+        const failedWords = candidates.failedKeywords.join(', ');
+        const msg = language === 'nl'
+          ? `We konden geen resultaten vinden voor: "${failedWords}".\nWe tonen de resultaten voor de andere zoektermen.`
+          : `We couldn't find results for: "${failedWords}".\nShowing results for the other terms.`;
+
+        // Use a timeout to allow the map to render the successful hits first/simultaneously
+        setTimeout(() => alert(msg), 500);
+      }
+
       // Small delay to let user see the "Found X POIs" if it was instant
       if (candidates.length > 0) {
         await new Promise(r => setTimeout(r, 800));
@@ -537,15 +765,47 @@ function App() {
 
       // === MODE 1: RADIUS (Show All) ===
       if (searchMode === 'radius') {
-        // Enrich all candidates (up to a reasonable limit to avoid killing the browser, say 30)
-        // Note: fetchWikipediaSummary might be slow for many items. Maybe only enrich top 10?
-        // Or just map them without description if missing.
+        // Enrichment for Radius Mode
         const topCandidates = candidates.slice(0, 50);
 
         const enrichedPois = await Promise.all(topCandidates.map(async (poi) => {
-          if (poi.description) return poi;
-          // Only fetch wiki for top 5 to save time/requests? Or just leave description generic.
-          // Let's leave generic unless it's a small list.
+          // Detect "junk" descriptions that are just tag lists (common in raw data)
+          let desc = (poi.description || "").toLowerCase();
+          const isJunk = desc.includes('_') || // e.g. point_of_interest
+            (desc.split(',').length > 2 && !desc.includes('. ')) || // List of tags without sentences
+            desc.includes('point of interest') ||
+            desc.includes('establishment');
+
+          // Detect generic city descriptions (often erroneously attached to POIs in raw data)
+          const isGenericCityDesc =
+            poi.description.toLowerCase().startsWith(cityName.toLowerCase() + " is") ||
+            poi.description.toLowerCase().includes("hoofdstad") ||
+            poi.description.toLowerCase().includes("capital of") ||
+            poi.description.toLowerCase().includes("inhabitants") ||
+            poi.description.toLowerCase().includes("inwoners");
+
+          // If valid long description exists AND it's not junk AND not generic city info, keep it.
+          if (!isJunk && !isGenericCityDesc && poi.description && poi.description.length > 50) return poi;
+
+          const wikiResult = await fetchWikipediaSummary(poi.name, language, cityName);
+
+          // Handle object or string return
+          const d = (typeof wikiResult === 'object') ? wikiResult?.description : wikiResult;
+          const l = (typeof wikiResult === 'object') ? wikiResult?.link : null;
+
+          // If we found a good description, use it.
+          if (d) {
+            return { ...poi, description: d, link: l };
+          }
+
+          // If search failed and we have junk, try to clean it up or minimal fallback
+          if (isJunk) {
+            // Clean up underscores and generic terms for display
+            let clean = desc.replace(/_/g, ' ').replace(/point of interest|establishment|tourist attraction/g, '').replace(/,,/g, ',').replace(/^,|,$/g, '').trim();
+            if (clean.length < 3) clean = ""; // If it was just "point of interest", now empty.
+            return { ...poi, description: clean || (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available.") };
+          }
+
           return poi;
         }));
 
@@ -555,9 +815,10 @@ function App() {
           routePath: [], // No path for radius mode
           stats: {
             totalDistance: "0",
-            limitKm: "Radius 15"
+            limitKm: `Radius ${searchRadiusKm}`
           }
         });
+        setIsSidebarOpen(false); // Close sidebar on result
         return;
       }
 
@@ -698,27 +959,43 @@ function App() {
             const last = selectedPois[selectedPois.length - 1];
             fallbackDist += getDistance(last.lat, last.lng, cityCenter[0], cityCenter[1]);
           }
-
           realDistance = fallbackDist * 1.3;
           break;
         }
       }
 
-      // 6. Enrich with Wikipedia Descriptions
-      const enrichedPois = await Promise.all(selectedPois.map(async (poi) => {
-        const desc = await fetchWikipediaSummary(poi.name, language);
-        return { ...poi, description: desc || poi.description };
-      }));
+      // 6. Enrich with POI Intelligence Engine (Generic, Multi-source, Probabilistic)
+      // This implements the requested 7-Step "POI Intelligence" pipeline.
+      const engine = new PoiIntelligence({
+        city: city,
+        language: language,
+        googleKey: import.meta.env.VITE_GOOGLE_PLACES_KEY
+      });
+
+      const enrichedPois = [];
+      // Sequential processing to respect API patterns (though engine supports parallel, sequential is safer for rate limits)
+      // Sequential processing to respect API patterns
+      for (const poi of selectedPois) {
+        try {
+          // Step 1-7: Resolve Identity, Gather Signals, Score Trust, and Rank.
+          const enriched = await engine.evaluatePoi(poi);
+          enrichedPois.push(enriched);
+        } catch (err) {
+          console.warn(`POI Engine Failed for ${poi.name}:`, err);
+          enrichedPois.push(poi);
+        }
+      }
 
       setRouteData({
         center: cityCenter,
         pois: enrichedPois,
-        routePath: routeCoordinates, // Pass detailed path
+        routePath: routeCoordinates,
         stats: {
           totalDistance: realDistance.toFixed(1),
-          limitKm: targetLimitKm.toFixed(1) // Show the TARGET, not the max tolerance
+          limitKm: targetLimitKm.toFixed(1)
         }
       });
+      setIsSidebarOpen(false); // Close sidebar on result
     } catch (err) {
       console.error("Error fetching POIs", err);
       // On error, stay on input screen
@@ -735,6 +1012,7 @@ function App() {
     setCity('');
     setInterests('');
     setConstraintValue(5);
+    setIsSidebarOpen(true); // Re-open for new search
   };
 
   // Audio State
@@ -824,6 +1102,12 @@ function App() {
         onUseCurrentLocation={handleUseCurrentLocation}
         searchMode={searchMode}
         setSearchMode={setSearchMode}
+        isOpen={isSidebarOpen}
+        setIsOpen={setIsSidebarOpen}
+        currentTheme={currentTheme}
+        setCurrentTheme={setCurrentTheme}
+        currentBgTheme={currentBgTheme}
+        setCurrentBgTheme={setCurrentBgTheme}
       />
 
       {/* Refinement Modal */}

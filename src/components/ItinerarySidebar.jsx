@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const SidebarInput = ({
     city, setCity,
@@ -8,7 +8,8 @@ const SidebarInput = ({
     isRoundtrip, setIsRoundtrip,
     searchSources, setSearchSources,
     onJourneyStart, onCityValidation, onUseCurrentLocation,
-    language, nearbyCities, isAddingMode, searchMode, setSearchMode
+    language, nearbyCities, isAddingMode, searchMode, setSearchMode,
+    shouldAutoFocusInterests, setShouldAutoFocusInterests
 }) => {
 
     // Translations
@@ -22,6 +23,14 @@ const SidebarInput = ({
             switch_dur: "Switch to Duration",
             switch_dist: "Switch to Distance",
             sources_label: "Search Sources",
+            journey: "City Explorer",
+            dist: "Distance",
+            budget: "Budget",
+            startNew: "New Search",
+            poi: "Point of Interest",
+            disambig_title: "Which one?",
+            back: "Back",
+            add: "Add Spots",
             walk_min: "min walking",
             walk_km: "km walking",
             rt_label: "Roundtrip (Loop)",
@@ -42,10 +51,18 @@ const SidebarInput = ({
             dest_ph: "Bijv. Amsterdam, Rome",
             int_label: "Interesses",
             int_ph: "Bijv. Koffie, Architectuur",
-            limit_label: "Reis Limiet",
+            limit_label: "Reislimiet",
             switch_dur: "Wissel naar Tijd",
             switch_dist: "Wissel naar Afstand",
             sources_label: "Zoekbronnen",
+            journey: "Jouw Stadsreis",
+            dist: "Afstand",
+            budget: "Budget",
+            startNew: "Nieuwe Zoekopdracht",
+            poi: "Bezienswaardigheid",
+            disambig_title: "Welke",
+            back: "Terug",
+            add: "Spots Toevoegen",
             walk_min: "min lopen",
             walk_km: "km lopen",
             rt_label: "Rondreis (Lus)",
@@ -74,6 +91,15 @@ const SidebarInput = ({
         }
     };
 
+    const interestsInputRef = useRef(null);
+
+    useEffect(() => {
+        if (shouldAutoFocusInterests && interestsInputRef.current) {
+            interestsInputRef.current.focus();
+            if (setShouldAutoFocusInterests) setShouldAutoFocusInterests(false);
+        }
+    }, [shouldAutoFocusInterests, setShouldAutoFocusInterests]);
+
     return (
         <div className="space-y-6 pt-4">
 
@@ -81,13 +107,18 @@ const SidebarInput = ({
             {/* City Input */}
             <div className="space-y-2">
                 <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{text.dest_label}</label>
-                <div className="relative bg-slate-800/80 border border-white/10 rounded-xl p-1 flex items-center shadow-lg focus-within:ring-2 ring-primary/50 transition-all">
+                <div className="relative bg-slate-800/80 border border-primary/30 rounded-xl p-1 flex items-center shadow-lg focus-within:ring-2 ring-primary/50 transition-all">
                     <input
                         type="text"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
                         onBlur={() => onCityValidation && onCityValidation('blur')}
-                        onKeyDown={(e) => e.key === 'Enter' && onCityValidation && onCityValidation('blur')}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                onCityValidation && onCityValidation('blur');
+                                if (interestsInputRef.current) interestsInputRef.current.focus();
+                            }
+                        }}
                         placeholder={text.dest_ph}
                         className="w-full bg-transparent border-none text-white text-sm px-3 py-2 focus:outline-none placeholder:text-slate-600"
                     />
@@ -109,6 +140,7 @@ const SidebarInput = ({
                 <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{text.int_label}</label>
                 <div className="bg-slate-800/80 border border-white/10 rounded-xl p-1 flex items-center shadow-lg focus-within:ring-2 ring-accent/50 transition-all">
                     <input
+                        ref={interestsInputRef}
                         type="text"
                         value={interests}
                         onChange={(e) => setInterests(e.target.value)}
@@ -147,7 +179,7 @@ const SidebarInput = ({
             <div className="bg-slate-800/60 rounded-xl p-3 border border-white/5 space-y-3">
                 {/* Mode Toggle (Hidden in Add Mode) */}
                 {!isAddingMode && (
-                    <div className="grid grid-cols-2 gap-2 bg-slate-900/40 p-1 rounded-lg">
+                    <div className="grid grid-cols-2 gap-2 bg-[var(--bg-gradient-start)]/40 p-1 rounded-lg">
                         <button
                             type="button"
                             onClick={() => {
@@ -242,16 +274,22 @@ const SidebarInput = ({
                     if (onJourneyStart) onJourneyStart(e);
                 }}
                 disabled={!city || !city.trim() || !interests || !interests.trim()}
-                className="w-full bg-gradient-to-r from-primary to-accent hover:from-primary-hover hover:to-accent-hover text-white rounded-xl p-3 font-bold text-md transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full relative group bg-primary/20 hover:bg-primary/40 text-primary hover:text-white text-lg font-bold py-4 px-6 rounded-2xl border border-primary/30 hover:border-primary/50 shadow-lg active:scale-[0.98] transition-all duration-200 overflow-hidden"
             >
-                {/* determine label based on mode */}
-                {isAddingMode || (onJourneyStart && onJourneyStart.name === 'handleAddToJourney')
-                    ? (language === 'nl' ? 'Voeg toe aan reis' : 'Add to Journey')
-                    : (searchMode === 'radius'
-                        ? (language === 'nl' ? 'Toon Spots' : 'Show POIs')
-                        : text.start
-                    )
-                }
+                <div className="absolute inset-0 bg-gradient-to-t from-black/0 via-white/5 to-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <span className="relative flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                    </svg>
+                    {/* determine label based on mode */}
+                    {isAddingMode || (onJourneyStart && onJourneyStart.name === 'handleAddToJourney')
+                        ? (language === 'nl' ? 'Voeg toe aan reis' : 'Add to Journey')
+                        : (searchMode === 'radius'
+                            ? (language === 'nl' ? 'Toon Spots' : 'Show POIs')
+                            : text.start
+                        )
+                    }
+                </span>
             </button>
 
             <div className="flex flex-wrap gap-2 justify-center text-xs text-slate-500 pt-2">
@@ -284,12 +322,16 @@ const ItinerarySidebar = ({
     isLoading, onCityValidation,
     onUseCurrentLocation,
     disambiguationOptions, onDisambiguationSelect, onDisambiguationCancel,
-    searchMode, setSearchMode
+    searchMode, setSearchMode,
+    isOpen, setIsOpen,
+    currentTheme, setCurrentTheme,
+    currentBgTheme, setCurrentBgTheme
 }) => {
-    const [isOpen, setIsOpen] = useState(true);
+
     const [nearbyCities, setNearbyCities] = useState([]);
     const [isAddingMode, setIsAddingMode] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [shouldAutoFocusInterests, setShouldAutoFocusInterests] = useState(false);
 
     // Fetch Nearby Cities (Generic logic moved here)
     useEffect(() => {
@@ -310,7 +352,7 @@ const ItinerarySidebar = ({
 
     const t = {
         en: {
-            journey: "Your Journey",
+            journey: "City Explorer",
             dist: "Distance",
             budget: "Budget",
             startNew: "New Search",
@@ -320,7 +362,7 @@ const ItinerarySidebar = ({
             add: "Add Spots"
         },
         nl: {
-            journey: "Jouw Reis",
+            journey: "Jouw Stadsreis",
             dist: "Afstand",
             budget: "Budget",
             startNew: "Nieuwe Zoekopdracht",
@@ -350,14 +392,17 @@ const ItinerarySidebar = ({
             )}
 
             <div
-                className={`absolute top-0 left-0 h-full z-[500] w-80 bg-slate-900/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : '-translate-x-full'
+                className={`absolute top-0 left-0 h-full z-[500] w-80 bg-[var(--bg-gradient-end)]/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : '-translate-x-full'
                     }`}
             >
-                <div className="flex flex-col h-full">
+                <div className="flex flex-col h-full bg-gradient-to-b from-[var(--bg-gradient-start)]/50 to-transparent">
                     {/* Header */}
-                    <div className="p-6 border-b border-white/10 bg-gradient-to-r from-blue-900/20 to-transparent">
+                    <div className="p-6 border-b border-white/10">
                         <div className="flex justify-between items-start mb-2">
-                            <h2 className="text-2xl font-bold text-white tracking-tight">{text.journey}</h2>
+                            <div className="flex items-center gap-3">
+                                <img src="/logo.jpg" alt="App Icon" className="w-10 h-10 rounded-xl shadow-md border border-white/20" />
+                                <h2 className="text-2xl font-bold text-white tracking-tight">{text.journey}</h2>
+                            </div>
                             {/* Lang and Close Controls */}
                             <div className="flex items-center gap-2">
                                 <button
@@ -385,11 +430,14 @@ const ItinerarySidebar = ({
                             <div className="grid grid-cols-2 gap-4 mt-4">
                                 <div className="bg-slate-800/50 p-3 rounded-lg border border-white/5">
                                     <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">{text.dist}</div>
-                                    <div className="text-xl font-bold text-blue-400">{routeData.stats.totalDistance} km</div>
+                                    <div className="text-xl font-bold text-primary">{routeData.stats.totalDistance} km</div>
                                 </div>
                                 <div className="bg-slate-800/50 p-3 rounded-lg border border-white/5">
                                     <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">{text.budget}</div>
-                                    <div className="text-xl font-bold text-emerald-400">~{routeData.stats.limitKm} km</div>
+                                    <div className="text-xl font-bold text-emerald-400">
+                                        {routeData.stats.limitKm.toString().startsWith('Radius') ? '' : '~'}
+                                        {routeData.stats.limitKm} km
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -398,13 +446,13 @@ const ItinerarySidebar = ({
 
                     {/* Settings Overlay */}
                     {showSettings && (
-                        <div className="absolute top-[80px] left-0 w-full h-[calc(100%-80px)] z-[600] bg-slate-900/95 backdrop-blur-md p-6 overflow-y-auto animate-in fade-in slide-in-from-top-4">
+                        <div className="absolute top-[80px] left-0 w-full h-[calc(100%-80px)] z-[600] bg-[var(--bg-gradient-end)]/95 backdrop-blur-md p-6 overflow-y-auto animate-in fade-in slide-in-from-top-4">
                             <h3 className="font-bold text-white mb-4 text-lg border-b border-white/10 pb-2">Settings</h3>
 
                             {/* Language */}
                             <div className="mb-6 space-y-2">
                                 <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Language / Taal</label>
-                                <div className="flex bg-slate-800 p-1 rounded-lg">
+                                <div className="flex bg-slate-800/50 p-1 rounded-lg">
                                     {['en', 'nl'].map(lang => (
                                         <button
                                             key={lang}
@@ -448,6 +496,50 @@ const ItinerarySidebar = ({
                                 </div>
                             </div>
 
+
+                            {/* FG Color Theme */}
+                            <div className="mb-6 space-y-2">
+                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{language === 'nl' ? 'Accent Kleur' : 'Accent Color'}</label>
+                                <div className="grid grid-cols-5 gap-2">
+                                    {[
+                                        { id: 'indigo', color: 'bg-indigo-500' },
+                                        { id: 'emerald', color: 'bg-emerald-500' },
+                                        { id: 'rose', color: 'bg-rose-500' },
+                                        { id: 'amber', color: 'bg-amber-500' },
+                                        { id: 'cyan', color: 'bg-cyan-500' }
+                                    ].map((theme) => (
+                                        <button
+                                            key={theme.id}
+                                            onClick={() => setCurrentTheme(theme.id)}
+                                            className={`h-10 rounded-lg border-2 transition-all ${currentTheme === theme.id ? 'border-white scale-110 shadow-lg' : 'border-transparent hover:scale-105 opacity-80 hover:opacity-100'} ${theme.color}`}
+                                            title={theme.id.charAt(0).toUpperCase() + theme.id.slice(1)}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* BG Color Theme */}
+                            <div className="mb-6 space-y-2">
+                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{language === 'nl' ? 'Achtergrond Kleur' : 'Background Color'}</label>
+                                <div className="grid grid-cols-6 gap-2">
+                                    {[
+                                        { id: 'slate', color: 'bg-slate-800' },
+                                        { id: 'forest', color: 'bg-[#022c22]' },
+                                        { id: 'wine', color: 'bg-[#4c0519]' },
+                                        { id: 'coffee', color: 'bg-[#451a03]' },
+                                        { id: 'ocean', color: 'bg-[#083344]' },
+                                        { id: 'midnight', color: 'bg-black' }
+                                    ].map((theme) => (
+                                        <button
+                                            key={theme.id}
+                                            onClick={() => setCurrentBgTheme(theme.id)}
+                                            className={`h-10 rounded-lg border-2 transition-all ${currentBgTheme === theme.id ? 'border-white scale-110 shadow-lg' : 'border-transparent hover:scale-105 opacity-80 hover:opacity-100'} ${theme.color}`}
+                                            title={theme.id.charAt(0).toUpperCase() + theme.id.slice(1)}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
                             {/* About Section */}
                             <div className="mt-8 pt-4 border-t border-white/10">
                                 <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">{language === 'nl' ? 'Over' : 'About'}</h4>
@@ -474,7 +566,10 @@ const ItinerarySidebar = ({
                                 {disambiguationOptions.map((option, idx) => (
                                     <button
                                         key={idx}
-                                        onClick={() => onDisambiguationSelect(option)}
+                                        onClick={() => {
+                                            onDisambiguationSelect(option);
+                                            setShouldAutoFocusInterests(true);
+                                        }}
                                         className="w-full text-left bg-slate-800/50 hover:bg-slate-700 p-3 rounded-lg border border-white/5 text-sm"
                                     >
                                         <div className="font-bold text-white">{option.name}</div>
@@ -490,14 +585,21 @@ const ItinerarySidebar = ({
                                     <div
                                         key={poi.id}
                                         onClick={() => onPoiClick(poi)}
-                                        className="group relative bg-slate-800/40 hover:bg-slate-800/80 p-4 rounded-xl border border-white/5 hover:border-blue-500/30 transition-all cursor-pointer"
+                                        className="group relative bg-slate-800/40 hover:bg-slate-800/80 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all cursor-pointer"
                                     >
-                                        <div className="absolute top-4 left-4 w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold border border-blue-500/20 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                                        <div className="absolute top-4 left-4 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold border border-primary/20 group-hover:bg-primary group-hover:text-white transition-colors">
                                             {index + 1}
                                         </div>
                                         <div className="pl-10">
-                                            <h3 className="font-semibold text-slate-100 group-hover:text-blue-300 transition-colors line-clamp-1">{poi.name}</h3>
-                                            <p className="text-sm text-slate-400 capitalize mt-1 pr-6">{poi.description || text.poi}</p>
+                                            <h3 className="font-semibold text-slate-100 group-hover:text-primary transition-colors line-clamp-1">{poi.name}</h3>
+                                            <div className="text-sm text-slate-400 capitalize mt-1 pr-6">
+                                                {(() => {
+                                                    const d = poi.description || "";
+                                                    const dLow = d.toLowerCase();
+                                                    const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
+                                                    return isBad ? (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available.") : (d || text.poi);
+                                                })()}
+                                            </div>
                                         </div>
 
                                         <button
@@ -541,6 +643,8 @@ const ItinerarySidebar = ({
                                     isAddingMode={isAddingMode}
                                     searchMode={searchMode}
                                     setSearchMode={setSearchMode}
+                                    shouldAutoFocusInterests={shouldAutoFocusInterests}
+                                    setShouldAutoFocusInterests={setShouldAutoFocusInterests}
                                 />
                             </div>
                         )}
@@ -548,12 +652,12 @@ const ItinerarySidebar = ({
 
                     {/* Footer Actions (Only show Reset when in Itinerary mode) */}
                     {showItinerary && !showDisambiguation && (
-                        <div className="p-4 border-t border-white/10 bg-slate-900/50">
+                        <div className="p-4 border-t border-white/10 bg-[var(--bg-gradient-start)]/30">
                             <div className="flex items-center justify-between mb-2 px-1">
                                 <span className="text-xs text-slate-500 uppercase font-bold">Options</span>
                                 <button
                                     onClick={() => setAutoAudio(!autoAudio)}
-                                    className={`text-xs flex items-center gap-1 ${autoAudio ? 'text-blue-400' : 'text-slate-500'}`}
+                                    className={`text-xs flex items-center gap-1 ${autoAudio ? 'text-primary' : 'text-slate-500'}`}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>
                                     {autoAudio ? "Auto-Audio ON" : "Auto-Audio OFF"}
@@ -571,7 +675,7 @@ const ItinerarySidebar = ({
                             {/* Add Button */}
                             <button
                                 onClick={() => { setIsAddingMode(true); setInterests(''); }}
-                                className="w-full flex items-center justify-center gap-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 hover:text-white py-3 rounded-xl border border-blue-500/30 transition-all font-medium mt-2"
+                                className="w-full flex items-center justify-center gap-2 bg-primary/20 hover:bg-primary/40 text-primary hover:text-white py-3 rounded-xl border border-primary/30 transition-all font-medium mt-2"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

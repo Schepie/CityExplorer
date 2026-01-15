@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useMap, Tooltip } from 'react-leaflet';
+import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useMap, Tooltip, Circle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -220,7 +220,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
     const positions = pois.map(poi => [poi.lat, poi.lng]);
 
     // Use OSRM path if available, else simple lines
-    const polyline = routePath && routePath.length > 0 ? routePath : (center ? [center, ...positions] : []);
+    const polyline = routePath || [];
 
     // Filter styles for switcher (exclude Dark/Default)
     const switcherStyles = Object.keys(MAP_STYLES).filter(k => k !== 'default');
@@ -232,6 +232,47 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
         iconSize: [20, 20],
         iconAnchor: [10, 10]
     });
+
+    // Helper: Determine Icon by Category
+    const getPoiIcon = (poi) => {
+        const desc = (poi.description || "").toLowerCase();
+        let iconHtml = '';
+        let colorClass = 'bg-primary'; // Default
+
+        if (desc.includes('park') || desc.includes('garden') || desc.includes('forest') || desc.includes('tree') || desc.includes('nature')) {
+            colorClass = 'bg-emerald-600';
+            iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c-3.5-3.5-6-7-6-10 0-3.5 3-5.5 6-5.5s6 2 6 5.5c0 3-2.5 6.5-6 10z"/><circle cx="12" cy="11" r="2"/></svg>`; // Tree-ish
+        } else if (desc.includes('food') || desc.includes('restaurant') || desc.includes('cafe') || desc.includes('eat')) {
+            colorClass = 'bg-orange-500';
+            // Cutlery
+            iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>`;
+        } else if (desc.includes('shop') || desc.includes('store') || desc.includes('mall')) {
+            colorClass = 'bg-pink-500';
+            // Bag
+            iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`;
+        } else if (desc.includes('museum') || desc.includes('art') || desc.includes('history') || desc.includes('castle')) {
+            colorClass = 'bg-purple-600';
+            // Building
+            iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="22.01"/><path d="M8 2h8"/><path d="M12 2v20"/><path d="M4 8h16"/></svg>`;
+        }
+
+        return { colorClass, iconHtml };
+    };
+
+    const markerRefs = useRef({});
+
+    // Effect: Open Popup when focusedLocation changes
+    useEffect(() => {
+        if (focusedLocation && pois.length > 0) {
+            const targetIdx = pois.findIndex(p => (p.id && p.id === focusedLocation.id) || (p.lat === focusedLocation.lat && p.lng === focusedLocation.lng));
+            if (targetIdx !== -1) {
+                const marker = markerRefs.current[targetIdx];
+                if (marker) {
+                    marker.openPopup();
+                }
+            }
+        }
+    }, [focusedLocation, pois]);
 
     return (
         <div className="relative h-full w-full glass-panel overflow-hidden border-2 border-primary/20 shadow-2xl shadow-primary/10">
@@ -279,185 +320,255 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                         {polyline && polyline.length > 1 && (
                             <Polyline
                                 positions={polyline}
-                                color="#6366f1"
-                                weight={5}
-                                opacity={0.9}
-                                dashArray="10, 15"
-                                lineCap="round"
+                                pathOptions={{ color: 'var(--primary)', weight: 5, opacity: 0.9, dashArray: '10, 15', lineCap: 'round' }}
                             />
                         )}
 
-                        {pois.map((poi, idx) => (
-                            <Marker
-                                key={idx}
-                                position={[poi.lat, poi.lng]}
-                                eventHandlers={{
-                                    click: () => { setIsNavigating(false); onPoiClick && onPoiClick(poi); },
-                                    popupclose: () => {
-                                        if (speakingId === poi.id) {
-                                            onStopSpeech();
-                                        }
-                                    }
+                        {/* Search Radius Circle (Only in Radius Mode) */}
+                        {routeData.stats && routeData.stats.limitKm && routeData.stats.limitKm.toString().startsWith('Radius') && (
+                            <Circle
+                                center={center}
+                                radius={parseFloat(routeData.stats.limitKm.split(' ')[1]) * 1000} // Extract km, convert to meters
+                                pathOptions={{
+                                    color: 'var(--primary)',
+                                    fillColor: 'var(--primary)',
+                                    fillOpacity: 0.1,
+                                    weight: 1,
+                                    dashArray: '5, 10'
                                 }}
-                                icon={L.divIcon({
-                                    className: 'bg-transparent border-none',
-                                    html: `<div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold border-2 border-white shadow-md">${idx + 1}</div>`,
-                                    iconSize: [32, 32],
-                                    iconAnchor: [16, 16]
-                                })}
-                            >
-                                <Popup className="glass-popup">
-                                    <div className="text-slate-900">
-                                        <div className="flex items-center justify-between gap-2 mb-1">
-                                            <div className="flex items-center gap-2">
-                                                <span className="bg-blue-600 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full">{idx + 1}</span>
-                                                <strong className="text-lg leading-none">{poi.name}</strong>
+                            />
+                        )}
+
+                        {pois.map((poi, idx) => {
+                            const { colorClass, iconHtml } = getPoiIcon(poi);
+
+                            return (
+                                <Marker
+                                    key={idx}
+                                    ref={(el) => { if (el) markerRefs.current[idx] = el; }}
+                                    position={[poi.lat, poi.lng]}
+                                    eventHandlers={{
+                                        click: () => { setIsNavigating(false); onPoiClick && onPoiClick(poi); },
+                                        popupclose: () => {
+                                            if (speakingId === poi.id) {
+                                                onStopSpeech();
+                                            }
+                                        }
+                                    }}
+                                    icon={L.divIcon({
+                                        className: 'bg-transparent border-none',
+                                        html: `<div class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30">
+                                                 ${iconHtml ? `<div class="mb-[1px] -mt-1 scale-75">${iconHtml}</div>` : ''}
+                                                 <span class="text-[10px] font-bold leading-none">${idx + 1}</span>
+                                               </div>`,
+                                        iconSize: [40, 40],
+                                        iconAnchor: [20, 20]
+                                    })}
+                                >
+                                    <Popup className="glass-popup">
+                                        <div className="text-slate-900">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="flex-1">
+                                                    <h3 className="font-bold text-lg m-0 leading-tight">{poi.name}</h3>
+                                                    <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-1">
+                                                        {poi.category || (poi.types ? poi.types[0] : 'Locatie')}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
+                                                    className={`p-1.5 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white' : 'text-slate-400 hover:text-primary hover:bg-black/5'}`}
+                                                    title="Read Aloud"
+                                                >
+                                                    {speakingId === poi.id ? (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                                    ) : (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                                    )}
+                                                </button>
                                             </div>
+
+                                            {/* UI FILTER: Block generic city descriptions */}
+                                            {(() => {
+                                                const d = poi.description || "";
+                                                const dLow = d.toLowerCase();
+                                                const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
+                                                const displayDesc = isBad ? "Geen beschrijving beschikbaar." : d;
+                                                return <p className="m-0 text-sm text-slate-600 mb-2">{displayDesc}</p>;
+                                            })()}
+
+                                            {/* External Link (with Generic Fallback) */}
+                                            {(() => {
+                                                let link = poi.link;
+                                                let source = poi.source;
+
+                                                // Universal Fallback: Google Search
+                                                if (!link) {
+                                                    link = `https://www.google.com/search?q=${encodeURIComponent(poi.name + " Hasselt")}`;
+                                                    source = "Google Search";
+                                                }
+
+                                                return (
+                                                    <div className="mb-2">
+                                                        <a
+                                                            href={link}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-xs text-blue-500 hover:text-blue-700 underline flex items-center gap-1"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                            {source ? `Source: ${source}` : "Read more"}
+                                                        </a>
+                                                    </div>
+                                                );
+                                            })()}
+
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
-                                                className={`p-1.5 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white' : 'text-slate-400 hover:text-blue-600 hover:bg-black/5'}`}
-                                                title="Read Aloud"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setIsNavigating(true);
+                                                    onPoiClick && onPoiClick(poi);
+                                                    const popup = e.target.closest('.leaflet-popup');
+                                                    if (popup) {
+                                                        const closeBtn = popup.querySelector('.leaflet-popup-close-button');
+                                                        if (closeBtn) closeBtn.click();
+                                                    }
+                                                }}
+                                                className="text-primary text-xs font-bold hover:underline bg-transparent border-none cursor-pointer"
                                             >
-                                                {speakingId === poi.id ? (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                                                ) : (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                                                )}
+                                                {text.nav}
                                             </button>
                                         </div>
-                                        <p className="m-0 text-sm text-slate-600">{poi.description}</p>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setIsNavigating(true);
-                                                onPoiClick && onPoiClick(poi);
-                                                const popup = e.target.closest('.leaflet-popup');
-                                                if (popup) {
-                                                    const closeBtn = popup.querySelector('.leaflet-popup-close-button');
-                                                    if (closeBtn) closeBtn.click();
-                                                }
-                                            }}
-                                            className="text-primary text-xs mt-2 inline-block font-bold hover:underline bg-transparent border-none cursor-pointer"
-                                        >
-                                            {text.nav}
-                                        </button>
-                                    </div>
-                                </Popup>
-                            </Marker>
-                        ))}
+                                    </Popup>
+                                </Marker>
+                            );
+                        })}
                     </>
                 )}
             </LMapContainer>
 
             {/* Map Style Switcher - Hide in input mode */}
-            {!isInputMode && (
-                <div className="absolute top-4 right-4 z-[400] bg-slate-800/90 backdrop-blur-md rounded-xl p-2 border border-white/10 shadow-lg flex flex-col gap-2">
-                    {switcherStyles.map((styleKey) => {
-                        const icon = styleKey === 'walking'
-                            ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13" cy="4" r="2" /><path d="M13 20v-5l-3-3 2-3h-3" /><path d="M13 9l3 3-1 8" /></svg>
-                            : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5.5" cy="17.5" r="3.5" /><circle cx="18.5" cy="17.5" r="3.5" /><path d="M15 6l-5 5-3-3 2-2" /><path d="M12 17.5V14l-3-3 4-3 2 3h2" /></svg>;
+            {
+                !isInputMode && (
+                    <div className="absolute top-4 right-4 z-[400] bg-slate-800/90 backdrop-blur-md rounded-xl p-2 border border-white/10 shadow-lg flex flex-col gap-2">
+                        {switcherStyles.map((styleKey) => {
+                            const icon = styleKey === 'walking'
+                                ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13" cy="4" r="2" /><path d="M13 20v-5l-3-3 2-3h-3" /><path d="M13 9l3 3-1 8" /></svg>
+                                : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5.5" cy="17.5" r="3.5" /><circle cx="18.5" cy="17.5" r="3.5" /><path d="M15 6l-5 5-3-3 2-2" /><path d="M12 17.5V14l-3-3 4-3 2 3h2" /></svg>;
 
-                        return (
-                            <button
-                                key={styleKey}
-                                onClick={() => setUserSelectedStyle(styleKey)}
-                                className={`p-2.5 rounded-lg transition-all ${userSelectedStyle === styleKey
-                                    ? 'bg-primary text-white shadow-md'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/10'
-                                    }`}
-                                title={`${text.switch} ${text[styleKey]} view`}
-                            >
-                                {icon}
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
+                            return (
+                                <button
+                                    key={styleKey}
+                                    onClick={() => setUserSelectedStyle(styleKey)}
+                                    className={`p-2.5 rounded-lg transition-all ${userSelectedStyle === styleKey
+                                        ? 'bg-primary text-white shadow-md'
+                                        : 'text-slate-400 hover:text-white hover:bg-white/10'
+                                        }`}
+                                    title={`${text.switch} ${text[styleKey]} view`}
+                                >
+                                    {icon}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )
+            }
 
             {/* Route Stats Overlay */}
-            {routeData?.stats && (
-                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[400] bg-slate-900/90 backdrop-blur-xl rounded-full px-6 py-3 border border-white/10 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-700">
-                    <div className="flex flex-col items-center">
-                        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{text.dist}</span>
-                        <span className="text-xl font-bold text-white leading-none">{routeData.stats.totalDistance} <span className="text-sm font-normal text-slate-400">km</span></span>
+            {
+                routeData?.stats && (
+                    <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[400] bg-slate-900/90 backdrop-blur-xl rounded-full px-6 py-3 border border-white/10 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-700">
+                        {!routeData.stats.limitKm.toString().startsWith('Radius') && (
+                            <>
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{text.dist}</span>
+                                    <span className="text-xl font-bold text-white leading-none">{routeData.stats.totalDistance} <span className="text-sm font-normal text-slate-400">km</span></span>
+                                </div>
+                                <div className="h-8 w-px bg-white/10"></div>
+                            </>
+                        )}
+                        <div className="flex flex-col items-center">
+                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{text.limit}</span>
+                            <span className="text-xl font-bold text-white leading-none">{routeData.stats.limitKm} <span className="text-sm font-normal text-slate-400">km</span></span>
+                        </div>
                     </div>
-                    <div className="h-8 w-px bg-white/10"></div>
-                    <div className="flex flex-col items-center">
-                        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{text.limit}</span>
-                        <span className="text-xl font-bold text-white leading-none">{routeData.stats.limitKm} <span className="text-sm font-normal text-slate-400">km</span></span>
-                    </div>
-                </div>
-            )}
+                )
+            }
 
 
             {/* Top Navigation HUD */}
-            {userLocation && pois.length > 0 && !isInputMode && (() => {
-                const targetPoi = focusedLocation || pois[0];
-                const targetIdx = pois.findIndex(p => (p.id && p.id === targetPoi.id) || (p.lat === targetPoi.lat && p.lng === targetPoi.lng));
+            {
+                userLocation && pois.length > 0 && !isInputMode && (() => {
+                    const targetPoi = focusedLocation || pois[0];
+                    const targetIdx = pois.findIndex(p => (p.id && p.id === targetPoi.id) || (p.lat === targetPoi.lat && p.lng === targetPoi.lng));
 
-                return (
-                    <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-[400] bg-slate-900/90 backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/10 shadow-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-700">
-                        {/* Direction Arrow */}
-                        <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center border border-white/5 shadow-inner">
-                            <div style={{ transform: `rotate(${calcBearing(userLocation, targetPoi)}deg)`, transition: 'transform 0.5s ease-out' }}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#3b82f6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md"><polygon points="12 2 22 22 12 18 2 22 12 2"></polygon></svg>
+                    return (
+                        <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-[400] bg-slate-900/90 backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/10 shadow-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-700">
+                            {/* Direction Arrow */}
+                            <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center border border-white/5 shadow-inner">
+                                <div style={{ transform: `rotate(${calcBearing(userLocation, targetPoi)}deg)`, transition: 'transform 0.5s ease-out' }}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md"><polygon points="12 2 22 22 12 18 2 22 12 2"></polygon></svg>
+                                </div>
+                            </div>
+
+                            {/* Distance & Label */}
+                            <div className="flex flex-col">
+                                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">{text.next}: POI {targetIdx + 1}</span>
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-3xl font-bold text-white tracking-tight">{calcDistance(userLocation, targetPoi)}</span>
+                                    <span className="text-sm font-medium text-slate-400">km</span>
+                                </div>
                             </div>
                         </div>
-
-                        {/* Distance & Label */}
-                        <div className="flex flex-col">
-                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">{text.next}: POI {targetIdx + 1}</span>
-                            <div className="flex items-baseline gap-1">
-                                <span className="text-3xl font-bold text-white tracking-tight">{calcDistance(userLocation, targetPoi)}</span>
-                                <span className="text-sm font-medium text-slate-400">km</span>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })()}
+                    );
+                })()
+            }
 
             {/* Map Controls */}
-            {!isInputMode && (
-                <div className="absolute bottom-8 right-8 z-[400] flex flex-col gap-3">
-                    <button
-                        onClick={() => setViewAction('USER')}
-                        disabled={!userLocation}
-                        className="bg-slate-800/90 hover:bg-slate-700/90 text-white p-3 rounded-full shadow-lg border border-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                        title={text.locate}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-blue-400 transition-colors"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
-                    </button>
-                    <button
-                        onClick={() => setViewAction('ROUTE')}
-                        className="bg-slate-800/90 hover:bg-slate-700/90 text-white p-3 rounded-full shadow-lg border border-white/10 transition-all group"
-                        title={text.fit}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-emerald-400 text-slate-200 transition-colors"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                    </button>
-                </div>
-            )}
+            {
+                !isInputMode && (
+                    <div className="absolute bottom-8 right-8 z-[400] flex flex-col gap-3">
+                        <button
+                            onClick={() => setViewAction('USER')}
+                            disabled={!userLocation}
+                            className="bg-slate-800/90 hover:bg-slate-700/90 text-white p-3 rounded-full shadow-lg border border-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                            title={text.locate}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-primary transition-colors"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
+                        </button>
+                        <button
+                            onClick={() => setViewAction('ROUTE')}
+                            className="bg-slate-800/90 hover:bg-slate-700/90 text-white p-3 rounded-full shadow-lg border border-white/10 transition-all group"
+                            title={text.fit}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-emerald-400 text-slate-200 transition-colors"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                        </button>
+                    </div>
+                )
+            }
 
             {/* Loading Overlay */}
-            {isLoading && (
-                <div className="absolute inset-0 z-[1000] bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
-                    <div className="relative">
-                        <div className="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
+            {
+                isLoading && (
+                    <div className="absolute inset-0 z-[1000] bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
+                        <div className="relative">
+                            <div className="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="mt-4 text-center">
+                            <h3 className="text-xl font-bold text-white tracking-tight">{loadingText || "Exploring..."}</h3>
+                            {loadingCount > 0 && (
+                                <p className="text-primary font-medium mt-1 animate-pulse">Found {loadingCount} POIs</p>
+                            )}
                         </div>
                     </div>
-                    <div className="mt-4 text-center">
-                        <h3 className="text-xl font-bold text-white tracking-tight">{loadingText || "Exploring..."}</h3>
-                        {loadingCount > 0 && (
-                            <p className="text-blue-400 font-medium mt-1 animate-pulse">Found {loadingCount} POIs</p>
-                        )}
-                    </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 

@@ -199,24 +199,33 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
     return [];
 }
 
-export const getCombinedPOIs = async (cityData, interest, cityName, constrainValueKm, sources) => {
+export const getCombinedPOIs = async (cityData, interestLine, cityName, constrainValueKm, sources) => {
     // Determine Radius in Meters
     const radiusMeters = (constrainValueKm || 5) * 1000;
     const radiusKm = constrainValueKm || 5;
+
+    // Separate interests by comma
+    const interests = interestLine.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    if (interests.length === 0) return [];
 
     // Default to true if sources not passed (legacy compatibility)
     const useOsm = sources ? sources.osm : true;
     const useFs = sources ? sources.foursquare : true;
     const useGoogle = sources ? sources.google : true;
 
-    const [osmPois, fsPois, googlePois] = await Promise.all([
-        useOsm ? fetchOsmPOIs(cityData, interest, cityName, radiusKm) : Promise.resolve([]),
-        useFs ? fetchFoursquarePOIs(cityData.lat, cityData.lon, interest, radiusMeters) : Promise.resolve([]),
-        useGoogle ? fetchGooglePOIs(cityData.lat, cityData.lon, interest, radiusMeters) : Promise.resolve([])
-    ]);
+    // Helper: Fetch for a SINGLE keyword
+    const fetchForKeyword = async (keyword) => {
+        const [osm, fs, google] = await Promise.all([
+            useOsm ? fetchOsmPOIs(cityData, keyword, cityName, radiusKm) : Promise.resolve([]),
+            useFs ? fetchFoursquarePOIs(cityData.lat, cityData.lon, keyword, radiusMeters) : Promise.resolve([]),
+            useGoogle ? fetchGooglePOIs(cityData.lat, cityData.lon, keyword, radiusMeters) : Promise.resolve([])
+        ]);
+        return [...google, ...fs, ...osm];
+    };
 
-    // Combine all
-    const allPois = [...googlePois, ...fsPois, ...osmPois];
+    // Run searches for ALL keywords in parallel
+    const resultsArrays = await Promise.all(interests.map(k => fetchForKeyword(k)));
+    const allPois = resultsArrays.flat();
 
     // Helper: Haversine Distance
     const calcDist = (lat1, lon1, lat2, lon2) => {
@@ -250,6 +259,29 @@ export const getCombinedPOIs = async (cityData, interest, cityName, constrainVal
             seenNames.add(normName);
         }
     }
+
+    // If NO results found found across ALL keywords, return empty (caller usually handles refinement prompt).
+    // If PARTIAL results (some keywords found nothing), we silently return what we found.
+    // The requirement says: "If one of the words is not understood, the app should only ask to clarify that word."
+    // Implementing exact "ask to clarify THAT word" requires changing the return shape to include failed keywords.
+    // For now, let's return the combined list. If empty, the App handles the generic "No results" prompting.
+    // To support per-word failure, we'd need to return { pois: [], failedKeywords: [] }.
+
+    // Let's refine the return to support the requirement: "only ask to clarify that word".
+    // We check which keywords produced 0 results.
+    const failedKeywords = [];
+    for (let i = 0; i < interests.length; i++) {
+        if (resultsArrays[i].length === 0) {
+            failedKeywords.push(interests[i]);
+        }
+    }
+
+    // However, the current App.jsx expects an array of POIs.
+    // We will attach the failed keywords as a property to the array to avoid breaking the signature too much,
+    // or we just return the array and let the user re-try if they see missing stuff.
+    // But the user EXPLICITLY asked for this behavior.
+    // Let's attach it to the array instance.
+    uniquePois.failedKeywords = failedKeywords;
 
     return uniquePois;
 }
