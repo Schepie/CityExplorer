@@ -121,13 +121,17 @@ function App() {
       const cityData = await cityResponse.json();
 
       if (!cityData || cityData.length === 0) {
-        if (context === 'submit') alert("City not found. Please try again.");
+        if (context === 'submit') {
+          alert("City not found. Please try again.");
+          setIsSidebarOpen(true); // Re-open sidebar on error
+        }
         return;
       }
 
       if (cityData.length > 1) {
         setDisambiguationOptions(cityData);
         setDisambiguationContext(context);
+        setIsSidebarOpen(true); // Re-open sidebar for disambiguation
         return;
       }
 
@@ -446,6 +450,7 @@ function App() {
 
     // console.log("handleJourneyStart called. City:", city, "Interest:", activeInterest);
     setIsLoading(true);
+    setIsSidebarOpen(false); // Close sidebar immediately on start
     setLoadingText(language === 'nl' ? 'Aan het verkennen...' : 'Exploring...');
     setFoundPoisCount(0); // Reset count
 
@@ -743,6 +748,7 @@ function App() {
         // Show suggestions after a brief delay to allow UI to update
         setTimeout(() => {
           alert(msg);
+          setIsSidebarOpen(true); // Re-open sidebar so user can try again
         }, 100);
         return;
       }
@@ -966,36 +972,69 @@ function App() {
 
       // 6. Enrich with POI Intelligence Engine (Generic, Multi-source, Probabilistic)
       // This implements the requested 7-Step "POI Intelligence" pipeline.
+      // 6. Enrich with POI Intelligence Engine (Generic, Multi-source, Probabilistic)
+      // This implements the requested 7-Step "POI Intelligence" pipeline.
       const engine = new PoiIntelligence({
         city: city,
         language: language,
-        googleKey: import.meta.env.VITE_GOOGLE_PLACES_KEY
+        googleKey: import.meta.env.VITE_GOOGLE_PLACES_KEY,
+        geminiKey: import.meta.env.VITE_GEMINI_API_KEY
       });
 
-      const enrichedPois = [];
-      // Sequential processing to respect API patterns (though engine supports parallel, sequential is safer for rate limits)
-      // Sequential processing to respect API patterns
-      for (const poi of selectedPois) {
-        try {
-          // Step 1-7: Resolve Identity, Gather Signals, Score Trust, and Rank.
-          const enriched = await engine.evaluatePoi(poi);
-          enrichedPois.push(enriched);
-        } catch (err) {
-          console.warn(`POI Engine Failed for ${poi.name}:`, err);
-          enrichedPois.push(poi);
-        }
-      }
+      // --- OPTIMIZATION: Show Map Immediately ---
+      // 1. Set initial state with basic POIs (loading descriptions)
+      const initialPois = selectedPois.map(p => ({
+        ...p,
+        description: language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...',
+        isLoading: true
+      }));
 
       setRouteData({
         center: cityCenter,
-        pois: enrichedPois,
+        pois: initialPois,
         routePath: routeCoordinates,
         stats: {
           totalDistance: realDistance.toFixed(1),
           limitKm: targetLimitKm.toFixed(1)
         }
       });
-      setIsSidebarOpen(false); // Close sidebar on result
+      setIsSidebarOpen(false); // Close sidebar immediately
+
+      // 2. Background Process: Enrich iteratively
+      // We do this WITHOUT awaiting the loop here to block UI, but since we are in an async function aimed at "loading",
+      // we actually just let the state updates drive the UI.
+
+      const enrichBackground = async () => {
+        for (const poi of selectedPois) {
+          try {
+            // Step 1-7: Resolve Identity, Gather Signals, Score Trust, and Rank.
+            const enriched = await engine.evaluatePoi(poi);
+
+            // Update State Incrementally
+            setRouteData((prev) => {
+              if (!prev || !prev.pois) return prev; // Safety check if user navigated away
+              return {
+                ...prev,
+                pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false } : p)
+              };
+            });
+          } catch (err) {
+            console.warn(`POI Engine Failed for ${poi.name}:`, err);
+            // On failure, remove loading state
+            setRouteData((prev) => {
+              if (!prev || !prev.pois) return prev;
+              return {
+                ...prev,
+                pois: prev.pois.map(p => p.id === poi.id ? { ...p, isLoading: false, description: "Info unavailable" } : p)
+              };
+            });
+          }
+        }
+      };
+
+      // Start background enrichment (fire and forget)
+      enrichBackground();
+
     } catch (err) {
       console.error("Error fetching POIs", err);
       // On error, stay on input screen

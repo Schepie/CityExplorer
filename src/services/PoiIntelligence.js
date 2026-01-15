@@ -1,3 +1,5 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 /**
  * POI Intelligence Engine
  * Responsible for discovering, validating, classifying, and ranking real-world places.
@@ -23,6 +25,11 @@ export class PoiIntelligence {
             "duckduckgo": 0.6,
             "generic_web": 0.4
         };
+
+        if (this.config.geminiKey) {
+            this.genAI = new GoogleGenerativeAI(this.config.geminiKey);
+            this.model = this.genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
+        }
     }
 
     /**
@@ -36,8 +43,38 @@ export class PoiIntelligence {
         // Step 2: Semantic Classification & Analysis
         const analyzed = this.analyzeSignals(candidate, signals);
 
-        // Step 6: Conflict Resolution (Determine Winner)
-        const bestData = this.resolveConflicts(analyzed);
+        // Step 3: Gemini Synthesis (The Brain)
+        // We feed the raw signals into Gemini to produce a friendly, factual summary.
+        let bestData = null;
+
+        if (this.model) {
+            try {
+                // Only call Gemini if we actually found something, OR if we want it to use internal knowledge (risky per rules)
+                // The rule says "Only use provided data...".
+                // If signals is empty, we probably shouldn't ask Gemini to hallucinate.
+                // However, maybe it knows it? Rule: "If information is unknown... return null".
+                // Let's passed analyzed signals.
+                const geminiResult = await this.fetchGeminiDescription(candidate, analyzed);
+                if (geminiResult && geminiResult.description && geminiResult.description !== 'unknown') {
+                    // Extract link from signals if Gemini didn't find a better one
+                    const fallbackLink = this.resolveConflicts(analyzed).link;
+
+                    bestData = {
+                        description: geminiResult.description,
+                        link: geminiResult.link || fallbackLink,
+                        source: "Gemini Intelligence",
+                        confidence: 0.95
+                    };
+                }
+            } catch (e) {
+                console.warn("Gemini Synthesis Failed:", e);
+            }
+        }
+
+        // Fallback to heuristic resolution if Gemini functionality is missing, failed, or returned nothing
+        if (!bestData) {
+            bestData = this.resolveConflicts(analyzed);
+        }
 
         // Step 7: Output Formatting
         return {
@@ -56,17 +93,18 @@ export class PoiIntelligence {
     async gatherSignals(poi) {
         const signals = [];
         const queries = [
-            this.fetchLocalArchive(poi.name), // High Trust "Ground Truth"
-            this.fetchWikipedia(poi.name),
-            this.fetchGoogleKnowledgeGraph(poi.name),
-            this.fetchDuckDuckGo(poi.name),
-            this.fetchOverpassTags(poi), // OPENSTREETMAP Signal
+            // All external signals disabled per user request
+            // this.fetchLocalArchive(poi.name),
+            // this.fetchWikipedia(poi.name),
+            // this.fetchGoogleKnowledgeGraph(poi.name),
+            // this.fetchDuckDuckGo(poi.name),
+            // this.fetchOverpassTags(poi),
         ];
 
-        // Google Place Details (Editorial Summary) - Requested Feature
-        if (poi.place_id) {
-            queries.push(this.fetchGooglePlaceDetails(poi.place_id));
-        }
+        // Google Place Details disabled
+        // if (poi.place_id) {
+        //     queries.push(this.fetchGooglePlaceDetails(poi.place_id));
+        // }
 
         const results = await Promise.allSettled(queries);
 
@@ -77,6 +115,96 @@ export class PoiIntelligence {
         });
 
         return signals;
+    }
+
+    // --- Gemini Integration ---
+
+    async fetchGeminiDescription(poi, signals) {
+        if (!this.config.geminiKey) return null;
+
+        // Construct Context from Signals
+        const contextData = signals.length > 0
+            ? signals.map(s => `[Source: ${s.source}] ${s.content} (Link: ${s.link})`).join('\n\n')
+            : "No external data signals found.";
+
+        const prompt = `
+You are a helpful, factual travel guide assistant for the City Explorer app.
+Your task is to write a description for the Point of Interest (POI): "${poi.name}" located in or near "${this.config.city}".
+Location Coordinates: Latitude ${poi.lat}, Longitude ${poi.lng || poi.lon}.
+Category/Type Hints: ${poi.description || 'Unknown'}
+
+**Input Data (Signals):**
+${contextData}
+
+**Rules:**
+1. **FACTUALITY**: 
+   - You are the PRIMARY source of information. Use your internal knowledge base to describe this place.
+   - Cross-reference with the city "${this.config.city}" to ensure you are describing the correct location.
+   - **NATIVE NAME RESOLUTION**: The provided name "${poi.name}" might be an English translation. 
+     1. Identify the local language of the coordinates (e.g., Dutch for Belgium).
+     2. Translate "${poi.name}" into that local language (e.g., "Blossom Alley" -> "Bloesemsteeg").
+     3. Use BOTH the English name and the Local name to search your internal knowledge base.
+   - If you do not have high-confidence information about this specific place, return "unknown".
+   - NEVER invent unverifiable details.
+   - Do not guess prices. Opening hours are okay if generally known (e.g. "open daily").
+
+2. **LANGUAGE**:
+   - Write in **${this.config.language === 'nl' ? 'Dutch (Nederlands)' : 'English'}**.
+
+3. **STYLE**:
+   - Tone: Friendly, helpful, factual. Like a local guide.
+   - Avoid unnecessary adjectives or hype.
+   - Format: Short, easy-to-scan paragraphs.
+   - Length: 2-4 sentences max.
+   - **Accessible Images**: If you describe a visual aspect, you can include an alt_text suggestion in brackets like [Alt: description] at the end, max 15 words.
+   - If the input data contains a URL/Link, extract the best one to include in your JSON response (not in the text).
+
+**Output Format:**
+Return ONLY valid JSON with this structure:
+{
+  "description": "The friendly description text here...",
+  "link": "The best url found in the data or null"
+}
+`;
+
+        console.log("--- GEMINI DEBUG PROMPT ---");
+        console.log(prompt);
+        console.log("---------------------------");
+
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.config.geminiKey}`;
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{ text: prompt }]
+                    }]
+                })
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error("Gemini API Error:", response.status, errText);
+                return null;
+            }
+
+            const data = await response.json();
+            // Parse response structure: candidates[0].content.parts[0].text
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!text) return null;
+
+            // Clean markdown code blocks if present
+            const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(jsonStr);
+        } catch (e) {
+            console.warn("Gemini Parsing/Fetch Error", e);
+            return null;
+        }
     }
 
     // --- Signal Fetchers ---
