@@ -15,7 +15,7 @@ export const handler = async (event, context) => {
 
     try {
         const response = await fetch(url, {
-            headers: { 'Referer': 'https://city-explorer.netlify.app' }
+            headers: { 'Referer': event.headers.referer || event.headers.origin || 'https://citytrip.netlify.app' }
         });
         const data = await response.json();
 
