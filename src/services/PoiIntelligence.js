@@ -196,13 +196,23 @@ Return ONLY valid JSON with this structure:
             if (!text) return null;
 
             // Clean markdown code blocks if present
-            const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').replace(/\[Alt:[^\]]*\]/g, '').trim();
+            const cleanText = text.replace(/```json/g, '').replace(/```/g, '').replace(/\[Alt:[^\]]*\]/g, '').trim();
+
             try {
-                return JSON.parse(jsonStr);
+                return JSON.parse(cleanText);
             } catch (e) {
-                // Sometime Gemini returns just the text if it fails to format as JSON, 
-                // but our prompt specifically requests JSON.
-                console.warn("Gemini JSON parse error, raw text:", text);
+                console.warn("Gemini JSON parse error, attempting regex extraction...");
+                // Fallback: Try to find the first '{' and last '}'
+                const firstBrace = text.indexOf('{');
+                const lastBrace = text.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1) {
+                    try {
+                        const jsonCandidate = text.substring(firstBrace, lastBrace + 1);
+                        return JSON.parse(jsonCandidate);
+                    } catch (e2) {
+                        console.warn("Gemini Regex extraction failed:", e2);
+                    }
+                }
                 return null;
             }
         } catch (e) {
@@ -242,7 +252,6 @@ Return ONLY valid JSON with this structure:
         return null;
     }
 
-    // Implements: [out:json]... nwr(around:X)...
     async fetchOverpassTags(poi) {
         if (!poi.lat || !poi.lng) return null;
         try {
@@ -391,8 +400,20 @@ Return ONLY valid JSON with this structure:
 
     async fetchDuckDuckGo(name) {
         try {
+            // Note: DDG Instant Answer API does not support CORS. 
+            // This will likely fail in production browsers unless via proxy.
+            // We keep it for local dev or if a proxy is added later.
             const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(name + " " + this.config.city)}&format=json&no_html=1&skip_disambig=1`;
-            const res = await fetch(url).then(r => r.json());
+
+            // Short timeout for DDG too
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+            const res = await fetch(url, { signal: controller.signal }).then(r => {
+                clearTimeout(timeoutId);
+                return r.json();
+            });
+
             if (res.AbstractText) {
                 return {
                     type: 'description',
@@ -402,7 +423,10 @@ Return ONLY valid JSON with this structure:
                     confidence: 0.7
                 };
             }
-        } catch (e) { console.warn("DDG Signal Lost", e); }
+        } catch (e) {
+            // Expected CORS failure in browser
+            // console.log("DDG signal skipped:", e.message); 
+        }
         return null;
     }
 
