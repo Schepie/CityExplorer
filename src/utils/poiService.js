@@ -107,7 +107,8 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) =
 
 export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => {
     // Proxy call
-    const url = `http://localhost:3001/api/foursquare?query=${encodeURIComponent(interest)}&ll=${lat},${lng}&radius=${radius}&limit=30`;
+    // Proxy call
+    const url = `/api/foursquare?query=${encodeURIComponent(interest)}&ll=${lat},${lng}&radius=${radius}&limit=30`;
 
     try {
         const res = await fetch(url);
@@ -136,7 +137,8 @@ export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => 
 
 export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
     // Proxy call
-    const url = 'http://localhost:3001/api/google-places';
+    // Proxy call
+    const url = '/api/google-places';
 
     try {
         const response = await fetch(url, {
