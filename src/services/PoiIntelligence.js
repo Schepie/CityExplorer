@@ -177,7 +177,7 @@ Return ONLY valid JSON with this structure:
 
         try {
             // Using Local Proxy
-            const url = 'http://localhost:3001/api/gemini';
+            const url = '/api/gemini';
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

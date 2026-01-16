@@ -500,7 +500,7 @@ function App() {
 
       // Call Proxy
       // We rely on the server to have the API KEY and CX configured.
-      const searchUrl = `http://localhost:3001/api/google-search?q=${encodeURIComponent(fullQuery)}`;
+      const searchUrl = `/api/google-search?q=${encodeURIComponent(fullQuery)}`;
 
       let gRes = await fetch(searchUrl);
       let gData = await gRes.json();
@@ -509,7 +509,7 @@ function App() {
       // (If server returned empty items)
       if ((!gData.items || gData.items.length === 0) && fullQuery !== query) {
         // console.log("Google Context Search failed. Retrying raw:", query);
-        const retryUrl = `http://localhost:3001/api/google-search?q=${encodeURIComponent(query)}`;
+        const retryUrl = `/api/google-search?q=${encodeURIComponent(query)}`;
         gRes = await fetch(retryUrl);
         gData = await gRes.json();
       }
