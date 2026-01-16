@@ -1,6 +1,5 @@
 
-const FOURSQUARE_API_KEY = import.meta.env.VITE_FOURSQUARE_KEY;
-const GOOGLE_PLACES_API_KEY = import.meta.env.VITE_GOOGLE_PLACES_KEY;
+
 
 export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) => {
     let poiData = [];
@@ -105,34 +104,15 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) =
 
 // ... (other functions)
 
+
 export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => {
-    // Re-read env var here to be safe
-    const apiKey = import.meta.env.VITE_FOURSQUARE_KEY;
-    if (!apiKey) return [];
-
-    // V3 keys usually start with 'fsq3'. Legacy keys don't.
-    if (!apiKey.startsWith('fsq3')) {
-        console.warn("Foursquare Key Warning: Skipping Foursquare search because key format suggests legacy V2 Client ID. Please generate a new V3 API Key (starts with 'fsq3') at https://foursquare.com/developers/projects");
-        return [];
-    }
-
-    const url = `https://api.foursquare.com/v3/places/search?query=${encodeURIComponent(interest)}&ll=${lat},${lng}&radius=${radius}&limit=30`;
+    // Proxy call
+    const url = `http://localhost:3001/api/foursquare?query=${encodeURIComponent(interest)}&ll=${lat},${lng}&radius=${radius}&limit=30`;
 
     try {
-        const res = await fetch(url, {
-            headers: {
-                'Authorization': apiKey,
-                'Accept': 'application/json'
-            }
-        });
-
+        const res = await fetch(url);
         if (!res.ok) {
-            console.warn(`Foursquare API Error ${res.status} (${res.statusText})`);
-            // Attempt to read body for more details if possible
-            try {
-                const errBody = await res.text();
-                console.warn("Foursquare Error Details:", errBody);
-            } catch (e) { /* ignore */ }
+            console.warn(`Foursquare Proxy Error ${res.status}`);
             return [];
         }
 
@@ -155,30 +135,27 @@ export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => 
 };
 
 export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
-    if (!GOOGLE_PLACES_API_KEY) return [];
-
-    const url = 'https://places.googleapis.com/v1/places:searchText';
+    // Proxy call
+    const url = 'http://localhost:3001/api/google-places';
 
     try {
         const response = await fetch(url, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-                'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.types,places.id,places.editorialSummary'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 textQuery: interest,
-                locationBias: {
-                    circle: {
-                        center: { latitude: lat, longitude: lng },
-                        radius: radius
-                    }
-                }
+                center: { lat, lng },
+                radius: radius
             })
         });
 
-        if (!response.ok) return [];
+        if (!response.ok) {
+            const errText = await response.text();
+            console.warn(`Google Places Proxy Failed: ${response.status}`, errText);
+            return [];
+        }
 
         const data = await response.json();
 
@@ -188,6 +165,7 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
                 lat: place.location?.latitude,
                 lng: place.location?.longitude,
                 description: place.editorialSummary?.text || place.types?.map(t => t.replace('_', ' ')).slice(0, 3).join(', ') || 'Place of Interest',
+                address: place.formattedAddress,
                 id: `google-${place.id}`,
                 source: 'Google Places'
             }));
@@ -198,6 +176,7 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
 
     return [];
 }
+
 
 export const getCombinedPOIs = async (cityData, interestLine, cityName, constrainValueKm, sources) => {
     // Determine Radius in Meters

@@ -119,7 +119,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speakingId, onSpeak, onStopSpeech, isLoading, loadingText, loadingCount }) => {
+const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speakingId, onSpeak, onStopSpeech, isLoading, loadingText, loadingCount, onUpdatePoiDescription }) => {
     // Default center (Amsterdam)
     const defaultCenter = [52.3676, 4.9041];
     const [userSelectedStyle, setUserSelectedStyle] = useState('walking');
@@ -385,6 +385,26 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                                                     )}
                                                 </button>
+                                            </div>
+
+                                            {/* Length Controls (Popup) */}
+                                            <div className="flex gap-2 mb-2">
+                                                {[
+                                                    { id: 'short', label: 'Brief', icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
+                                                    { id: 'medium', label: 'Standard', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
+                                                    { id: 'max', label: 'Detailed', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
+                                                ].map(opt => (
+                                                    <button
+                                                        key={opt.id}
+                                                        onClick={(e) => { e.stopPropagation(); onUpdatePoiDescription(poi, opt.id); }}
+                                                        className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-primary transition-colors border border-slate-200"
+                                                        title={opt.label}
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                                                            {opt.icon}
+                                                        </svg>
+                                                    </button>
+                                                ))}
                                             </div>
 
                                             {/* UI FILTER: Block generic city descriptions */}

@@ -14,9 +14,10 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
  * 7. Ranking & Visibility
  */
 
+
 export class PoiIntelligence {
     constructor(config) {
-        this.config = config; // Keys, City Context, Language
+        this.config = config; // City Context, Language
         this.trustScores = {
             "wikipedia": 0.9,
             "google_kg": 0.85,
@@ -25,11 +26,7 @@ export class PoiIntelligence {
             "duckduckgo": 0.6,
             "generic_web": 0.4
         };
-
-        if (this.config.geminiKey) {
-            this.genAI = new GoogleGenerativeAI(this.config.geminiKey);
-            this.model = this.genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
-        }
+        // SDK initialization removed.
     }
 
     /**
@@ -47,28 +44,27 @@ export class PoiIntelligence {
         // We feed the raw signals into Gemini to produce a friendly, factual summary.
         let bestData = null;
 
-        if (this.model) {
-            try {
-                // Only call Gemini if we actually found something, OR if we want it to use internal knowledge (risky per rules)
-                // The rule says "Only use provided data...".
-                // If signals is empty, we probably shouldn't ask Gemini to hallucinate.
-                // However, maybe it knows it? Rule: "If information is unknown... return null".
-                // Let's passed analyzed signals.
-                const geminiResult = await this.fetchGeminiDescription(candidate, analyzed);
-                if (geminiResult && geminiResult.description && geminiResult.description !== 'unknown') {
-                    // Extract link from signals if Gemini didn't find a better one
-                    const fallbackLink = this.resolveConflicts(analyzed).link;
+        // Check if proxy is available via simple health check or just try
+        try {
+            // Only call Gemini if we actually found something, OR if we want it to use internal knowledge (risky per rules)
+            // The rule says "Only use provided data...".
+            // If signals is empty, we probably shouldn't ask Gemini to hallucinate.
+            // However, maybe it knows it? Rule: "If information is unknown... return null".
+            // Let's passed analyzed signals.
+            const geminiResult = await this.fetchGeminiDescription(candidate, analyzed, this.config.lengthMode || 'medium');
+            if (geminiResult && geminiResult.description && geminiResult.description !== 'unknown') {
+                // Extract link from signals if Gemini didn't find a better one
+                const fallbackLink = this.resolveConflicts(analyzed).link;
 
-                    bestData = {
-                        description: geminiResult.description,
-                        link: geminiResult.link || fallbackLink,
-                        source: "Gemini Intelligence",
-                        confidence: 0.95
-                    };
-                }
-            } catch (e) {
-                console.warn("Gemini Synthesis Failed:", e);
+                bestData = {
+                    description: geminiResult.description,
+                    link: geminiResult.link || fallbackLink,
+                    source: "Gemini Intelligence",
+                    confidence: 0.95
+                };
             }
+        } catch (e) {
+            console.warn("Gemini Synthesis Failed:", e);
         }
 
         // Fallback to heuristic resolution if Gemini functionality is missing, failed, or returned nothing
@@ -119,17 +115,24 @@ export class PoiIntelligence {
 
     // --- Gemini Integration ---
 
-    async fetchGeminiDescription(poi, signals) {
-        if (!this.config.geminiKey) return null;
-
+    async fetchGeminiDescription(poi, signals, lengthMode = 'medium') {
         // Construct Context from Signals
         const contextData = signals.length > 0
             ? signals.map(s => `[Source: ${s.source}] ${s.content} (Link: ${s.link})`).join('\n\n')
             : "No external data signals found.";
 
+        // Length instruction based on mode
+        let lengthInstruction = "Length: 2-4 sentences max."; // Default/Medium
+        if (lengthMode === 'short') {
+            lengthInstruction = "Length: Extremely short. Exactly 2 concise sentences.";
+        } else if (lengthMode === 'max') {
+            lengthInstruction = "Length: Detailed and comprehensive. 8-10 sentences. detailed history, significance, and visitor tips.";
+        }
+
         const prompt = `
-You are a helpful, factual travel guide assistant for the City Explorer app.
+You are a helpful, factual travel guide assistant for the CityExplorer app.
 Your task is to write a description for the Point of Interest (POI): "${poi.name}" located in or near "${this.config.city}".
+Location Address: ${poi.address || 'Unknown'}
 Location Coordinates: Latitude ${poi.lat}, Longitude ${poi.lng || poi.lon}.
 Category/Type Hints: ${poi.description || 'Unknown'}
 
@@ -146,6 +149,7 @@ ${contextData}
      3. Use BOTH the English name and the Local name to search your internal knowledge base.
    - If you do not have high-confidence information about this specific place, return "unknown".
    - NEVER invent unverifiable details.
+   - **NO RAW COORDINATES**: Do NOT include numeric latitude/longitude coordinates in the description (e.g. "Located at 50.123, 4.567"). Instead, mention the street name, square, or neighborhood if valid.
    - Do not guess prices. Opening hours are okay if generally known (e.g. "open daily").
 
 2. **LANGUAGE**:
@@ -155,8 +159,8 @@ ${contextData}
    - Tone: Friendly, helpful, factual. Like a local guide.
    - Avoid unnecessary adjectives or hype.
    - Format: Short, easy-to-scan paragraphs.
-   - Length: 2-4 sentences max.
-   - **Accessible Images**: If you describe a visual aspect, you can include an alt_text suggestion in brackets like [Alt: description] at the end, max 15 words.
+   - ${lengthInstruction}
+
    - If the input data contains a URL/Link, extract the best one to include in your JSON response (not in the text).
 
 **Output Format:**
@@ -167,45 +171,46 @@ Return ONLY valid JSON with this structure:
 }
 `;
 
-        console.log("--- GEMINI DEBUG PROMPT ---");
-        console.log(prompt);
-        console.log("---------------------------");
+        // console.log("--- GEMINI DEBUG PROMPT ---");
+        // console.log(prompt);
+        // console.log("---------------------------");
 
         try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.config.geminiKey}`;
-
+            // Using Local Proxy
+            const url = 'http://localhost:3001/api/gemini';
             const response = await fetch(url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{ text: prompt }]
-                    }]
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
             });
 
             if (!response.ok) {
                 const errText = await response.text();
-                console.error("Gemini API Error:", response.status, errText);
+                console.error("Gemini Proxy Error:", response.status, errText);
                 return null;
             }
 
             const data = await response.json();
-            // Parse response structure: candidates[0].content.parts[0].text
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            const text = data.text;
 
             if (!text) return null;
 
             // Clean markdown code blocks if present
-            const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(jsonStr);
+            const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').replace(/\[Alt:[^\]]*\]/g, '').trim();
+            try {
+                return JSON.parse(jsonStr);
+            } catch (e) {
+                // Sometime Gemini returns just the text if it fails to format as JSON, 
+                // but our prompt specifically requests JSON.
+                console.warn("Gemini JSON parse error, raw text:", text);
+                return null;
+            }
         } catch (e) {
-            console.warn("Gemini Parsing/Fetch Error", e);
+            console.warn("Gemini Proxy Fetch Error", e);
             return null;
         }
     }
+
 
     // --- Signal Fetchers ---
 
@@ -443,6 +448,6 @@ Return ONLY valid JSON with this structure:
     }
 
     cleanText(text) {
-        return text.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '').split('. ').slice(0, 6).join('. ') + '.';
+        return text.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '').replace(/\[Alt:[^\]]*\]/g, '').split('. ').slice(0, 6).join('. ') + '.';
     }
 }

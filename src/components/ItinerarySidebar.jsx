@@ -9,7 +9,7 @@ const SidebarInput = ({
     searchSources, setSearchSources,
     onJourneyStart, onCityValidation, onUseCurrentLocation,
     language, nearbyCities, isAddingMode, searchMode, setSearchMode,
-    shouldAutoFocusInterests, setShouldAutoFocusInterests
+    shouldAutoFocusInterests, setShouldAutoFocusInterests, onLoad
 }) => {
 
     // Translations
@@ -23,7 +23,7 @@ const SidebarInput = ({
             switch_dur: "Switch to Duration",
             switch_dist: "Switch to Distance",
             sources_label: "Search Sources",
-            journey: "City Explorer",
+            journey: "CityExplorer",
             dist: "Distance",
             budget: "Budget",
             startNew: "New Search",
@@ -55,7 +55,7 @@ const SidebarInput = ({
             switch_dur: "Wissel naar Tijd",
             switch_dist: "Wissel naar Afstand",
             sources_label: "Zoekbronnen",
-            journey: "Jouw Stadsreis",
+            journey: "CityExplorer",
             dist: "Afstand",
             budget: "Budget",
             startNew: "Nieuwe Zoekopdracht",
@@ -103,6 +103,32 @@ const SidebarInput = ({
     return (
         <div className="space-y-6 pt-4">
 
+
+            {/* Load Saved Journey (Top) */}
+            {!isAddingMode && (
+                <div className="relative group">
+                    <input
+                        type="file"
+                        accept=".json"
+                        onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                                if (onLoad) onLoad(e.target.files[0]);
+                                e.target.value = null;
+                            }
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                    />
+                    <button
+                        type="button"
+                        className="w-full flex items-center justify-center gap-2 bg-slate-800/40 hover:bg-slate-700 text-slate-400 hover:text-white py-2 rounded-lg border border-white/5 hover:border-white/20 transition-all text-xs font-semibold uppercase tracking-wider mb-2"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        {language === 'nl' ? 'Laad Opgeslagen Reis' : 'Load Saved Journey'}
+                    </button>
+                </div>
+            )}
 
             {/* City Input */}
             <div className="space-y-2">
@@ -292,6 +318,8 @@ const SidebarInput = ({
                 </span>
             </button>
 
+
+
             <div className="flex flex-wrap gap-2 justify-center text-xs text-slate-500 pt-2">
                 <span>{nearbyCities.length > 0 ? text.nearby : text.pop}</span>
                 {(nearbyCities.length > 0 ? nearbyCities : ['London', 'Paris', 'Tokyo', 'Amsterdam']).map(c => (
@@ -324,14 +352,18 @@ const ItinerarySidebar = ({
     disambiguationOptions, onDisambiguationSelect, onDisambiguationCancel,
     searchMode, setSearchMode,
     isOpen, setIsOpen,
-    currentTheme, setCurrentTheme,
-    currentBgTheme, setCurrentBgTheme
+    onUpdatePoiDescription,
+    onSave, onLoad,
+    descriptionLength, setDescriptionLength,
+    activeTheme, setActiveTheme, availableThemes
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
     const [isAddingMode, setIsAddingMode] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [shouldAutoFocusInterests, setShouldAutoFocusInterests] = useState(false);
+    const [expandedPoi, setExpandedPoi] = useState(null);
+    const [showSources, setShowSources] = useState(false);
 
     // Fetch Nearby Cities (Generic logic moved here)
     useEffect(() => {
@@ -352,7 +384,7 @@ const ItinerarySidebar = ({
 
     const t = {
         en: {
-            journey: "City Explorer",
+            journey: "CityExplorer",
             dist: "Distance",
             budget: "Budget",
             startNew: "New Search",
@@ -362,7 +394,7 @@ const ItinerarySidebar = ({
             add: "Add Spots"
         },
         nl: {
-            journey: "Jouw Stadsreis",
+            journey: "CityExplorer",
             dist: "Afstand",
             budget: "Budget",
             startNew: "Nieuwe Zoekopdracht",
@@ -465,80 +497,102 @@ const ItinerarySidebar = ({
                                 </div>
                             </div>
 
-                            {/* Search Sources */}
+                            {/* App Theme */}
+                            <div className="mb-6 space-y-2">
+                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{language === 'nl' ? 'Thema' : 'App Theme'}</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {availableThemes && Object.values(availableThemes).map(t => (
+                                        <button
+                                            key={t.id}
+                                            onClick={() => setActiveTheme(t.id)}
+                                            className={`group relative p-3 rounded-xl border transition-all overflow-hidden ${activeTheme === t.id ? 'border-white/40 shadow-lg scale-[1.02]' : 'border-white/5 hover:border-white/20'}`}
+                                            style={{
+                                                background: `linear-gradient(135deg, ${t.colors.bgStart}, ${t.colors.bgEnd})`
+                                            }}
+                                        >
+                                            <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors" />
+
+                                            <div className="relative z-10 flex flex-col items-center gap-2">
+                                                {/* Primary Color Indicator */}
+                                                <div
+                                                    className="w-4 h-4 rounded-full shadow-lg border border-white/20"
+                                                    style={{ backgroundColor: t.colors.primary }}
+                                                />
+                                                <span className="text-[10px] font-bold text-white tracking-wide shadow-black drop-shadow-md leading-none">
+                                                    {language === 'nl' ? t.label.nl : t.label.en}
+                                                </span>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Description Length Settings */}
+                            <div className="mb-6 space-y-2">
+                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{language === 'nl' ? 'Lengte Beschrijving POI' : 'POI Description Length'}</label>
+                                <div className="flex bg-slate-800/50 p-1 rounded-lg gap-1">
+                                    {[
+                                        { id: 'short', label: { en: 'Brief', nl: 'Kort' }, icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
+                                        { id: 'medium', label: { en: 'Standard', nl: 'Standaard' }, icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
+                                        { id: 'max', label: { en: 'Detailed', nl: 'Gedetailleerd' }, icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.id}
+                                            onClick={() => setDescriptionLength(opt.id)}
+                                            className={`flex-1 flex flex-col items-center justify-center py-2 rounded-md transition-all ${descriptionLength === opt.id ? 'bg-primary text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mb-1" viewBox="0 0 24 24" fill="currentColor">
+                                                {opt.icon}
+                                            </svg>
+                                            <span className="text-[10px] font-medium">{language === 'nl' ? opt.label.nl : opt.label.en}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Search Sources (Collapsed) */}
                             <div className="space-y-3">
-                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{text.sources_label || "Search Sources"}</label>
-                                <div className="space-y-2">
-                                    {/* OSM */}
-                                    <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.osm ? 'bg-blue-600/10 border-blue-500/50' : 'bg-slate-800/60 border-white/5'}`}>
-                                        <span className={`font-medium ${searchSources.osm ? 'text-blue-300' : 'text-slate-400'}`}>OpenStreetMap</span>
-                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.osm ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}`}>
-                                            {searchSources.osm && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                                        </div>
-                                        <input type="checkbox" className="hidden" checked={searchSources.osm} onChange={(e) => setSearchSources({ ...searchSources, osm: e.target.checked })} />
-                                    </label>
-                                    {/* Foursquare */}
-                                    <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.foursquare ? 'bg-pink-600/10 border-pink-500/50' : 'bg-slate-800/60 border-white/5'}`}>
-                                        <span className={`font-medium ${searchSources.foursquare ? 'text-pink-300' : 'text-slate-400'}`}>Foursquare</span>
-                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.foursquare ? 'bg-pink-500 border-pink-500' : 'border-slate-600'}`}>
-                                            {searchSources.foursquare && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                                        </div>
-                                        <input type="checkbox" className="hidden" checked={searchSources.foursquare} onChange={(e) => setSearchSources({ ...searchSources, foursquare: e.target.checked })} />
-                                    </label>
-                                    {/* Google */}
-                                    <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.google ? 'bg-green-600/10 border-green-500/50' : 'bg-slate-800/60 border-white/5'}`}>
-                                        <span className={`font-medium ${searchSources.google ? 'text-green-300' : 'text-slate-400'}`}>Google Places</span>
-                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.google ? 'bg-green-500 border-green-500' : 'border-slate-600'}`}>
-                                            {searchSources.google && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                                        </div>
-                                        <input type="checkbox" className="hidden" checked={searchSources.google} onChange={(e) => setSearchSources({ ...searchSources, google: e.target.checked })} />
-                                    </label>
-                                </div>
+                                <button
+                                    onClick={() => setShowSources(!showSources)}
+                                    className="flex items-center justify-between w-full text-xs uppercase tracking-wider text-slate-500 font-semibold hover:text-white transition-colors"
+                                >
+                                    {text.sources_label || "Search Sources"}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${showSources ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                    </svg>
+                                </button>
+
+                                {showSources && (
+                                    <div className="space-y-2 animate-in slide-in-from-top-2 fade-in">
+                                        {/* OSM */}
+                                        <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.osm ? 'bg-blue-600/10 border-blue-500/50' : 'bg-slate-800/60 border-white/5'}`}>
+                                            <span className={`font-medium ${searchSources.osm ? 'text-blue-300' : 'text-slate-400'}`}>OpenStreetMap</span>
+                                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.osm ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}`}>
+                                                {searchSources.osm && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                                            </div>
+                                            <input type="checkbox" className="hidden" checked={searchSources.osm} onChange={(e) => setSearchSources({ ...searchSources, osm: e.target.checked })} />
+                                        </label>
+                                        {/* Foursquare */}
+                                        <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.foursquare ? 'bg-pink-600/10 border-pink-500/50' : 'bg-slate-800/60 border-white/5'}`}>
+                                            <span className={`font-medium ${searchSources.foursquare ? 'text-pink-300' : 'text-slate-400'}`}>Foursquare</span>
+                                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.foursquare ? 'bg-pink-500 border-pink-500' : 'border-slate-600'}`}>
+                                                {searchSources.foursquare && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                                            </div>
+                                            <input type="checkbox" className="hidden" checked={searchSources.foursquare} onChange={(e) => setSearchSources({ ...searchSources, foursquare: e.target.checked })} />
+                                        </label>
+                                        {/* Google */}
+                                        <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.google ? 'bg-green-600/10 border-green-500/50' : 'bg-slate-800/60 border-white/5'}`}>
+                                            <span className={`font-medium ${searchSources.google ? 'text-green-300' : 'text-slate-400'}`}>Google Places</span>
+                                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.google ? 'bg-green-500 border-green-500' : 'border-slate-600'}`}>
+                                                {searchSources.google && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                                            </div>
+                                            <input type="checkbox" className="hidden" checked={searchSources.google} onChange={(e) => setSearchSources({ ...searchSources, google: e.target.checked })} />
+                                        </label>
+                                    </div>
+                                )}
                             </div>
 
 
-                            {/* FG Color Theme */}
-                            <div className="mb-6 space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{language === 'nl' ? 'Accent Kleur' : 'Accent Color'}</label>
-                                <div className="grid grid-cols-5 gap-2">
-                                    {[
-                                        { id: 'indigo', color: 'bg-indigo-500' },
-                                        { id: 'emerald', color: 'bg-emerald-500' },
-                                        { id: 'rose', color: 'bg-rose-500' },
-                                        { id: 'amber', color: 'bg-amber-500' },
-                                        { id: 'cyan', color: 'bg-cyan-500' }
-                                    ].map((theme) => (
-                                        <button
-                                            key={theme.id}
-                                            onClick={() => setCurrentTheme(theme.id)}
-                                            className={`h-10 rounded-lg border-2 transition-all ${currentTheme === theme.id ? 'border-white scale-110 shadow-lg' : 'border-transparent hover:scale-105 opacity-80 hover:opacity-100'} ${theme.color}`}
-                                            title={theme.id.charAt(0).toUpperCase() + theme.id.slice(1)}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* BG Color Theme */}
-                            <div className="mb-6 space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{language === 'nl' ? 'Achtergrond Kleur' : 'Background Color'}</label>
-                                <div className="grid grid-cols-6 gap-2">
-                                    {[
-                                        { id: 'slate', color: 'bg-slate-800' },
-                                        { id: 'forest', color: 'bg-[#022c22]' },
-                                        { id: 'wine', color: 'bg-[#4c0519]' },
-                                        { id: 'coffee', color: 'bg-[#451a03]' },
-                                        { id: 'ocean', color: 'bg-[#083344]' },
-                                        { id: 'midnight', color: 'bg-black' }
-                                    ].map((theme) => (
-                                        <button
-                                            key={theme.id}
-                                            onClick={() => setCurrentBgTheme(theme.id)}
-                                            className={`h-10 rounded-lg border-2 transition-all ${currentBgTheme === theme.id ? 'border-white scale-110 shadow-lg' : 'border-transparent hover:scale-105 opacity-80 hover:opacity-100'} ${theme.color}`}
-                                            title={theme.id.charAt(0).toUpperCase() + theme.id.slice(1)}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
 
                             {/* About Section */}
                             <div className="mt-8 pt-4 border-t border-white/10">
@@ -551,6 +605,10 @@ const ItinerarySidebar = ({
                                     <div className="flex justify-between items-center">
                                         <span className="text-slate-400 text-sm">Author</span>
                                         <span className="text-blue-400 text-sm font-medium">Geert Schepers</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400 text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
+                                        <span className="text-slate-300 text-sm font-medium">16 Jan 2026</span>
                                     </div>
                                 </div>
                             </div>
@@ -581,40 +639,74 @@ const ItinerarySidebar = ({
                         ) : showItinerary ? (
                             /* VIEW 2: Itinerary List */
                             <div className="space-y-3">
-                                {routeData.pois.map((poi, index) => (
-                                    <div
-                                        key={poi.id}
-                                        onClick={() => onPoiClick(poi)}
-                                        className="group relative bg-slate-800/40 hover:bg-slate-800/80 p-4 rounded-xl border border-white/5 hover:border-primary/30 transition-all cursor-pointer"
-                                    >
-                                        <div className="absolute top-4 left-4 w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold border border-primary/20 group-hover:bg-primary group-hover:text-white transition-colors">
-                                            {index + 1}
-                                        </div>
-                                        <div className="pl-10">
-                                            <h3 className="font-semibold text-slate-100 group-hover:text-primary transition-colors line-clamp-1">{poi.name}</h3>
-                                            <div className="text-sm text-slate-400 capitalize mt-1 pr-6">
-                                                {(() => {
-                                                    const d = poi.description || "";
-                                                    const dLow = d.toLowerCase();
-                                                    const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
-                                                    return isBad ? (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available.") : (d || text.poi);
-                                                })()}
-                                            </div>
-                                        </div>
-
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
-                                            className={`absolute top-4 right-4 p-2 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
-                                            title="Read Aloud"
+                                {routeData.pois.map((poi, index) => {
+                                    const isExpanded = expandedPoi === poi.id;
+                                    return (
+                                        <div
+                                            key={poi.id}
+                                            onClick={() => {
+                                                setExpandedPoi(isExpanded ? null : poi.id);
+                                                onPoiClick(poi);
+                                            }}
+                                            className={`group relative bg-slate-800/40 hover:bg-slate-800/80 p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-slate-800/80' : 'border-white/5 hover:border-primary/30'}`}
                                         >
-                                            {speakingId === poi.id ? (
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                                            ) : (
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border transition-colors ${isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white'}`}>
+                                                    {index + 1}
+                                                </div>
+                                                <h3 className={`font-semibold transition-colors line-clamp-1 ${isExpanded ? 'text-primary' : 'text-slate-100 group-hover:text-primary'}`}>
+                                                    {poi.name}
+                                                </h3>
+                                            </div>
+
+                                            {/* Expandable Content */}
+                                            {isExpanded && (
+                                                <div className="mt-3 pl-9 animate-in slide-in-from-top-2 fade-in duration-200">
+                                                    {/* Length Controls */}
+                                                    <div className="flex gap-2 mb-3">
+                                                        {[
+                                                            { id: 'short', label: 'Brief', icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
+                                                            { id: 'medium', label: 'Standard', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
+                                                            { id: 'max', label: 'Detailed', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
+                                                        ].map(opt => (
+                                                            <button
+                                                                key={opt.id}
+                                                                onClick={(e) => { e.stopPropagation(); onUpdatePoiDescription(poi, opt.id); }}
+                                                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-transparent hover:border-white/10"
+                                                                title={opt.label}
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                                                                    {opt.icon}
+                                                                </svg>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+
+                                                    <div className="text-sm text-slate-400 capitalize pr-8 leading-relaxed">
+                                                        {(() => {
+                                                            const d = poi.description || "";
+                                                            const dLow = d.toLowerCase();
+                                                            const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
+                                                            return isBad ? (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available.") : (d || text.poi);
+                                                        })()}
+                                                    </div>
+
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
+                                                        className={`absolute top-4 right-4 p-2 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
+                                                        title="Read Aloud"
+                                                    >
+                                                        {speakingId === poi.id ? (
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                                        ) : (
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                                        )}
+                                                    </button>
+                                                </div>
                                             )}
-                                        </button>
-                                    </div>
-                                ))}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         ) : (
                             /* VIEW 3: Input Form (Start or Add) */
@@ -645,6 +737,7 @@ const ItinerarySidebar = ({
                                     setSearchMode={setSearchMode}
                                     shouldAutoFocusInterests={shouldAutoFocusInterests}
                                     setShouldAutoFocusInterests={setShouldAutoFocusInterests}
+                                    onLoad={onLoad}
                                 />
                             </div>
                         )}
@@ -663,25 +756,41 @@ const ItinerarySidebar = ({
                                     {autoAudio ? "Auto-Audio ON" : "Auto-Audio OFF"}
                                 </button>
                             </div>
-                            <button
-                                onClick={onReset}
-                                className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-red-900/30 text-slate-300 hover:text-red-400 py-3 rounded-xl border border-white/10 hover:border-red-500/30 transition-all font-medium"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                {text.startNew}
-                            </button>
-                            {/* Add Button */}
-                            <button
-                                onClick={() => { setIsAddingMode(true); setInterests(''); }}
-                                className="w-full flex items-center justify-center gap-2 bg-primary/20 hover:bg-primary/40 text-primary hover:text-white py-3 rounded-xl border border-primary/30 transition-all font-medium mt-2"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                                {text.add}
-                            </button>
+                            <div className="flex gap-2">
+                                {/* Reset (New Search) */}
+                                <button
+                                    onClick={onReset}
+                                    title={text.startNew}
+                                    className="flex-1 flex items-center justify-center p-3 bg-slate-800 hover:bg-red-900/30 text-slate-300 hover:text-red-400 rounded-xl border border-white/10 hover:border-red-500/30 transition-all group"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
+
+                                {/* Add Button */}
+                                <button
+                                    onClick={() => { setIsAddingMode(true); setInterests(''); }}
+                                    title={text.add}
+                                    className="flex-1 flex items-center justify-center p-3 bg-primary/20 hover:bg-primary/40 text-primary hover:text-white rounded-xl border border-primary/30 transition-all group"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                </button>
+
+                                {/* Save Button */}
+                                <button
+                                    onClick={onSave}
+                                    title={language === 'nl' ? "Opslaan" : "Save Journey"}
+                                    className="flex-1 flex items-center justify-center p-3 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 hover:text-white rounded-xl border border-emerald-500/30 transition-all group"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                                    </svg>
+                                </button>
+                            </div>
+
                         </div>
                     )}
                 </div>

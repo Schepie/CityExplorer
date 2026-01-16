@@ -7,21 +7,33 @@ import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from
 
 // Theme Definitions
 // Theme Definitions
-const FG_THEMES = {
-  indigo: { primary: '#6366f1', hover: '#4f46e5', accent: '#f472b6' },
-  emerald: { primary: '#10b981', hover: '#059669', accent: '#3b82f6' },
-  rose: { primary: '#f43f5e', hover: '#e11d48', accent: '#a855f7' },
-  amber: { primary: '#f59e0b', hover: '#d97706', accent: '#06b6d4' },
-  cyan: { primary: '#06b6d4', hover: '#0891b2', accent: '#f59e0b' }
-};
-
-const BG_THEMES = {
-  slate: { bgStart: '#0f172a', bgEnd: '#1e293b' }, // Default Dark Blue/Slate
-  forest: { bgStart: '#022c22', bgEnd: '#064e3b' }, // Dark Green
-  wine: { bgStart: '#4c0519', bgEnd: '#881337' },   // Dark Red
-  coffee: { bgStart: '#451a03', bgEnd: '#78350f' }, // Dark Brown
-  ocean: { bgStart: '#083344', bgEnd: '#164e63' },   // Dark Cyan/Blue
-  midnight: { bgStart: '#000000', bgEnd: '#111827' } // Pitch Black
+// Consolidated App Themes
+const APP_THEMES = {
+  tech: {
+    id: 'tech',
+    label: { en: 'Tech', nl: 'Tech' },
+    colors: { primary: '#6366f1', hover: '#4f46e5', accent: '#f472b6', bgStart: '#0f172a', bgEnd: '#1e293b' } // Indigo + Slate
+  },
+  nature: {
+    id: 'nature',
+    label: { en: 'Nature', nl: 'Natuur' },
+    colors: { primary: '#10b981', hover: '#059669', accent: '#3b82f6', bgStart: '#022c22', bgEnd: '#064e3b' } // Emerald + Forest
+  },
+  urban: {
+    id: 'urban',
+    label: { en: 'Urban', nl: 'Stads' },
+    colors: { primary: '#06b6d4', hover: '#0891b2', accent: '#f59e0b', bgStart: '#083344', bgEnd: '#164e63' } // Cyan + Ocean
+  },
+  sunset: {
+    id: 'sunset',
+    label: { en: 'Sunset', nl: 'Zonsondergang' },
+    colors: { primary: '#f43f5e', hover: '#e11d48', accent: '#a855f7', bgStart: '#4c0519', bgEnd: '#881337' } // Rose + Wine
+  },
+  warmth: {
+    id: 'warmth',
+    label: { en: 'Warmth', nl: 'Warmte' },
+    colors: { primary: '#f59e0b', hover: '#d97706', accent: '#06b6d4', bgStart: '#451a03', bgEnd: '#78350f' } // Amber + Coffee
+  }
 };
 
 
@@ -31,25 +43,25 @@ function App() {
   const [loadingText, setLoadingText] = useState('Exploring...');
   const [foundPoisCount, setFoundPoisCount] = useState(0);
   const [language, setLanguage] = useState('nl'); // 'en' or 'nl'
-  const [currentTheme, setCurrentTheme] = useState('indigo');
-  const [currentBgTheme, setCurrentBgTheme] = useState('slate');
+  const [activeTheme, setActiveTheme] = useState('tech');
+  const [descriptionLength, setDescriptionLength] = useState('medium'); // short, medium, max
 
   // Apply Theme Effect
   useEffect(() => {
     const root = document.documentElement;
-    const fg = FG_THEMES[currentTheme];
-    const bg = BG_THEMES[currentBgTheme];
+    const theme = APP_THEMES[activeTheme];
 
-    if (fg) {
-      root.style.setProperty('--primary', fg.primary);
-      root.style.setProperty('--primary-hover', fg.hover);
-      root.style.setProperty('--accent', fg.accent);
+    if (theme && theme.colors) {
+      const c = theme.colors;
+      root.style.setProperty('--primary', c.primary);
+      root.style.setProperty('--primary-hover', c.hover);
+      root.style.setProperty('--accent', c.accent);
+      root.style.setProperty('--bg-gradient-start', c.bgStart);
+      root.style.setProperty('--bg-gradient-end', c.bgEnd);
     }
-    if (bg) {
-      root.style.setProperty('--bg-gradient-start', bg.bgStart);
-      root.style.setProperty('--bg-gradient-end', bg.bgEnd);
-    }
-  }, [currentTheme, currentBgTheme]);
+  }, [activeTheme]);
+
+
 
   // Focused Location (for "Fly To" interaction)
   const [focusedLocation, setFocusedLocation] = useState(null);
@@ -79,6 +91,21 @@ function App() {
   // Sidebar Visibility State (Lifted)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // Re-enrich POIs when Description Length changes
+  useEffect(() => {
+    if (routeData && routeData.pois && routeData.pois.length > 0) {
+      console.log("Description length changed to:", descriptionLength);
+
+      setIsLoading(true);
+      setLoadingText(language === 'nl' ? 'Alle POI\'s aan het bijwerken...' : 'Updating all POIs...');
+
+      enrichBackground(routeData.pois, city, language, descriptionLength)
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+  }, [descriptionLength]); // Only trigger on length change
+
   // Haversine Distance Helper (km)
   const getDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Radius of the earth in km
@@ -90,6 +117,91 @@ function App() {
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c; // Distance in km
+  };
+
+  // Save Route
+  const handleSaveRoute = () => {
+    if (!routeData) return;
+    const dataToSave = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      city,
+      interests,
+      constraintType,
+      constraintValue,
+      isRoundtrip,
+      routeData,
+      descriptionLength
+    };
+    const blob = new Blob([JSON.stringify(dataToSave, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `city_explorer_${city.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Load Route
+  const handleLoadRoute = async (file) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data.routeData) {
+        setCity(data.city || '');
+        setInterests(data.interests || '');
+        setConstraintType(data.constraintType || 'distance');
+        setConstraintValue(data.constraintValue || 5);
+        setIsRoundtrip(data.isRoundtrip !== undefined ? data.isRoundtrip : true);
+        setDescriptionLength(data.descriptionLength || 'medium');
+        setRouteData(data.routeData);
+        setFoundPoisCount(data.routeData.pois ? data.routeData.pois.length : 0);
+        setIsLoading(false);
+      } else {
+        alert("Invalid file format");
+      }
+    } catch (e) {
+      console.error("Load error", e);
+      alert("Failed to load file");
+    }
+  };
+
+  // Main Enrichment Logic (Moved to top level for reuse)
+  const enrichBackground = async (pois, cityName, lang, lengthMode) => {
+    // This implements the requested 7-Step "POI Intelligence" pipeline.
+    const engine = new PoiIntelligence({
+      city: cityName,
+      language: lang,
+      lengthMode: lengthMode // Pass length mode to engine config
+    });
+
+    for (const poi of pois) {
+      try {
+        // Step 1-7: Resolve Identity, Gather Signals, Score Trust, and Rank.
+        const enriched = await engine.evaluatePoi(poi);
+
+        // Update State Incrementally
+        setRouteData((prev) => {
+          if (!prev || !prev.pois) return prev; // Safety check if user navigated away
+          return {
+            ...prev,
+            pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false } : p)
+          };
+        });
+      } catch (err) {
+        console.warn(`POI Engine Failed for ${poi.name}:`, err);
+        // On failure, remove loading state
+        setRouteData((prev) => {
+          if (!prev || !prev.pois) return prev;
+          return {
+            ...prev,
+            pois: prev.pois.map(p => p.id === poi.id ? { ...p, isLoading: false, description: "Info unavailable" } : p)
+          };
+        });
+      }
+    }
   };
 
   // Wrapper for city setter to invalidate validation on edit
@@ -376,63 +488,57 @@ function App() {
 
     // Fallback: Google Custom Search JSON API (Programmable Search Engine)
     try {
-      const cx = import.meta.env.VITE_GOOGLE_SEARCH_CX;
-      const gKey = import.meta.env.VITE_GOOGLE_PLACES_KEY; // Using the same key used for Places
-
-      if (gKey && cx) {
-        // Construct query: Avoid duplicating city name if already in POI name
-        let fullQuery = query;
-        if (context && !query.toLowerCase().includes(context.toLowerCase())) {
-          fullQuery = `${query} ${context}`;
-        }
-
-        // Exclude social media to avoid "4287 likes" type descriptions. We want guide content.
-        // We want tourism sites, wikis, blogs.
-        fullQuery += " -site:facebook.com -site:instagram.com -site:twitter.com -site:linkedin.com";
-
-        // console.log("Attempting Google Fallback for:", fullQuery);
-
-        const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${gKey}&cx=${cx}&q=${encodeURIComponent(fullQuery)}&num=1`;
-        let gRes = await fetch(searchUrl);
-        let gData = await gRes.json();
-
-        // RETRY LOGIC: If context search failed, try raw name
-        if ((!gData.items || gData.items.length === 0) && fullQuery !== query) {
-          // console.log("Google Context Search failed. Retrying raw:", query);
-          const retryUrl = `https://www.googleapis.com/customsearch/v1?key=${gKey}&cx=${cx}&q=${encodeURIComponent(query)}&num=1`;
-          gRes = await fetch(retryUrl);
-          gData = await gRes.json();
-        }
-
-        if (gData.error) {
-          console.error("Google Search API Error:", gData.error.message);
-          // Alert user to config error
-          // alert(`Google Search Configuration Error: ${gData.error.message}`);
-        }
-
-        if (gData.items && gData.items.length > 0) {
-          const item = gData.items[0];
-          let bestText = item.snippet;
-
-          // Try to get a longer/better description from OpenGraph tags (meta description)
-          if (item.pagemap && item.pagemap.metatags && item.pagemap.metatags.length > 0) {
-            const tags = item.pagemap.metatags[0];
-            if (tags['og:description'] && tags['og:description'].length > bestText.length) {
-              bestText = tags['og:description'];
-            } else if (tags['description'] && tags['description'].length > bestText.length) {
-              bestText = tags['description'];
-            }
-          }
-
-          // Clean up text
-          const finalDesc = bestText.replace(/^\w{3} \d{1,2}, \d{4} \.\.\. /g, '').replace(/\n/g, ' ');
-          return { description: finalDesc, link: item.link, source: "Web Result" };
-        } else {
-          return null;
-        }
-      } else {
-        // console.warn("Missing Google Search Keys");
+      // Construct query: Avoid duplicating city name if already in POI name
+      let fullQuery = query;
+      if (context && !query.toLowerCase().includes(context.toLowerCase())) {
+        fullQuery = `${query} ${context}`;
       }
+
+      // Exclude social media to avoid "4287 likes" type descriptions. We want guide content.
+      // We want tourism sites, wikis, blogs.
+      fullQuery += " -site:facebook.com -site:instagram.com -site:twitter.com -site:linkedin.com";
+
+      // Call Proxy
+      // We rely on the server to have the API KEY and CX configured.
+      const searchUrl = `http://localhost:3001/api/google-search?q=${encodeURIComponent(fullQuery)}`;
+
+      let gRes = await fetch(searchUrl);
+      let gData = await gRes.json();
+
+      // RETRY LOGIC: If context search failed, try raw name
+      // (If server returned empty items)
+      if ((!gData.items || gData.items.length === 0) && fullQuery !== query) {
+        // console.log("Google Context Search failed. Retrying raw:", query);
+        const retryUrl = `http://localhost:3001/api/google-search?q=${encodeURIComponent(query)}`;
+        gRes = await fetch(retryUrl);
+        gData = await gRes.json();
+      }
+
+      if (gData.error) {
+        console.error("Google Search Proxy Error:", gData.error.message);
+      }
+
+      if (gData.items && gData.items.length > 0) {
+        const item = gData.items[0];
+        let bestText = item.snippet;
+
+        // Try to get a longer/better description from OpenGraph tags (meta description)
+        if (item.pagemap && item.pagemap.metatags && item.pagemap.metatags.length > 0) {
+          const tags = item.pagemap.metatags[0];
+          if (tags['og:description'] && tags['og:description'].length > bestText.length) {
+            bestText = tags['og:description'];
+          } else if (tags['description'] && tags['description'].length > bestText.length) {
+            bestText = tags['description'];
+          }
+        }
+
+        // Clean up text
+        const finalDesc = bestText.replace(/^\w{3} \d{1,2}, \d{4} \.\.\. /g, '').replace(/\n/g, ' ');
+        return { description: finalDesc, link: item.link, source: "Web Result" };
+      } else {
+        return null;
+      }
+
     } catch (e) {
       console.warn("Google Search fallback failed", e);
     }
@@ -976,9 +1082,7 @@ function App() {
       // This implements the requested 7-Step "POI Intelligence" pipeline.
       const engine = new PoiIntelligence({
         city: city,
-        language: language,
-        googleKey: import.meta.env.VITE_GOOGLE_PLACES_KEY,
-        geminiKey: import.meta.env.VITE_GEMINI_API_KEY
+        language: language
       });
 
       // --- OPTIMIZATION: Show Map Immediately ---
@@ -1001,39 +1105,10 @@ function App() {
       setIsSidebarOpen(false); // Close sidebar immediately
 
       // 2. Background Process: Enrich iteratively
-      // We do this WITHOUT awaiting the loop here to block UI, but since we are in an async function aimed at "loading",
-      // we actually just let the state updates drive the UI.
+      // We do this WITHOUT awaiting the loop here to block UI.
+      enrichBackground(selectedPois, cityData.name, language, descriptionLength);
 
-      const enrichBackground = async () => {
-        for (const poi of selectedPois) {
-          try {
-            // Step 1-7: Resolve Identity, Gather Signals, Score Trust, and Rank.
-            const enriched = await engine.evaluatePoi(poi);
 
-            // Update State Incrementally
-            setRouteData((prev) => {
-              if (!prev || !prev.pois) return prev; // Safety check if user navigated away
-              return {
-                ...prev,
-                pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false } : p)
-              };
-            });
-          } catch (err) {
-            console.warn(`POI Engine Failed for ${poi.name}:`, err);
-            // On failure, remove loading state
-            setRouteData((prev) => {
-              if (!prev || !prev.pois) return prev;
-              return {
-                ...prev,
-                pois: prev.pois.map(p => p.id === poi.id ? { ...p, isLoading: false, description: "Info unavailable" } : p)
-              };
-            });
-          }
-        }
-      };
-
-      // Start background enrichment (fire and forget)
-      enrichBackground();
 
     } catch (err) {
       console.error("Error fetching POIs", err);
@@ -1090,6 +1165,39 @@ function App() {
     }
   };
 
+  const handleUpdatePoiDescription = async (poi, lengthMode) => {
+    // 1. Mark as loading (optional, or optimistically update UI inside Sidebar)
+    console.log("Updating POI", poi.name, "to length:", lengthMode);
+
+    // Optimistic UI Update: Show "Updating..."
+    setRouteData((prev) => {
+      if (!prev || !prev.pois) return prev;
+      return {
+        ...prev,
+        pois: prev.pois.map(p => p.id === poi.id ? { ...p, description: language === 'nl' ? 'Bezig met bijwerken...' : 'Updating...' } : p)
+      };
+    });
+
+    const engine = new PoiIntelligence({
+      city: city,
+      language: language,
+      lengthMode: lengthMode
+    });
+
+    try {
+      const enriched = await engine.evaluatePoi(poi);
+      setRouteData((prev) => {
+        if (!prev || !prev.pois) return prev;
+        return {
+          ...prev,
+          pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false } : p)
+        };
+      });
+    } catch (err) {
+      console.warn("POI update failed", err);
+    }
+  };
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-900 text-white relative">
       {/* Journey Input Overlay */}
@@ -1107,6 +1215,7 @@ function App() {
           isLoading={isLoading}
           loadingText={loadingText}
           loadingCount={foundPoisCount}
+          onUpdatePoiDescription={handleUpdatePoiDescription}
         />
       </div>
 
@@ -1143,10 +1252,15 @@ function App() {
         setSearchMode={setSearchMode}
         isOpen={isSidebarOpen}
         setIsOpen={setIsSidebarOpen}
-        currentTheme={currentTheme}
-        setCurrentTheme={setCurrentTheme}
-        currentBgTheme={currentBgTheme}
-        setCurrentBgTheme={setCurrentBgTheme}
+        onUpdatePoiDescription={handleUpdatePoiDescription}
+        descriptionLength={descriptionLength}
+        setDescriptionLength={setDescriptionLength}
+
+        activeTheme={activeTheme}
+        setActiveTheme={setActiveTheme}
+        availableThemes={APP_THEMES}
+        onSave={handleSaveRoute}
+        onLoad={handleLoadRoute}
       />
 
       {/* Refinement Modal */}
