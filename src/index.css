@@ -142,3 +142,8 @@ body {
   animation: pulsate 2s ease-out infinite;
   z-index: -1;
 }
+
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}

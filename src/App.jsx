@@ -45,6 +45,7 @@ function App() {
   const [language, setLanguage] = useState('nl'); // 'en' or 'nl'
   const [activeTheme, setActiveTheme] = useState('tech');
   const [descriptionLength, setDescriptionLength] = useState('medium'); // short, medium, max
+  const [isBackgroundUpdating, setIsBackgroundUpdating] = useState(false);
 
   // Apply Theme Effect
   useEffect(() => {
@@ -96,12 +97,12 @@ function App() {
     if (routeData && routeData.pois && routeData.pois.length > 0) {
       console.log("Description length changed to:", descriptionLength);
 
-      setIsLoading(true);
-      setLoadingText(language === 'nl' ? 'Alle POI\'s aan het bijwerken...' : 'Updating all POIs...');
+      setIsBackgroundUpdating(true);
+      // We do not set isLoading(true) here anymore, to allow user interaction.
 
       enrichBackground(routeData.pois, city, language, descriptionLength)
         .finally(() => {
-          setIsLoading(false);
+          setIsBackgroundUpdating(false);
         });
     }
   }, [descriptionLength]); // Only trigger on length change
@@ -1201,6 +1202,17 @@ function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-900 text-white relative">
       {/* Journey Input Overlay */}
+
+      {/* Background Update Indicator */}
+      {isBackgroundUpdating && (
+        <div className="absolute top-0 left-0 right-0 z-[1000] h-1 bg-slate-800 w-full overflow-hidden">
+          <div className="h-full bg-blue-500 animate-[progress-indeterminate_1.5s_infinite_linear] origin-left w-full"></div>
+          <div className="absolute top-2 right-4 bg-slate-900/80 backdrop-blur text-xs px-3 py-1 rounded-full border border-blue-500/30 text-blue-200 shadow-lg flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+            {language === 'nl' ? 'Info bijwerken...' : 'Updating info...'}
+          </div>
+        </div>
+      )}
 
       {/* Map Area */}
       <div className={`absolute inset-0 z-0 h-full w-full visible`}>
