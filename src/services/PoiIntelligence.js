@@ -466,4 +466,3 @@ Return ONLY valid JSON with this structure:
         return text.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '').replace(/\[Alt:[^\]]*\]/g, '').split('. ').slice(0, limit).join('. ') + '.';
     }
 }
-}
