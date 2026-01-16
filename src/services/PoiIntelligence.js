@@ -250,9 +250,12 @@ Return ONLY valid JSON with this structure:
             // Regex name match (case insensitive)
             const safeName = poi.name.replace(/"/g, '\\"');
             const query = `[out:json][timeout:5];nwr(around:50,${poi.lat},${poi.lng})["name"~"${safeName}",i];out tags;`;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s Timeout client-side
             const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
-            const res = await fetch(url).then(r => {
+            const res = await fetch(url, { signal: controller.signal }).then(r => {
+                clearTimeout(timeoutId);
                 if (!r.ok) throw new Error(`Overpass status ${r.status}`);
                 return r.text();
             }).then(text => {
