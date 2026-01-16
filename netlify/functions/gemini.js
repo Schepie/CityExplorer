@@ -1,7 +1,7 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const GEMINI_KEY = process.env.GEMINI_KEY || process.env.VITE_GEMINI_KEY;
+const GEMINI_KEY = process.env.GEMINI_KEY || process.env.VITE_GEMINI_KEY || process.env.VITE_GEMINI_API_KEY;
 
 export const handler = async (event, context) => {
     // Only allow POST
