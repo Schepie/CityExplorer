@@ -185,8 +185,8 @@ Return ONLY valid JSON with this structure:
             });
 
             if (!response.ok) {
-                const errText = await response.text();
-                console.error("Gemini Proxy Error:", response.status, errText);
+                // Warning only, as we have fallbacks
+                console.warn(`Gemini AI unavailable (${response.status}): Check API Key configuration.`);
                 return null;
             }
 
@@ -291,7 +291,10 @@ Return ONLY valid JSON with this structure:
                     }
                 }
             }
-        } catch (e) { console.warn("Overpass Signal Lost", e); }
+        } catch (e) {
+            // Silent fail for optional signals
+            console.log(`Overpass signal skipped: ${e.message}`);
+        }
         return null;
     }
 
