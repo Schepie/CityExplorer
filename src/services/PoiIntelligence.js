@@ -252,7 +252,16 @@ Return ONLY valid JSON with this structure:
             const query = `[out:json][timeout:5];nwr(around:50,${poi.lat},${poi.lng})["name"~"${safeName}",i];out tags;`;
             const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
-            const res = await fetch(url).then(r => r.json());
+            const res = await fetch(url).then(r => {
+                if (!r.ok) throw new Error(`Overpass status ${r.status}`);
+                return r.text();
+            }).then(text => {
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    throw new Error("Overpass returned non-JSON (likely timeout/error page)");
+                }
+            });
 
             if (res.elements && res.elements.length > 0) {
                 // Find element with best tags
@@ -447,7 +456,14 @@ Return ONLY valid JSON with this structure:
         };
     }
 
-    cleanText(text) {
-        return text.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '').replace(/\[Alt:[^\]]*\]/g, '').split('. ').slice(0, 6).join('. ') + '.';
+    cleanText(text, limitOverride = null) {
+        if (this.config.lengthMode === 'max') {
+            // Return significantly more text for "Max" requests
+            return text.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '').replace(/\[Alt:[^\]]*\]/g, '');
+        }
+
+        const limit = limitOverride || (this.config.lengthMode === 'short' ? 2 : 6);
+        return text.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '').replace(/\[Alt:[^\]]*\]/g, '').split('. ').slice(0, limit).join('. ') + '.';
     }
+}
 }
