@@ -400,12 +400,10 @@ Return ONLY valid JSON with this structure:
 
     async fetchDuckDuckGo(name) {
         try {
-            // Note: DDG Instant Answer API does not support CORS. 
-            // This will likely fail in production browsers unless via proxy.
-            // We keep it for local dev or if a proxy is added later.
-            const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(name + " " + this.config.city)}&format=json&no_html=1&skip_disambig=1`;
+            // Use local proxy to avoid CORS errors
+            const url = `/api/ddg?q=${encodeURIComponent(name + " " + this.config.city)}`;
 
-            // Short timeout for DDG too
+            // Short timeout 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 2000);
 
@@ -424,8 +422,7 @@ Return ONLY valid JSON with this structure:
                 };
             }
         } catch (e) {
-            // Expected CORS failure in browser
-            // console.log("DDG signal skipped:", e.message); 
+            // Silent ignore
         }
         return null;
     }
