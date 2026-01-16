@@ -89,12 +89,12 @@ export class PoiIntelligence {
     async gatherSignals(poi) {
         const signals = [];
         const queries = [
-            // All external signals disabled per user request
-            // this.fetchLocalArchive(poi.name),
-            // this.fetchWikipedia(poi.name),
-            // this.fetchGoogleKnowledgeGraph(poi.name),
-            // this.fetchDuckDuckGo(poi.name),
-            // this.fetchOverpassTags(poi),
+            // Internal/External signals
+            this.fetchLocalArchive(poi.name),
+            this.fetchWikipedia(poi.name),
+            // this.fetchGoogleKnowledgeGraph(poi.name), // Keeps these disabled if keys are issue
+            this.fetchDuckDuckGo(poi.name),
+            this.fetchOverpassTags(poi),
         ];
 
         // Google Place Details disabled
