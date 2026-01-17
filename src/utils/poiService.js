@@ -89,11 +89,11 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) =
                     source: source,
                     // Capture local context for better IQ searches
                     address: item.display_name,
-                    location_context: item.address ? (item.address.city || item.address.town || item.address.village || item.address.municipality) : null,
+                    location_context: item.address ? (item.address.village || item.address.town || item.address.suburb || item.address.hamlet || item.address.city_district || item.address.city || item.address.municipality) : null,
                     address_components: item.address ? {
                         road: item.address.road || item.address.pedestrian || item.address.footway || item.address.path,
                         house_number: item.address.house_number,
-                        city: item.address.city || item.address.town || item.address.village
+                        city: item.address.village || item.address.town || item.address.suburb || item.address.city
                     } : null
                 }));
 

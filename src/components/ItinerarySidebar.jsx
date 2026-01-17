@@ -732,7 +732,10 @@ const ItinerarySidebar = ({
                                     <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">Language</label>
                                     <div className="flex bg-slate-800/80 p-1 rounded-lg border border-white/5">
                                         <button
-                                            onClick={() => setLanguage('en')}
+                                            onClick={() => {
+                                                setLanguage('en');
+                                                if (setVoiceSettings) setVoiceSettings({ variant: 'en', gender: 'female' });
+                                            }}
                                             className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${language === 'en' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
                                         >
                                             <svg viewBox="0 0 30 20" className="w-4 h-3 rounded-[2px] shadow-sm overflow-hidden">
@@ -745,7 +748,10 @@ const ItinerarySidebar = ({
                                             English
                                         </button>
                                         <button
-                                            onClick={() => setLanguage('nl')}
+                                            onClick={() => {
+                                                setLanguage('nl');
+                                                if (setVoiceSettings) setVoiceSettings({ variant: 'nl', gender: 'female' });
+                                            }}
                                             className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${language === 'nl' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
                                         >
                                             <svg viewBox="0 0 30 20" className="w-4 h-3 rounded-[2px] shadow-sm overflow-hidden">
@@ -758,54 +764,7 @@ const ItinerarySidebar = ({
                                     </div>
                                 </div>
 
-                                {/* 2. Voice Persona */}
-                                {voiceSettings && (
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Stem' : 'Voice Persona'}</label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {/* Region */}
-                                            <div className="flex bg-slate-800/80 p-1 rounded-lg border border-white/5">
-                                                <button
-                                                    onClick={() => setVoiceSettings(prev => ({ ...prev, variant: 'nl' }))}
-                                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${voiceSettings.variant === 'nl' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                                                >
-                                                    <svg viewBox="0 0 30 20" className="w-4 h-3 rounded-[2px] shadow-sm overflow-hidden">
-                                                        <rect width="30" height="20" fill="#21468B" />
-                                                        <rect width="30" height="13.3" fill="#FFFFFF" />
-                                                        <rect width="30" height="6.6" fill="#AE1C28" />
-                                                    </svg>
-                                                    NL
-                                                </button>
-                                                <button
-                                                    onClick={() => setVoiceSettings(prev => ({ ...prev, variant: 'be' }))}
-                                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${voiceSettings.variant === 'be' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                                                >
-                                                    <svg viewBox="0 0 30 20" className="w-4 h-3 rounded-[2px] shadow-sm overflow-hidden">
-                                                        <rect width="30" height="20" fill="#ED2939" />
-                                                        <rect width="20" height="20" fill="#FAE042" />
-                                                        <rect width="10" height="20" fill="#000000" />
-                                                    </svg>
-                                                    BE
-                                                </button>
-                                            </div>
-                                            {/* Gender */}
-                                            <div className="flex bg-slate-800/80 p-1 rounded-lg border border-white/5">
-                                                <button
-                                                    onClick={() => setVoiceSettings(prev => ({ ...prev, gender: 'male' }))}
-                                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${voiceSettings.gender === 'male' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                                                >
-                                                    {language === 'nl' ? 'Man' : 'Male'}
-                                                </button>
-                                                <button
-                                                    onClick={() => setVoiceSettings(prev => ({ ...prev, gender: 'female' }))}
-                                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${voiceSettings.gender === 'female' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                                                >
-                                                    {language === 'nl' ? 'Vrouw' : 'Fem'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+
 
                                 {/* 3. App Theme */}
                                 <div className="space-y-1">
@@ -899,15 +858,15 @@ const ItinerarySidebar = ({
                                 <div className="bg-slate-800/60 rounded-xl p-4 border border-white/5 space-y-3">
                                     <div className="flex justify-between items-center">
                                         <span className="text-slate-400 text-sm">Version</span>
-                                        <span className="text-white font-mono text-sm font-bold bg-white/10 px-2 py-0.5 rounded">v1.0.0</span>
+                                        <span className="text-slate-300 text-sm font-medium">v1.0.0</span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-slate-400 text-sm">Author</span>
-                                        <span className="text-blue-400 text-sm font-medium">Geert Schepers</span>
+                                        <span className="text-slate-300 text-sm font-medium">Geert Schepers</span>
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-slate-400 text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                        <span className="text-slate-300 text-sm font-medium">16 Jan 2026</span>
+                                        <span className="text-slate-300 text-sm font-medium">17 Jan 2026</span>
                                     </div>
                                 </div>
                             </div>

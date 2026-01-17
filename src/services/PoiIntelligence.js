@@ -94,7 +94,7 @@ export class PoiIntelligence {
             this.fetchLocalArchive(poi.name),
             this.fetchWikipedia(poi.name),
             // this.fetchGoogleKnowledgeGraph(poi.name), // Keeps these disabled if keys are issue
-            this.fetchGoogleSearch(poi.name),
+            this.fetchGoogleSearch(poi),
             this.fetchDuckDuckGo(poi.name),
             this.fetchOverpassTags(poi),
         ];
@@ -129,6 +129,8 @@ export class PoiIntelligence {
             lengthInstruction = "Length: Extremely short. Exactly 2 concise sentences.";
         } else if (lengthMode === 'max') {
             lengthInstruction = "Length: Detailed and comprehensive. 8-10 sentences. detailed history, significance, and visitor tips.";
+        } else if (lengthMode === 'retry') {
+            lengthInstruction = "CRITICAL INSTRUCTION: The user marked the previous description as WRONG/INACCURATE. You must strictly re-evaluate the signals. Do not provide generic fillers (e.g. 'although details are scarce...'). If the signals are weak, simply state 'Specific details for this location are currently unavailable' rather than hallucinating. If signals are good, prioritize them over general city knowledge. Length: 6-8 sentences.";
         }
 
         // Smart Address Construction
@@ -448,15 +450,60 @@ Return ONLY valid JSON with this structure:
 
     // --- Analysis & Conflict Resolution ---
 
-    async fetchGoogleSearch(name) {
+    async fetchGoogleSearch(poi) {
         try {
-            // Use local proxy
-            // Strategy 1: Simple Name + City Pattern (Per User Request)
-            // e.g. "'t Vlonderpiëke Zonhoven"
-            const relevantCity = poi.location_context || this.config.city;
-            const fullQuery = `${name} ${relevantCity}`;
-            let url = `/api/google-search?q=${encodeURIComponent(fullQuery)}&num=5`;
-            let res = await fetch(url).then(r => r.json());
+            const name = poi.name;
+            const cleanName = name.replace(/\s*\([^)]*\)/g, '').trim(); // Remove " (Het Vlonderpad)"
+            const context = poi.location_context || this.config.city || "Hasselt";
+
+            // Build progressive search queries
+            // Standard Mode: Try full name first.
+            let queriesToTry = [`${name} ${context}`];
+            if (cleanName !== name && cleanName.length > 2) {
+                queriesToTry.push(`${cleanName} ${context}`);
+            }
+
+            // Aggressive Search in 'Retry' Mode (triggered by Thumbs Down)
+            if (this.config.lengthMode === 'retry') {
+                const road = poi.address_components?.road || "";
+
+                // Prioritize the CLEAN name for retry, as it looks more like a human search
+                queriesToTry = [];
+                if (cleanName !== name && cleanName.length > 2) {
+                    queriesToTry.push(`${cleanName} ${context}`); // Best: "t Vlonderpiëke Zonhoven"
+                }
+                queriesToTry.push(`${name} ${context}`);
+
+                if (road) {
+                    if (cleanName !== name && cleanName.length > 2) queriesToTry.push(`${cleanName} ${road} ${context}`);
+                    queriesToTry.push(`${name} ${road} ${context}`);
+                }
+
+                // Backup permutations
+                queriesToTry.push(`${cleanName || name} ${context} info`);
+                if (cleanName !== name) queriesToTry.push(`${cleanName} Belgium`);
+                queriesToTry.push(`${name} Belgium`);
+            } else if (context !== this.config.city && this.config.city) {
+                // Normal mode: fallback to main city if specific context (Zonhoven) returns nothing
+                queriesToTry.push(`${name} ${this.config.city}`);
+            }
+
+            let res = { items: [] };
+
+            // Try queries in order until we get a hit
+            for (const q of queriesToTry) {
+                try {
+                    const searchUrl = `/api/google-search?q=${encodeURIComponent(q)}&num=5`;
+                    const attempt = await fetch(searchUrl).then(r => r.json());
+
+                    // Simple Validation: If we got items, assume success and stop.
+                    if (attempt.items && attempt.items.length > 0) {
+                        res = attempt;
+                        console.log(`POI Intelligence: Hit on query "${q}"`);
+                        break;
+                    }
+                } catch (e) { console.warn("Search attempt failed", e); }
+            }
 
             // Strategy 2: Name Only (Fallback if #1 failed)
             // Useful for unique POI names that might not be indexed with the city name yet
@@ -469,15 +516,18 @@ Return ONLY valid JSON with this structure:
 
             if (res.items && res.items.length > 0) {
                 // Combine snippets into one rich content block for Gemini
-                const combinedSnippets = res.items.slice(0, 3).map(item => {
-                    let text = item.snippet;
-                    // Try to get OG description if available
-                    if (item.pagemap?.metatags?.[0]?.['og:description']) {
-                        const og = item.pagemap.metatags[0]['og:description'];
-                        if (og.length > text.length) text = og;
+                const combinedSnippets = res.items.slice(0, 8).map(item => {
+                    let text = item.snippet || "";
+                    // Enhance with Meta Tags if available
+                    if (item.pagemap?.metatags?.[0]) {
+                        const meta = item.pagemap.metatags[0];
+                        const richDesc = meta['og:description'] || meta['twitter:description'] || meta['description'];
+                        if (richDesc && richDesc.length > text.length) {
+                            text = richDesc;
+                        }
                     }
                     return text;
-                }).join('\n');
+                }).join('\n\n');
 
                 return {
                     type: 'description',

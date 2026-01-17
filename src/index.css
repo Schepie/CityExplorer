@@ -184,5 +184,10 @@ body {
   pointer-events: none !important;
 }
 
+/* FIX: Establish pointer-events for the close button which sits outside the wrapper */
+.leaflet-popup-close-button {
+  pointer-events: auto !important;
+}
+
 /* On Mobile, popups might need to just not block map gestures on the 'empty' parts */
 /* But 'empty' parts are rare in tight popups. */

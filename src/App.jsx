@@ -37,8 +37,11 @@ const APP_THEMES = {
 };
 
 
+import NavigationOverlay from './components/NavigationOverlay';
+
 function App() {
   const [routeData, setRouteData] = useState(null);
+  const [isNavigationOpen, setIsNavigationOpen] = useState(false); // Navigation UI State
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Exploring...');
   const [foundPoisCount, setFoundPoisCount] = useState(0);
@@ -272,21 +275,12 @@ function App() {
     }
   };
   const handleUseCurrentLocation = async () => {
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
-      return;
-    }
-
     setIsLoading(true);
     setLoadingText(language === 'nl' ? 'Locatie zoeken...' : 'Finding your location...');
 
-    // We set a short timeout for the location request
-    const options = { timeout: 10000, enableHighAccuracy: true };
-
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const { latitude, longitude } = pos.coords;
+    // Helper: Process Coordinates into City Data
+    const processCoordinates = async (latitude, longitude) => {
       try {
-        // Reverse Geocode to get name
         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
         const data = await res.json();
 
@@ -294,71 +288,76 @@ function App() {
           const addr = data.address;
           const foundCity = addr.city || addr.town || addr.village || addr.municipality || "Current Location";
 
-          // Construct more specific display name
-          // Prioritize standard OSM road fields
-          const street = addr.road || addr.pedestrian || addr.footway || addr.cycleway || addr.path;
-          const number = addr.house_number;
-
           let display = foundCity;
-          if (street) {
-            display = `${street}${number ? ' ' + number : ''}, ${foundCity}`;
-          } else if (data.display_name) {
-            // Fallback to the first part of the full display name if no street found
-            const parts = data.display_name.split(',');
-            if (parts.length >= 2) {
-              display = `${parts[0]}, ${foundCity}`;
-            }
-          }
-
           if (addr.country) display += `, ${addr.country}`;
 
-          // Update state
           setCity(display);
-
-          // Set as Validated immediately so we don't re-search
           setValidatedCityData({
             lat: latitude.toString(),
             lon: longitude.toString(),
-            name: foundCity, // Keep city name for POI search/Wiki logic
+            name: foundCity,
             display_name: data.display_name,
             address: data.address
           });
-
-          // Center map on this location
           setFocusedLocation({ lat: latitude, lng: longitude });
         } else {
-          // If reverse fails, just put coords?
-          // Better to still set validated data but maybe generic name
-          setCity(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
-          setValidatedCityData({
-            lat: latitude.toString(),
-            lon: longitude.toString(),
-            name: "Current Location",
-            display_name: "Current Location",
-            address: {}
-          });
+          // Coordinate Fallback
+          const name = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+          setCity(name);
+          setValidatedCityData({ lat: latitude, lon: longitude, name: name, display_name: name });
+          setFocusedLocation({ lat: latitude, lng: longitude });
         }
       } catch (err) {
         console.error("Reverse geocode failed", err);
-        alert("Could not determine city name, but using your location.");
-        // Still set coords
-        setCity(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
-        setValidatedCityData({
-          lat: latitude.toString(),
-          lon: longitude.toString(),
-          name: "Current Location",
-          display_name: "Current Location",
-          address: {}
-        });
+        // Coordinate Fallback
+        const name = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        setCity(name);
+        setValidatedCityData({ lat: latitude, lon: longitude, name: name, display_name: name });
+        setFocusedLocation({ lat: latitude, lng: longitude });
       } finally {
         setIsLoading(false);
         setLoadingText('Exploring...');
       }
-    }, (err) => {
-      console.error("Geolocation error", err);
-      alert("Could not retrieve your location. Please check permissions.");
-      setIsLoading(false);
-    }, options);
+    };
+
+    // Fallback: IP-based Location
+    const runIpFallback = async () => {
+      console.log("GPS failed. Attempting IP fallback...");
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+        if (data.latitude && data.longitude) {
+          await processCoordinates(data.latitude, data.longitude);
+        } else {
+          throw new Error("Invalid IP data");
+        }
+      } catch (e) {
+        console.error("IP Fallback failed", e);
+        alert(language === 'nl'
+          ? "Kon uw locatie niet bepalen. Controleer uw instellingen."
+          : "Could not determine your location. Please check settings.");
+        setIsLoading(false);
+        setLoadingText('Exploring...');
+      }
+    };
+
+    if (!navigator.geolocation) {
+      runIpFallback();
+      return;
+    }
+
+    // Try Standard Geolocation (Low Accuracy for Speed/Reliability)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        processCoordinates(pos.coords.latitude, pos.coords.longitude);
+      },
+      (err) => {
+        console.warn("Geolocation API error:", err.code, err.message);
+        // On error (Permission denied or Timeout), try IP fallback
+        runIpFallback();
+      },
+      { timeout: 8000, enableHighAccuracy: false }
+    );
   };
 
   // Helper to fetch Wikipedia summary
@@ -685,16 +684,31 @@ function App() {
       ];
       if (isRoundtrip) waypoints.push(`${cityCenter[1]},${cityCenter[0]}`);
 
-      const osrmUrl = `https://router.project-osrm.org/route/v1/foot/${waypoints.join(';')}?overview=full&geometries=geojson`;
+      const osrmUrl = `https://router.project-osrm.org/route/v1/foot/${waypoints.join(';')}?overview=full&geometries=geojson&steps=true`;
       const res = await fetch(osrmUrl);
       const json = await res.json();
 
       let finalPath = [];
       let finalDist = 0;
+      let finalSteps = [];
 
       if (json.routes && json.routes.length > 0) {
         finalPath = json.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
         finalDist = json.routes[0].distance / 1000;
+
+        // Extract Steps
+        if (json.routes[0].legs) {
+          finalSteps = json.routes[0].legs.flatMap(l => l.steps);
+        }
+
+        // Fallback
+        if (!finalSteps || finalSteps.length === 0) {
+          finalSteps = fullyEnriched.map(p => ({
+            maneuver: { type: 'depart', modifier: 'straight' },
+            name: language === 'nl' ? `Ga naar ${p.name}` : `Walk to ${p.name}`,
+            distance: 0
+          }));
+        }
       } else {
         // Fallback straight lines (Mock dist)
         const pts = [cityCenter, ...fullyEnriched.map(p => [p.lat, p.lng])];
@@ -712,6 +726,7 @@ function App() {
         center: cityCenter,
         pois: fullyEnriched,
         routePath: finalPath,
+        navigationSteps: finalSteps,
         stats: {
           totalDistance: finalDist.toFixed(1),
           limitKm: targetLimitKm.toFixed(1)
@@ -1021,6 +1036,7 @@ function App() {
       // We verify the REAL distance. If it exceeds our tolerance, we remove the furthest point and retry.
       let routeCoordinates = [];
       let realDistance = 0;
+      let navigationSteps = [];
 
       // We might need to prune multiple times if the estimation was way off
       while (selectedPois.length > 0) {
@@ -1035,7 +1051,8 @@ function App() {
             waypoints.push(`${cityCenter[1]},${cityCenter[0]}`);
           }
 
-          const osrmUrl = `https://router.project-osrm.org/route/v1/foot/${waypoints.join(';')}?overview=full&geometries=geojson`;
+          // Request steps=true for TBT navigation
+          const osrmUrl = `https://router.project-osrm.org/route/v1/foot/${waypoints.join(';')}?overview=full&geometries=geojson&steps=true`;
           const routeResponse = await fetch(osrmUrl);
           const routeJson = await routeResponse.json();
 
@@ -1049,6 +1066,24 @@ function App() {
               // ACCEPT this route
               routeCoordinates = route.geometry.coordinates.map(c => [c[1], c[0]]);
               realDistance = dKm;
+
+              // Extract Turn-by-Turn Steps
+              if (route.legs) {
+                navigationSteps = route.legs.flatMap(leg => leg.steps);
+              }
+
+              console.log("OSRM Steps Extracted:", navigationSteps ? navigationSteps.length : 0);
+
+              // Fallback: If no steps (e.g. OSRM issue), generate synthetic steps
+              if (!navigationSteps || navigationSteps.length === 0) {
+                console.warn("No OSRM steps. Generating custom fallback.");
+                navigationSteps = selectedPois.map((p, idx) => ({
+                  maneuver: { type: 'depart', modifier: 'straight' },
+                  name: language === 'nl' ? `Ga naar ${p.name}` : `Walk to ${p.name}`,
+                  distance: 0
+                }));
+              }
+
               break; // Exit loop, we are good
             } else {
               // REJECT - Route is too long
@@ -1069,6 +1104,13 @@ function App() {
 
           routeCoordinates = pts;
 
+          // GENERATE SYNTHETIC STEPS FOR FALLBACK (Since OSRM failed)
+          navigationSteps = selectedPois.map((p, idx) => ({
+            maneuver: { type: 'depart', modifier: 'straight' },
+            name: language === 'nl' ? `Ga naar ${p.name}` : `Walk to ${p.name}`,
+            distance: 0
+          }));
+
           // Simple sum of straight lines * 1.3 as fallback stats
           let fallbackDist = 0;
           let prev = { lat: cityCenter[0], lng: cityCenter[1] };
@@ -1085,8 +1127,6 @@ function App() {
         }
       }
 
-      // 6. Enrich with POI Intelligence Engine (Generic, Multi-source, Probabilistic)
-      // This implements the requested 7-Step "POI Intelligence" pipeline.
       // 6. Enrich with POI Intelligence Engine (Generic, Multi-source, Probabilistic)
       // This implements the requested 7-Step "POI Intelligence" pipeline.
       const engine = new PoiIntelligence({
@@ -1106,6 +1146,7 @@ function App() {
         center: cityCenter,
         pois: initialPois,
         routePath: routeCoordinates,
+        navigationSteps: navigationSteps,
         stats: {
           totalDistance: realDistance.toFixed(1),
           limitKm: targetLimitKm.toFixed(1)
@@ -1262,6 +1303,19 @@ function App() {
     }
   };
 
+  const handleNavigationRouteFetched = (steps) => {
+    console.log("Navigation steps updated from MapContainer:", steps.length);
+    setRouteData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        navigationSteps: steps
+      };
+    });
+    // Automatically open the navigation overlay so the user sees the new instructions
+    setIsNavigationOpen(true);
+  };
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-900 text-white relative">
       {/* Journey Input Overlay */}
@@ -1284,6 +1338,7 @@ function App() {
           focusedLocation={focusedLocation}
           language={language}
           onPoiClick={handlePoiClick}
+          onPopupClose={() => setFocusedLocation(null)}
           speakingId={speakingId}
           onSpeak={handleSpeak}
           onStopSpeech={stopSpeech}
@@ -1291,10 +1346,21 @@ function App() {
           loadingText={loadingText}
           loadingCount={foundPoisCount}
           onUpdatePoiDescription={handleUpdatePoiDescription}
+          onNavigationRouteFetched={handleNavigationRouteFetched}
+          onToggleNavigation={() => setIsNavigationOpen(prev => !prev)}
         />
       </div>
 
-      {/* Sidebar (Only when browsing) */}
+      {/* Navigation Overlay (Turn-by-Turn) */}
+      <NavigationOverlay
+        steps={routeData?.navigationSteps}
+        pois={routeData?.pois}
+        language={language}
+        isOpen={isNavigationOpen}
+        onClose={() => setIsNavigationOpen(false)}
+        onToggle={() => setIsNavigationOpen(!isNavigationOpen)}
+      />
+
       {/* Sidebar (Always Visible) */}
       <ItinerarySidebar
         routeData={routeData}
