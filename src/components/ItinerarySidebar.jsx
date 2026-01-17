@@ -338,7 +338,7 @@ const SidebarInput = ({
     )
 }
 
-const CityWelcomeCard = ({ city, center, stats, language, pois }) => {
+const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSpeak }) => {
     const [weather, setWeather] = useState(null);
     const [description, setDescription] = useState(null);
     const [cityImage, setCityImage] = useState(null);
@@ -451,7 +451,31 @@ const CityWelcomeCard = ({ city, center, stats, language, pois }) => {
                             <span>{currentTime}</span>
                         </div>
                     )}
+
                 </div>
+
+                {/* Audio Control */}
+                {isExpanded && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            const cityPoi = {
+                                id: `city-welcome-${city}`, // Unique ID for synth
+                                name: city,
+                                description: description || (language === 'nl' ? `Welkom in ${city}` : `Welcome to ${city}`)
+                            };
+                            onSpeak(cityPoi);
+                        }}
+                        className={`p-2 rounded-full transition-all mr-2 ${speakingId === `city-welcome-${city}` ? 'bg-blue-500 text-white shadow-lg' : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-white'}`}
+                        title="Read Aloud"
+                    >
+                        {speakingId === `city-welcome-${city}` ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                        )}
+                    </button>
+                )}
 
                 <div className="text-blue-300/50 group-hover:text-blue-300 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
@@ -640,6 +664,8 @@ const ItinerarySidebar = ({
                                     stats={routeData.stats}
                                     language={language}
                                     pois={routeData.pois}
+                                    speakingId={speakingId}
+                                    onSpeak={onSpeak}
                                 />
                             </div>
                         )}
