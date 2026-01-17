@@ -1312,8 +1312,8 @@ function App() {
         navigationSteps: steps
       };
     });
-    // Automatically open the navigation overlay so the user sees the new instructions
-    setIsNavigationOpen(true);
+    // Removed automatic opening of navigation overlay
+    // setIsNavigationOpen(true);
   };
 
   return (

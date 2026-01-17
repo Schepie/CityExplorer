@@ -559,6 +559,7 @@ const ItinerarySidebar = ({
     const [nearbyCities, setNearbyCities] = useState([]);
     const [isAddingMode, setIsAddingMode] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [areOptionsVisible, setAreOptionsVisible] = useState(false); // New Toggle for Footer Options
     const [shouldAutoFocusInterests, setShouldAutoFocusInterests] = useState(false);
     const [expandedPoi, setExpandedPoi] = useState(null);
     const [showSources, setShowSources] = useState(false);
@@ -636,7 +637,11 @@ const ItinerarySidebar = ({
             poi: "Point of Interest",
             disambig_title: "Which",
             back: "Back",
-            add: "Add Spots"
+            add: "Add Spots",
+            add_short: "Add",
+            options: "Options",
+            reset: "Reset",
+            save: "Save"
         },
         nl: {
             journey: "CityExplorer",
@@ -646,7 +651,11 @@ const ItinerarySidebar = ({
             poi: "Bezienswaardigheid",
             disambig_title: "Welke",
             back: "Terug",
-            add: "Spots Toevoegen"
+            add: "Spots Toevoegen",
+            add_short: "Voeg toe",
+            options: "Opties",
+            reset: "Reset",
+            save: "Opslaan"
         }
     };
     const text = t[language || 'en'];
@@ -1003,54 +1012,62 @@ const ItinerarySidebar = ({
                         )}
                     </div>
 
-                    {/* Footer Actions (Only show Reset when in Itinerary mode) */}
+                    {/* Footer Actions (Only show when in Itinerary mode) */}
                     {showItinerary && !showDisambiguation && (
-                        <div className="p-4 border-t border-white/10 bg-[var(--bg-gradient-start)]/30">
-                            <div className="flex items-center justify-between mb-2 px-1">
-                                <span className="text-xs text-slate-500 uppercase font-bold">Options</span>
+                        <div className="p-4 border-t border-white/10 bg-[var(--bg-gradient-start)]/30 space-y-3">
+                            <div className="flex items-center justify-between">
                                 <button
                                     onClick={() => setAutoAudio(!autoAudio)}
-                                    className={`text-xs flex items-center gap-1 ${autoAudio ? 'text-primary' : 'text-slate-500'}`}
+                                    className={`text-xs font-bold py-2 px-4 rounded-lg border transition-all flex items-center gap-2 ${autoAudio ? 'bg-primary/20 border-primary/50 text-primary' : 'bg-slate-800 border-white/10 text-slate-500 hover:text-white'}`}
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>
                                     {autoAudio ? "Auto-Audio ON" : "Auto-Audio OFF"}
                                 </button>
-                            </div>
-                            <div className="flex gap-2">
-                                {/* Reset (New Search) */}
-                                <button
-                                    onClick={onReset}
-                                    title={text.startNew}
-                                    className="flex-1 flex items-center justify-center p-3 bg-slate-800 hover:bg-red-900/30 text-slate-300 hover:text-red-400 rounded-xl border border-white/10 hover:border-red-500/30 transition-all group"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                </button>
 
-                                {/* Add Button */}
                                 <button
-                                    onClick={() => { setIsAddingMode(true); setInterests(''); }}
-                                    title={text.add}
-                                    className="flex-1 flex items-center justify-center p-3 bg-primary/20 hover:bg-primary/40 text-primary hover:text-white rounded-xl border border-primary/30 transition-all group"
+                                    onClick={() => setAreOptionsVisible(!areOptionsVisible)}
+                                    className="text-[10px] uppercase font-bold text-slate-500 hover:text-white transition-colors flex items-center gap-1"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                </button>
-
-                                {/* Save Button */}
-                                <button
-                                    onClick={onSave}
-                                    title={language === 'nl' ? "Opslaan" : "Save Journey"}
-                                    className="flex-1 flex items-center justify-center p-3 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 hover:text-white rounded-xl border border-emerald-500/30 transition-all group"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                                    {text.options}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${areOptionsVisible ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                                     </svg>
                                 </button>
                             </div>
 
+                            {areOptionsVisible && (
+                                <div className="grid grid-cols-3 gap-2 animate-in slide-in-from-bottom-2 fade-in duration-200">
+                                    <button
+                                        onClick={onReset}
+                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/80 hover:bg-red-900/40 border border-white/5 hover:border-red-500/30 transition-all group"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400 group-hover:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                        <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase">{text.reset}</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => setIsAddingMode(true)}
+                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/80 hover:bg-primary/20 border border-white/5 hover:border-primary/30 transition-all group"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400 group-hover:text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase">{text.add_short}</span>
+                                    </button>
+
+                                    <button
+                                        onClick={onSave}
+                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/80 hover:bg-green-900/40 border border-white/5 hover:border-green-500/30 transition-all group"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400 group-hover:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                                        </svg>
+                                        <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase">{text.save}</span>
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

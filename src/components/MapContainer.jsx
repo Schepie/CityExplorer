@@ -138,6 +138,175 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     const [isPopupOpen, setIsPopupOpen] = useState(false); // Track if any popup is open for HUD transparency
     const markerRefs = useRef({}); // Refs for markers to open programmatically
 
+    // Proximity State
+    const [nearbyPoiIds, setNearbyPoiIds] = useState(new Set());
+    const lastTriggeredPoiIdRef = useRef(null);
+    const lastOpenedPopupIdRef = useRef(null);
+
+    // Audio Context Ref (persistent)
+    const audioCtxRef = useRef(null);
+    const [isSimulating, setIsSimulating] = useState(false);
+
+
+
+    const [navigationPath, setNavigationPath] = useState(null);
+
+    const [userLocation, setUserLocation] = useState(null);
+
+    // Fetch user location
+    // Fetch user location
+    useEffect(() => {
+        let watchId;
+
+        // --- SIMULATION ---
+        if (isSimulating && navigationPath && navigationPath.length > 0) {
+            console.warn("SIMULATION STARTING");
+            let idx = 0;
+            const interval = setInterval(() => {
+                if (idx < navigationPath.length) {
+                    const [lat, lng] = navigationPath[idx];
+                    setUserLocation({ lat, lng, heading: 0 });
+                    idx += 1;
+                } else {
+                    clearInterval(interval);
+                    setIsSimulating(false); // Stop when done
+                }
+            }, 600); // 600ms per step
+
+            return () => clearInterval(interval);
+        }
+
+        if (navigator.geolocation && !isSimulating) {
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    // Only update if not in test mode
+                    setUserLocation({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        heading: position.coords.heading // Capture heading if available
+                    });
+                },
+                (error) => {
+                    console.log("Error getting location:", error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 0,
+                    timeout: 5000
+                }
+            );
+        }
+
+        return () => {
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+        };
+    }, [isSimulating, navigationPath]); // Re-run when toggle changes
+
+    // Audio Trigger
+    // Audio Trigger
+    const playProximitySound = () => {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+
+            if (!audioCtxRef.current) {
+                audioCtxRef.current = new AudioContext();
+            }
+
+            const ctx = audioCtxRef.current;
+
+            // Resume if suspended (browser policy)
+            if (ctx.state === 'suspended') {
+                ctx.resume();
+            }
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            // Nice "Bing" sound
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(500, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1000, ctx.currentTime + 0.1);
+
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.5);
+
+            osc.start();
+            osc.stop(ctx.currentTime + 1.5);
+        } catch (e) {
+            console.warn("Audio play failed", e);
+        }
+    };
+
+    // Proximity Effect
+    useEffect(() => {
+        if (!userLocation || !routeData?.pois) return;
+
+        const PROXIMITY_THRESHOLD_KM = 0.08; // 80 Meters (Breathing + Sound)
+        const POPUP_THRESHOLD_KM = 0.025;     // 25 Meters (Auto Open Popup)
+        const EXIT_THRESHOLD_KM = 0.1;       // 100 Meters (Reset)
+
+        let hasChanges = false;
+        const nextNearby = new Set(nearbyPoiIds);
+
+        routeData.pois.forEach((poi, idx) => {
+            const distKm = calcDistance(
+                { lat: userLocation.lat, lng: userLocation.lng },
+                { lat: poi.lat, lng: poi.lng }
+            );
+
+            // 1. Check for basic proximity (Entering 80m Zone)
+            if (distKm < PROXIMITY_THRESHOLD_KM) {
+                if (!nearbyPoiIds.has(poi.id)) {
+                    nextNearby.add(poi.id);
+                    hasChanges = true;
+
+                    // Trigger sound only if entering and not just repeated
+                    if (lastTriggeredPoiIdRef.current !== poi.id) {
+                        playProximitySound();
+                        lastTriggeredPoiIdRef.current = poi.id;
+                    }
+                }
+
+                // 2. Check for "Arrival" (Entering 25m Zone) - Open Popup
+                if (distKm < POPUP_THRESHOLD_KM) {
+                    if (lastOpenedPopupIdRef.current !== poi.id) {
+                        console.log("Arrived at POI (<25m):", poi.name, "Opening popup.");
+
+                        // Select the POI in the app state (Sidebar etc)
+                        if (onPoiClickRef.current) {
+                            onPoiClickRef.current(poi);
+                        }
+
+                        // Open the Leaflet Popup
+                        if (markerRefs.current && markerRefs.current[poi.id]) {
+                            markerRefs.current[poi.id].openPopup();
+                            setIsPopupOpen(true);
+                        } else {
+                            console.warn("Marker ref not found for:", poi.id, "Keys:", Object.keys(markerRefs.current || {}));
+                        }
+                        lastOpenedPopupIdRef.current = poi.id;
+                    }
+                }
+            } else if (distKm > EXIT_THRESHOLD_KM) {
+                // Exiting Zone
+                if (nearbyPoiIds.has(poi.id)) {
+                    nextNearby.delete(poi.id);
+                    hasChanges = true;
+                    // Reset triggered refs so they can trigger again if we come back
+                    if (lastTriggeredPoiIdRef.current === poi.id) lastTriggeredPoiIdRef.current = null;
+                    if (lastOpenedPopupIdRef.current === poi.id) lastOpenedPopupIdRef.current = null;
+                }
+            }
+        });
+
+        if (hasChanges) {
+            setNearbyPoiIds(nextNearby);
+        }
+    }, [userLocation, routeData, nearbyPoiIds]); // Check on location update
+
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
 
@@ -169,37 +338,9 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     };
     const text = t[language || 'en'];
 
-    const [userLocation, setUserLocation] = useState(null);
 
-    // Fetch user location
-    useEffect(() => {
-        let watchId;
-        if (navigator.geolocation) {
-            watchId = navigator.geolocation.watchPosition(
-                (position) => {
-                    setUserLocation({
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                        heading: position.coords.heading // Capture heading if available
-                    });
-                },
-                (error) => {
-                    console.log("Error getting location:", error);
-                },
-                {
-                    enableHighAccuracy: true,
-                    maximumAge: 0,
-                    timeout: 5000
-                }
-            );
-        }
 
-        return () => {
-            if (watchId) navigator.geolocation.clearWatch(watchId);
-        };
-    }, []);
 
-    const [navigationPath, setNavigationPath] = useState(null);
     const [isNavigating, setIsNavigating] = useState(false);
     const isNavigatingRef = useRef(false); // Ref for immediate access in event handlers
     useEffect(() => { isNavigatingRef.current = isNavigating; }, [isNavigating]);
@@ -213,10 +354,10 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     useEffect(() => {
         if (focusedLocation && pois && markerRefs.current) {
             // Only open if it's a distinct new focus event
+            // Only open if it's a distinct new focus event
             if (lastFocusedIdRef.current !== focusedLocation.id) {
-                const idx = pois.findIndex(p => p.id === focusedLocation.id);
-                if (idx !== -1 && markerRefs.current[idx]) {
-                    const marker = markerRefs.current[idx];
+                if (markerRefs.current && markerRefs.current[focusedLocation.id]) {
+                    const marker = markerRefs.current[focusedLocation.id];
                     console.log("Requesting popup open for:", focusedLocation.id);
                     // Defer opening slightly to avoid fighting with close events
                     setTimeout(() => {
@@ -224,6 +365,15 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                         setIsPopupOpen(true);
                     }, 10);
                     lastFocusedIdRef.current = focusedLocation.id;
+                } else {
+                    // Fallback if ID-based lookup fails (legacy support or race condition)
+                    const idx = pois.findIndex(p => p.id === focusedLocation.id);
+                    if (idx !== -1 && markerRefs.current[idx]) {
+                        // This path shouldn't be needed if refs are set correctly by ID now
+                        markerRefs.current[idx].openPopup();
+                        setIsPopupOpen(true);
+                        lastFocusedIdRef.current = focusedLocation.id;
+                    }
                 }
             }
         } else {
@@ -238,6 +388,11 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     // Fetch real street navigation path
     useEffect(() => {
         console.log("Nav check:", { user: !!userLocation, focus: !!focusedLocation, nav: isNavigating, style: userSelectedStyle });
+        // TEST MODE GUARD: Do not re-fetch route if we are simulating (prevents loop)
+        if (isSimulating && navigationPath && navigationPath.length > 0) {
+            return;
+        }
+
         if (!userLocation || !focusedLocation || !isNavigating) {
             setNavigationPath(null);
             return;
@@ -408,11 +563,12 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
                         {pois.map((poi, idx) => {
                             const { colorClass, iconHtml } = getPoiIcon(poi);
+                            const isBreathing = nearbyPoiIds.has(poi.id);
 
                             return (
                                 <Marker
                                     key={idx}
-                                    ref={(el) => { if (el) markerRefs.current[idx] = el; }}
+                                    ref={(el) => { if (el) markerRefs.current[poi.id] = el; }}
                                     position={[poi.lat, poi.lng]}
                                     eventHandlers={{
                                         click: () => {
@@ -434,7 +590,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                     }}
                                     icon={L.divIcon({
                                         className: 'bg-transparent border-none',
-                                        html: `<div class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30">
+                                        html: `<div class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
                                                  ${iconHtml ? `<div class="mb-[1px] -mt-1 scale-75">${iconHtml}</div>` : ''}
                                                  <span class="text-[10px] font-bold leading-none">${idx + 1}</span>
                                                </div>`,
@@ -581,6 +737,19 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
             {
                 !isInputMode && (
                     <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
+                        {/* Test Button */}
+                        {navigationPath && (
+                            <button
+                                onClick={() => {
+                                    playProximitySound(); // Test sound immediately + init context
+                                    setIsSimulating(!isSimulating);
+                                }}
+                                className={`p-3 rounded-xl border border-white/10 shadow-lg transition-all ${isSimulating ? 'bg-green-600 text-white' : 'bg-slate-800/90 text-slate-200'}`}
+                                title="Test Walk & Sound"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
+                            </button>
+                        )}
                         {/* 1. Mode Toggle (Walk/Cycle) */}
                         <button
                             onClick={() => setUserSelectedStyle(prev => prev === 'walking' ? 'cycling' : 'walking')}

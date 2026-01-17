@@ -153,6 +153,29 @@ body {
   }
 }
 
+/* POI Breathing Animation */
+@keyframes breathing-poi {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7), 0 0 0 0 rgba(var(--primary-rgb), 0.7);
+    /* transform removed to prevent click-target instability */
+  }
+
+  70% {
+    box-shadow: 0 0 0 20px rgba(255, 255, 255, 0), 0 0 0 30px rgba(var(--primary-rgb), 0);
+    /* transform removed */
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0), 0 0 0 0 rgba(var(--primary-rgb), 0);
+    /* transform removed */
+  }
+}
+
+.breathing-marker {
+  animation: breathing-poi 2s infinite ease-in-out;
+  /* z-index removed to avoid stacking context issues */
+}
+
 /* --- LEAFLET POPUP CUSTOMIZATION --- */
 /* Ensure map is scrollable/pannable even when touching the popup container */
 .leaflet-popup {
