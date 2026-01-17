@@ -226,10 +226,22 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
 
                 // Switch profile based on map style
                 // 'foot' (pedestrian) prefers safe, smaller paths. 'bike'/'bicycle' prefers bike lanes/roads.
+                // We default to 'foot' to ensure we never get car routes.
+                // We default to 'foot' to ensure we never get car routes.
                 const profile = userSelectedStyle === 'cycling' ? 'bicycle' : 'foot';
 
-                const url = `https://router.project-osrm.org/route/v1/${profile}/${uLng},${uLat};${fLng},${fLat}?overview=full&geometries=geojson&steps=true`;
-                console.log(`Fetching Navigation Path (${profile}):`, url);
+                // Use 'routing.openstreetmap.de' which is often better for dedicated walking/hiking paths in Europe
+                // Note: This specific localized server uses 'driving' as the generic endpoint name but the subdomain determines the profile.
+                let baseUrl = 'https://router.project-osrm.org/route/v1/' + profile;
+
+                if (profile === 'foot') {
+                    baseUrl = 'https://routing.openstreetmap.de/routed-foot/route/v1/driving';
+                } else if (profile === 'bicycle') {
+                    baseUrl = 'https://routing.openstreetmap.de/routed-bike/route/v1/driving';
+                }
+
+                const url = `${baseUrl}/${uLng},${uLat};${fLng},${fLat}?overview=full&geometries=geojson&steps=true`;
+                console.log(`Fetching Navigation Path (${baseUrl}):`, url);
                 const res = await fetch(url);
                 const data = await res.json();
 
@@ -340,20 +352,21 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                 {!isInputMode && (
                     <>
                         {/* Dynamic Navigation Line from User to Focused POI */}
-                        {/* Turn-by-Turn Navigation Line */}
+                        {/* Turn-by-Turn Navigation Line (Solid Blue, Transparent) */}
                         {navigationPath && (
                             <Polyline
                                 positions={navigationPath}
-                                color="#ef4444"
-                                weight={6}
-                                opacity={0.8}
-                                dashArray="10, 15"
+                                color="#3b82f6"
+                                weight={8}
+                                opacity={0.6}
+                                lineCap="round"
+                                lineJoin="round"
                             />
                         )}
                         {polyline && polyline.length > 1 && (
                             <Polyline
                                 positions={polyline}
-                                pathOptions={{ color: 'var(--primary)', weight: 5, opacity: 0.9, dashArray: '10, 15', lineCap: 'round' }}
+                                pathOptions={{ color: 'var(--primary)', weight: 4, opacity: 0.5, dashArray: '10, 10', lineCap: 'round' }}
                             />
                         )}
 
@@ -412,17 +425,30 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                                                         {poi.category || (poi.types ? poi.types[0] : 'Locatie')}
                                                     </span>
                                                 </div>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
-                                                    className={`p-1.5 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white' : 'text-slate-400 hover:text-primary hover:bg-black/5'}`}
-                                                    title="Read Aloud"
-                                                >
-                                                    {speakingId === poi.id ? (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                                                    ) : (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                                                    )}
-                                                </button>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const mode = userSelectedStyle === 'cycling' ? 'bicycling' : 'walking';
+                                                            window.open(`https://www.google.com/maps/dir/?api=1&destination=${poi.lat},${poi.lng}&travelmode=${mode}`, '_blank');
+                                                        }}
+                                                        className="p-1.5 rounded-full text-slate-400 hover:text-blue-500 hover:bg-black/5 transition-all"
+                                                        title={text.nav}
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
+                                                        className={`p-1.5 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white' : 'text-slate-400 hover:text-primary hover:bg-black/5'}`}
+                                                        title="Read Aloud"
+                                                    >
+                                                        {speakingId === poi.id ? (
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                                        ) : (
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                                        )}
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             {/* Length Controls (Popup) */}
@@ -531,26 +557,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                 )
             }
 
-            {/* Route Stats Overlay */}
-            {
-                routeData?.stats && (
-                    <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[400] bg-slate-900/90 backdrop-blur-xl rounded-full px-6 py-3 border border-white/10 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-700 group hover:opacity-10 transition-opacity duration-300 pointer-events-auto">
-                        {!routeData.stats.limitKm.toString().startsWith('Radius') && (
-                            <>
-                                <div className="flex flex-col items-center">
-                                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{text.dist}</span>
-                                    <span className="text-xl font-bold text-white leading-none">{routeData.stats.totalDistance} <span className="text-sm font-normal text-slate-400">km</span></span>
-                                </div>
-                                <div className="h-8 w-px bg-white/10"></div>
-                            </>
-                        )}
-                        <div className="flex flex-col items-center">
-                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{text.limit}</span>
-                            <span className="text-xl font-bold text-white leading-none">{routeData.stats.limitKm} <span className="text-sm font-normal text-slate-400">km</span></span>
-                        </div>
-                    </div>
-                )
-            }
+            {/* Route Stats Overlay removed */}
 
 
             {/* Top Navigation HUD */}
@@ -560,10 +567,10 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                     const targetIdx = pois.findIndex(p => (p.id && p.id === targetPoi.id) || (p.lat === targetPoi.lat && p.lng === targetPoi.lng));
 
                     return (
-                        <div className={`absolute top-8 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/10 shadow-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-700 transition-all duration-300 pointer-events-auto ${isPopupOpen ? 'opacity-20 hover:opacity-100 bg-slate-900/40' : 'opacity-100 bg-slate-900/90'}`}>
+                        <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/10 shadow-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-700 transition-all duration-300 pointer-events-auto ${isPopupOpen ? 'opacity-20 hover:opacity-100 bg-slate-900/40' : 'opacity-100 bg-slate-900/90'}`}>
                             {/* Direction Arrow */}
                             <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center border border-white/5 shadow-inner">
-                                <div style={{ transform: `rotate(${calcBearing(userLocation, targetPoi)}deg)`, transition: 'transform 0.5s ease-out' }}>
+                                <div style={{ transform: `rotate(${calcBearing(userLocation, targetPoi) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
                                     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md"><polygon points="12 2 22 22 12 18 2 22 12 2"></polygon></svg>
                                 </div>
                             </div>
@@ -590,6 +597,16 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                                         );
                                     })()}
                                 </div>
+                                <button
+                                    onClick={() => {
+                                        const mode = userSelectedStyle === 'cycling' ? 'bicycling' : 'walking';
+                                        window.open(`https://www.google.com/maps/dir/?api=1&destination=${targetPoi.lat},${targetPoi.lng}&travelmode=${mode}`, '_blank');
+                                    }}
+                                    className="mt-2 text-[10px] font-bold uppercase tracking-wider text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                                >
+                                    <span>{text.nav}</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                </button>
                             </div>
                         </div>
                     );

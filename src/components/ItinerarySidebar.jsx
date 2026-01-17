@@ -585,7 +585,7 @@ const ItinerarySidebar = ({
             // 2. Get Nearby Big Cities (Overpass) -> >15k pop within 50km
             try {
                 const query = `
-                    [out:json][timeout:10];
+                    [out:json][timeout:25];
                     (
                       node["place"="city"](around:50000,${latitude},${longitude});
                       node["place"="town"](around:50000,${latitude},${longitude});
@@ -594,6 +594,7 @@ const ItinerarySidebar = ({
                 `;
                 const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
                 const res = await fetch(overpassUrl);
+                if (!res.ok) throw new Error(`Overpass status ${res.status}`);
                 const data = await res.json();
 
                 if (data && data.elements) {
@@ -612,7 +613,13 @@ const ItinerarySidebar = ({
                         if (el.tags && el.tags.name) uniqueCities.add(el.tags.name);
                     });
                 }
-            } catch (err) { console.warn("Overpass nearby failed", err); }
+            } catch (err) {
+                console.warn("Overpass nearby failed, improving fallback", err);
+                // Fallback: If we have current city, keep it. Add generic defaults if totally empty.
+                if (uniqueCities.size < 2) {
+                    ['Brussels', 'Antwerp', 'Ghent', 'Hasselt'].forEach(c => uniqueCities.add(c));
+                }
+            }
 
             // Take top 4 unique
             setNearbyCities(Array.from(uniqueCities).slice(0, 4));
