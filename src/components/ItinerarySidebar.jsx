@@ -564,20 +564,60 @@ const ItinerarySidebar = ({
     const [showSources, setShowSources] = useState(false);
 
     // Fetch Nearby Cities (Generic logic moved here)
+    // Fetch Nearby Cities (Overpass API for real data)
     useEffect(() => {
         if (!navigator.geolocation) return;
         navigator.geolocation.getCurrentPosition(async (pos) => {
             const { latitude, longitude } = pos.coords;
+            const uniqueCities = new Set();
+
+            // 1. Get Current City (Reverse Geocode)
             try {
                 const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
                 const data = await res.json();
                 if (data && data.address) {
                     const addr = data.address;
-                    const currentCity = addr.city || addr.town || addr.village || addr.municipality;
-                    if (currentCity) setNearbyCities([currentCity]);
+                    const cur = addr.city || addr.town || addr.village;
+                    if (cur) uniqueCities.add(cur);
                 }
             } catch (err) { console.warn("Reverse geocode failed", err); }
-        }, () => { }, { timeout: 5000 });
+
+            // 2. Get Nearby Big Cities (Overpass) -> >15k pop within 50km
+            try {
+                const query = `
+                    [out:json][timeout:10];
+                    (
+                      node["place"="city"](around:50000,${latitude},${longitude});
+                      node["place"="town"](around:50000,${latitude},${longitude});
+                    );
+                    out body;
+                `;
+                const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+                const res = await fetch(overpassUrl);
+                const data = await res.json();
+
+                if (data && data.elements) {
+                    // Sort simply by "city" vs "town" priority first, or just take mostly cities
+                    // Overpass doesn't always have population tag reliable, so we prioritize place=city
+                    const sorted = data.elements.sort((a, b) => {
+                        if (a.tags.place === 'city' && b.tags.place !== 'city') return -1;
+                        if (a.tags.place !== 'city' && b.tags.place === 'city') return 1;
+                        // Else sort by population tag if exists (desc)
+                        const popA = parseInt(a.tags.population || 0);
+                        const popB = parseInt(b.tags.population || 0);
+                        return popB - popA;
+                    });
+
+                    sorted.forEach(el => {
+                        if (el.tags && el.tags.name) uniqueCities.add(el.tags.name);
+                    });
+                }
+            } catch (err) { console.warn("Overpass nearby failed", err); }
+
+            // Take top 4 unique
+            setNearbyCities(Array.from(uniqueCities).slice(0, 4));
+
+        }, () => { }, { timeout: 10000 });
     }, []);
 
     const t = {
