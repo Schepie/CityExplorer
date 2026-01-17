@@ -11,7 +11,8 @@ export const handler = async (event, context) => {
         return { statusCode: 500, body: JSON.stringify({ error: 'CX Config Error' }) };
     }
 
-    const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_PLACES_KEY}&cx=${GOOGLE_SEARCH_CX}&q=${encodeURIComponent(q)}&num=1`;
+    const num = event.queryStringParameters.num || 5;
+    const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_PLACES_KEY}&cx=${GOOGLE_SEARCH_CX}&q=${encodeURIComponent(q)}&num=${num}`;
 
     try {
         const response = await fetch(url, {

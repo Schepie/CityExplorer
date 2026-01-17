@@ -42,9 +42,15 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Exploring...');
   const [foundPoisCount, setFoundPoisCount] = useState(0);
-  const [language, setLanguage] = useState('nl'); // 'en' or 'nl'
-  const [activeTheme, setActiveTheme] = useState('tech');
+
+  // Settings: Load from LocalStorage or Default
+  const [language, setLanguage] = useState(() => localStorage.getItem('app_language') || 'nl');
+  const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem('app_theme') || 'tech');
   const [descriptionLength, setDescriptionLength] = useState('medium'); // short, medium, max
+
+  // Persist Settings
+  useEffect(() => localStorage.setItem('app_language', language), [language]);
+  useEffect(() => localStorage.setItem('app_theme', activeTheme), [activeTheme]);
   const [isBackgroundUpdating, setIsBackgroundUpdating] = useState(false);
 
   // Apply Theme Effect
@@ -172,6 +178,7 @@ function App() {
   // Main Enrichment Logic (Moved to top level for reuse)
   const enrichBackground = async (pois, cityName, lang, lengthMode) => {
     // This implements the requested 7-Step "POI Intelligence" pipeline.
+    setIsBackgroundUpdating(true); // START Indicator
     const engine = new PoiIntelligence({
       city: cityName,
       language: lang,
@@ -203,6 +210,7 @@ function App() {
         });
       }
     }
+    setIsBackgroundUpdating(false); // STOP Indicator
   };
 
   // Wrapper for city setter to invalidate validation on edit
@@ -1134,6 +1142,26 @@ function App() {
   const [speakingId, setSpeakingId] = useState(null);
   const [autoAudio, setAutoAudio] = useState(false);
 
+  const [voiceSettings, setVoiceSettings] = useState(() => {
+    const saved = localStorage.getItem('app_voice_settings');
+    return saved ? JSON.parse(saved) : { variant: 'nl', gender: 'female' };
+  });
+
+  useEffect(() => localStorage.setItem('app_voice_settings', JSON.stringify(voiceSettings)), [voiceSettings]);
+  const [availableVoices, setAvailableVoices] = useState([]);
+
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        setAvailableVoices(voices);
+      }
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
+
   const stopSpeech = () => {
     window.speechSynthesis.cancel();
     setSpeakingId(null);
@@ -1151,7 +1179,42 @@ function App() {
 
     const textToRead = `${poi.name}. ${poi.description || ''}`;
     const u = new SpeechSynthesisUtterance(textToRead);
-    u.lang = language === 'nl' ? 'nl-NL' : 'en-US';
+
+    // Voice Selection Logic
+    // 1. Filter by Language Region (NL vs BE)
+    const targetLang = voiceSettings.variant === 'be' ? 'nl-BE' : 'nl-NL';
+    // Fallback logic: if we want BE but only have NL, use NL.
+    let relevantVoices = availableVoices.filter(v => v.lang.includes(targetLang));
+    if (relevantVoices.length === 0) {
+      // Fallback to strict 'nl' if specific region invalid
+      relevantVoices = availableVoices.filter(v => v.lang.includes('nl'));
+    }
+
+    // 2. Filter by Gender (Heuristic based on name)
+    // Common identifiers: "Google Nederlands" (Female), "Ellen" (Female), "Xander" (Male), "Claire" (Female), "Bart" (Male)
+    // Azure/Google voices often don't declare gender explicitly in the API object standardly, but names help.
+    let selectedVoice = relevantVoices[0]; // Default to first found
+
+    const targetGender = voiceSettings.gender;
+    const genderMatch = relevantVoices.find(v => {
+      const n = v.name.toLowerCase();
+      if (targetGender === 'male') return n.includes('male') || n.includes('man') || n.includes('xander') || n.includes('bart') || n.includes('arthur') || n.includes('david');
+      if (targetGender === 'female') return n.includes('female') || n.includes('woman') || n.includes('ellen') || n.includes('claire') || n.includes('laura') || n.includes('google'); // Google default often female
+      return false;
+    });
+
+    if (genderMatch) selectedVoice = genderMatch;
+
+    if (selectedVoice) {
+      u.voice = selectedVoice;
+      u.lang = selectedVoice.lang;
+    } else {
+      // Fallback if no voices found at all (weird, but possible)
+      u.lang = targetLang;
+    }
+
+    console.log(`Speaking with voice: ${selectedVoice ? selectedVoice.name : 'Default'} (${u.lang})`);
+
     u.onend = () => setSpeakingId(null);
 
     setSpeakingId(poi.id);
@@ -1239,6 +1302,9 @@ function App() {
         onReset={resetSearch}
         language={language}
         setLanguage={setLanguage} // Add setter for sidebar toggle
+
+        voiceSettings={voiceSettings}
+        setVoiceSettings={setVoiceSettings}
 
         speakingId={speakingId}
         onSpeak={handleSpeak}

@@ -67,7 +67,7 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) =
         const params = strategy();
         if (!params) continue;
 
-        let url = 'https://nominatim.openstreetmap.org/search?format=json&limit=30';
+        let url = 'https://nominatim.openstreetmap.org/search?format=json&limit=30&addressdetails=1';
         if (typeof params === 'string') {
             url += `&q=${encodeURIComponent(params)}`;
         } else {
@@ -86,7 +86,15 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) =
                     lng: parseFloat(item.lon),
                     description: item.type, // Nominatim 'type' is often a category like 'museum'
                     id: `osm-${item.place_id}`,
-                    source: source
+                    source: source,
+                    // Capture local context for better IQ searches
+                    address: item.display_name,
+                    location_context: item.address ? (item.address.city || item.address.town || item.address.village || item.address.municipality) : null,
+                    address_components: item.address ? {
+                        road: item.address.road || item.address.pedestrian || item.address.footway || item.address.path,
+                        house_number: item.address.house_number,
+                        city: item.address.city || item.address.town || item.address.village
+                    } : null
                 }));
 
                 // Filter by distance if we generated the bbox (Strategy 0) to ensure they are actually close

@@ -120,10 +120,19 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
 };
 
 const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speakingId, onSpeak, onStopSpeech, isLoading, loadingText, loadingCount, onUpdatePoiDescription }) => {
+    // Fix for stale closure in Leaflet listeners
+    const speakingIdRef = useRef(speakingId);
+    useEffect(() => { speakingIdRef.current = speakingId; }, [speakingId]);
+
     // Default center (Amsterdam)
     const defaultCenter = [52.3676, 4.9041];
     const [userSelectedStyle, setUserSelectedStyle] = useState('walking');
     const [viewAction, setViewAction] = useState(null);
+    const [isPopupOpen, setIsPopupOpen] = useState(false); // Track if any popup is open for HUD transparency
+    const markerRefs = useRef({}); // Refs for markers to open programmatically
+
+    const { pois = [], center, routePath } = routeData || {};
+    const isInputMode = !routeData;
 
     const t = {
         en: {
@@ -186,6 +195,20 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
     const [navigationPath, setNavigationPath] = useState(null);
     const [isNavigating, setIsNavigating] = useState(false);
 
+    // Sync Sidebar Selection with Map Popup & HUD State
+    useEffect(() => {
+        if (focusedLocation && pois && markerRefs.current) {
+            const idx = pois.findIndex(p => p.id === focusedLocation.id);
+            if (idx !== -1 && markerRefs.current[idx]) {
+                const marker = markerRefs.current[idx];
+                // Programmatically open the popup
+                marker.openPopup();
+                // Ensure HUD knows it's open (transparency)
+                setIsPopupOpen(true);
+            }
+        }
+    }, [focusedLocation, pois]);
+
     // Fetch real street navigation path
     useEffect(() => {
         console.log("Nav check:", { user: !!userLocation, focus: !!focusedLocation, nav: isNavigating, style: userSelectedStyle });
@@ -224,11 +247,10 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
 
     // Determine effective style
     // If no route data (input mode), use Dark. Otherwise use user selection.
-    const isInputMode = !routeData;
     const activeStyleKey = isInputMode ? 'default' : userSelectedStyle;
 
-    const { pois = [], center, routePath } = routeData || {};
     const positions = pois.map(poi => [poi.lat, poi.lng]);
+
 
     // Use OSRM path if available, else simple lines
     const polyline = routePath || [];
@@ -270,7 +292,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
         return { colorClass, iconHtml };
     };
 
-    const markerRefs = useRef({});
+
 
     // Effect: Open Popup when focusedLocation changes
     useEffect(() => {
@@ -359,9 +381,14 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                                     ref={(el) => { if (el) markerRefs.current[idx] = el; }}
                                     position={[poi.lat, poi.lng]}
                                     eventHandlers={{
-                                        click: () => { setIsNavigating(false); onPoiClick && onPoiClick(poi); },
+                                        click: () => {
+                                            setIsNavigating(false);
+                                            onPoiClick && onPoiClick(poi);
+                                            setIsPopupOpen(true);
+                                        },
                                         popupclose: () => {
-                                            if (speakingId === poi.id) {
+                                            setIsPopupOpen(false);
+                                            if (speakingIdRef.current === poi.id) {
                                                 onStopSpeech();
                                             }
                                         }
@@ -507,7 +534,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
             {/* Route Stats Overlay */}
             {
                 routeData?.stats && (
-                    <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[400] bg-slate-900/90 backdrop-blur-xl rounded-full px-6 py-3 border border-white/10 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-700">
+                    <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[400] bg-slate-900/90 backdrop-blur-xl rounded-full px-6 py-3 border border-white/10 shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-700 group hover:opacity-10 transition-opacity duration-300 pointer-events-auto">
                         {!routeData.stats.limitKm.toString().startsWith('Radius') && (
                             <>
                                 <div className="flex flex-col items-center">
@@ -533,7 +560,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                     const targetIdx = pois.findIndex(p => (p.id && p.id === targetPoi.id) || (p.lat === targetPoi.lat && p.lng === targetPoi.lng));
 
                     return (
-                        <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-[400] bg-slate-900/90 backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/10 shadow-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-700">
+                        <div className={`absolute top-8 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/10 shadow-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-700 transition-all duration-300 pointer-events-auto ${isPopupOpen ? 'opacity-20 hover:opacity-100 bg-slate-900/40' : 'opacity-100 bg-slate-900/90'}`}>
                             {/* Direction Arrow */}
                             <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center border border-white/5 shadow-inner">
                                 <div style={{ transform: `rotate(${calcBearing(userLocation, targetPoi)}deg)`, transition: 'transform 0.5s ease-out' }}>

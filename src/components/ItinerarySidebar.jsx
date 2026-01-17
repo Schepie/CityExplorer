@@ -141,8 +141,9 @@ const SidebarInput = ({
                         onBlur={() => onCityValidation && onCityValidation('blur')}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') {
-                                onCityValidation && onCityValidation('blur');
+                                // Rely on onBlur to trigger validation when focus moves
                                 if (interestsInputRef.current) interestsInputRef.current.focus();
+                                else onCityValidation && onCityValidation('blur'); // Fallback if no ref
                             }
                         }}
                         placeholder={text.dest_ph}
@@ -337,11 +338,184 @@ const SidebarInput = ({
     )
 }
 
+const CityWelcomeCard = ({ city, center, stats, language, pois }) => {
+    const [weather, setWeather] = useState(null);
+    const [description, setDescription] = useState(null);
+    const [cityImage, setCityImage] = useState(null);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [currentTime, setCurrentTime] = useState('');
+
+    useEffect(() => {
+        if (!center) return;
+
+        // 1. Weather
+        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${center[0]}&longitude=${center[1]}&current_weather=true`)
+            .then(r => r.json())
+            .then(data => setWeather(data.current_weather))
+            .catch(e => console.warn("Weather fetch failed", e));
+
+        // 2. City Description
+        const langPrefix = language === 'nl' ? 'nl' : 'en';
+
+        // Step 1: Search for the best matching page title
+        // We use the FULL city string (e.g. "Hasselt, Belgium") to find the specific page (e.g. "Hasselt (België)")
+        const searchUrl = `https://${langPrefix}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(city)}&format=json&origin=*`;
+
+        fetch(searchUrl)
+            .then(r => r.json())
+            .then(searchData => {
+                if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
+                    // Best match title
+                    const bestTitle = searchData.query.search[0].title;
+
+                    // Step 2: Fetch summary for that specific title
+                    return fetch(`https://${langPrefix}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(bestTitle)}`);
+                }
+                throw new Error("No wiki results found");
+            })
+            .then(r => r.json())
+            .then(data => {
+                // Check if we still got a disambiguation page (type: "disambiguation")
+                if (data.type === 'disambiguation') {
+                    throw new Error("Got disambiguation page");
+                }
+
+                setDescription(data.extract);
+                if (data.thumbnail && data.thumbnail.source) {
+                    setCityImage(data.thumbnail.source);
+                }
+            })
+            .catch(e => {
+                console.warn("Wiki fetch failed", e);
+                const cleanCity = city.split(',')[0].trim();
+                setDescription(language === 'nl'
+                    ? `Welkom in ${cleanCity}! Ontdek de verborgen parels en lokale cultuur.`
+                    : `Welcome to ${cleanCity}! Discover the hidden gems and local culture.`);
+            });
+
+        // 3. Time
+        setCurrentTime(new Date().toLocaleTimeString(language === 'nl' ? 'nl-NL' : 'en-US', { hour: '2-digit', minute: '2-digit' }));
+
+    }, [city, center, language]);
+
+    // Cleanup image on city change
+    useEffect(() => { setCityImage(null); }, [city]);
+
+    // Estimation: 4km/h walking + 20 mins per POI
+    const calcDuration = () => {
+        if (!stats || !stats.totalDistance) return "";
+        const wSpeed = 4.0;
+        const walkTime = (parseFloat(stats.totalDistance) / wSpeed) * 60;
+        const visitTime = pois.length * 20;
+        const total = Math.round(walkTime + visitTime);
+        const h = Math.floor(total / 60);
+        const m = total % 60;
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    };
+
+    // Weather Code Interpretation (Simple)
+    const getWeatherIcon = (code) => {
+        if (code === undefined) return "🌤️";
+        if (code <= 1) return "☀️";
+        if (code <= 3) return "⛅"; // Partly cloudy
+        if (code <= 48) return "🌫️"; // Fog
+        if (code <= 67) return "🌧️"; // Rain
+        if (code <= 77) return "❄️"; // Snow
+        if (code > 95) return "⚡"; // Storm
+        return "☁️";
+    };
+
+    const highlights = pois.slice(0, 3).map(p => p.name).join(", ");
+
+    return (
+        <div
+            onClick={() => setIsExpanded(!isExpanded)}
+            className={`group relative bg-gradient-to-br from-blue-900/40 to-slate-900/40 hover:from-blue-800/60 hover:to-slate-800/60 p-4 rounded-xl border transition-all cursor-pointer mb-3 ${isExpanded ? 'border-blue-400/50 shadow-lg shadow-blue-900/20' : 'border-blue-400/20 hover:border-blue-400/40'}`}
+        >
+            <div className="flex items-center gap-4">
+                {/* Visual Identity / Logo Placeholder */}
+                <div className="w-10 h-10 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-xl shadow-inner overflow-hidden">
+                    {cityImage ? (
+                        <img src={cityImage} alt={city} className="w-full h-full object-cover" />
+                    ) : (
+                        "🏙️"
+                    )}
+                </div>
+
+                <div className="flex-1">
+                    <h3 className="font-bold text-white text-lg leading-tight">{language === 'nl' ? 'Welkom in' : 'Welcome to'} {city}</h3>
+                    {!isExpanded && (
+                        <div className="flex items-center gap-3 text-xs text-blue-200/80 mt-1">
+                            <span>{weather ? `${getWeatherIcon(weather.weathercode)} ${weather.temperature}°C` : ''}</span>
+                            <span className="w-1 h-1 rounded-full bg-blue-400/30"></span>
+                            <span>{currentTime}</span>
+                        </div>
+                    )}
+                </div>
+
+                <div className="text-blue-300/50 group-hover:text-blue-300 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                </div>
+            </div>
+
+            {/* Expandable "Guide" Content */}
+            {isExpanded && (
+                <div className="mt-4 pt-4 border-t border-blue-400/10 space-y-4 animate-in slide-in-from-top-2 fade-in">
+
+                    {/* Introduction */}
+                    <div className="text-sm text-slate-300 leading-relaxed">
+                        <p className="italic mb-2 opacity-80">"{language === 'nl' ? 'Hallo! Ik ben je gids voor vandaag.' : 'Hello! I\'ll be your guide today.'}"</p>
+                        {description || (language === 'nl' ? "Informatie aan het laden..." : "Loading info...")}
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-2 gap-3 bg-slate-900/30 p-3 rounded-lg border border-white/5">
+                        <div>
+                            <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-bold">{language === 'nl' ? 'Huidig Weer' : 'Current Weather'}</span>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-2xl">{weather ? getWeatherIcon(weather.weathercode) : '..'}</span>
+                                <span className="font-bold text-slate-200">{weather ? weather.temperature : '--'}°C</span>
+                            </div>
+                        </div>
+                        <div>
+                            <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-bold">{language === 'nl' ? 'Lokale Tijd' : 'Local Time'}</span>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-lg">🕒</span>
+                                <span className="font-bold text-slate-200">{currentTime}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Tour Summary */}
+                    <div className="bg-slate-900/30 p-3 rounded-lg border border-white/5 space-y-2">
+                        <h4 className="text-xs font-bold text-blue-300 uppercase tracking-widest">{language === 'nl' ? 'Tour Overzicht' : 'Tour Summary'}</h4>
+                        <ul className="text-xs text-slate-300 space-y-1.5 list-disc pl-4 marker:text-blue-500">
+                            <li>
+                                <span className="text-slate-400">{language === 'nl' ? 'Totale afstand:' : 'Total distance:'}</span> <strong className="text-slate-200">{stats.totalDistance} km</strong>
+                            </li>
+                            <li>
+                                <span className="text-slate-400">{language === 'nl' ? 'Duur:' : 'Duration:'}</span> <strong className="text-slate-200">~{calcDuration()}</strong>
+                            </li>
+                            <li>
+                                <span className="text-slate-400">{language === 'nl' ? 'Hoogtepunten:' : 'Highlights:'}</span> {highlights} {pois.length > 3 ? (language === 'nl' ? 'en meer' : 'and more') : ''}.
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const ItinerarySidebar = ({
     routeData, onPoiClick, onReset, language, setLanguage,
     speakingId, onSpeak, autoAudio, setAutoAudio,
+    voiceSettings, setVoiceSettings,
     // Form Props
     city, setCity, interests, setInterests,
+
     constraintType, setConstraintType,
     constraintValue, setConstraintValue,
     isRoundtrip, setIsRoundtrip,
@@ -457,20 +631,16 @@ const ItinerarySidebar = ({
                             </div>
                         </div>
 
-                        {/* Stats Summary (Only if Itinerary) */}
+                        {/* City Welcome Card (Replaces Stats Summary) */}
                         {showItinerary && (
-                            <div className="grid grid-cols-2 gap-4 mt-4">
-                                <div className="bg-slate-800/50 p-3 rounded-lg border border-white/5">
-                                    <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">{text.dist}</div>
-                                    <div className="text-xl font-bold text-primary">{routeData.stats.totalDistance} km</div>
-                                </div>
-                                <div className="bg-slate-800/50 p-3 rounded-lg border border-white/5">
-                                    <div className="text-slate-400 text-xs uppercase tracking-wider mb-1">{text.budget}</div>
-                                    <div className="text-xl font-bold text-emerald-400">
-                                        {routeData.stats.limitKm.toString().startsWith('Radius') ? '' : '~'}
-                                        {routeData.stats.limitKm} km
-                                    </div>
-                                </div>
+                            <div className="mt-4">
+                                <CityWelcomeCard
+                                    city={city}
+                                    center={routeData.center}
+                                    stats={routeData.stats}
+                                    language={language}
+                                    pois={routeData.pois}
+                                />
                             </div>
                         )}
                     </div>
@@ -481,113 +651,169 @@ const ItinerarySidebar = ({
                         <div className="absolute top-[80px] left-0 w-full h-[calc(100%-80px)] z-[600] bg-[var(--bg-gradient-end)]/95 backdrop-blur-md p-6 overflow-y-auto animate-in fade-in slide-in-from-top-4">
                             <h3 className="font-bold text-white mb-4 text-lg border-b border-white/10 pb-2">Settings</h3>
 
-                            {/* Language */}
-                            <div className="mb-6 space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Language / Taal</label>
-                                <div className="flex bg-slate-800/50 p-1 rounded-lg">
-                                    {['en', 'nl'].map(lang => (
+                            {/* Compact Settings List */}
+                            <div className="space-y-4">
+
+                                {/* 1. Language */}
+                                <div className="space-y-1">
+                                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">Language</label>
+                                    <div className="flex bg-slate-800/80 p-1 rounded-lg border border-white/5">
                                         <button
-                                            key={lang}
-                                            onClick={() => setLanguage(lang)}
-                                            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${language === lang ? 'bg-primary text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                                            onClick={() => setLanguage('en')}
+                                            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${language === 'en' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
                                         >
-                                            {lang === 'en' ? 'English' : 'Nederlands'}
+                                            <svg viewBox="0 0 30 20" className="w-4 h-3 rounded-[2px] shadow-sm overflow-hidden">
+                                                <rect width="30" height="20" fill="#012169" />
+                                                <path d="M0,0 L30,20 M30,0 L0,20" stroke="white" strokeWidth="4" />
+                                                <path d="M0,0 L30,20 M30,0 L0,20" stroke="#C8102E" strokeWidth="2" />
+                                                <path d="M15,0 V20 M0,10 H30" stroke="white" strokeWidth="6" />
+                                                <path d="M15,0 V20 M0,10 H30" stroke="#C8102E" strokeWidth="4" />
+                                            </svg>
+                                            English
                                         </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* App Theme */}
-                            <div className="mb-6 space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{language === 'nl' ? 'Thema' : 'App Theme'}</label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {availableThemes && Object.values(availableThemes).map(t => (
                                         <button
-                                            key={t.id}
-                                            onClick={() => setActiveTheme(t.id)}
-                                            className={`group relative p-3 rounded-xl border transition-all overflow-hidden ${activeTheme === t.id ? 'border-white/40 shadow-lg scale-[1.02]' : 'border-white/5 hover:border-white/20'}`}
-                                            style={{
-                                                background: `linear-gradient(135deg, ${t.colors.bgStart}, ${t.colors.bgEnd})`
-                                            }}
+                                            onClick={() => setLanguage('nl')}
+                                            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${language === 'nl' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
                                         >
-                                            <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors" />
+                                            <svg viewBox="0 0 30 20" className="w-4 h-3 rounded-[2px] shadow-sm overflow-hidden">
+                                                <rect width="30" height="20" fill="#21468B" />
+                                                <rect width="30" height="13.3" fill="#FFFFFF" />
+                                                <rect width="30" height="6.6" fill="#AE1C28" />
+                                            </svg>
+                                            Nederlands
+                                        </button>
+                                    </div>
+                                </div>
 
-                                            <div className="relative z-10 flex flex-col items-center gap-2">
-                                                {/* Primary Color Indicator */}
+                                {/* 2. Voice Persona */}
+                                {voiceSettings && (
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Stem' : 'Voice Persona'}</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {/* Region */}
+                                            <div className="flex bg-slate-800/80 p-1 rounded-lg border border-white/5">
+                                                <button
+                                                    onClick={() => setVoiceSettings(prev => ({ ...prev, variant: 'nl' }))}
+                                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${voiceSettings.variant === 'nl' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                                >
+                                                    <svg viewBox="0 0 30 20" className="w-4 h-3 rounded-[2px] shadow-sm overflow-hidden">
+                                                        <rect width="30" height="20" fill="#21468B" />
+                                                        <rect width="30" height="13.3" fill="#FFFFFF" />
+                                                        <rect width="30" height="6.6" fill="#AE1C28" />
+                                                    </svg>
+                                                    NL
+                                                </button>
+                                                <button
+                                                    onClick={() => setVoiceSettings(prev => ({ ...prev, variant: 'be' }))}
+                                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${voiceSettings.variant === 'be' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                                >
+                                                    <svg viewBox="0 0 30 20" className="w-4 h-3 rounded-[2px] shadow-sm overflow-hidden">
+                                                        <rect width="30" height="20" fill="#ED2939" />
+                                                        <rect width="20" height="20" fill="#FAE042" />
+                                                        <rect width="10" height="20" fill="#000000" />
+                                                    </svg>
+                                                    BE
+                                                </button>
+                                            </div>
+                                            {/* Gender */}
+                                            <div className="flex bg-slate-800/80 p-1 rounded-lg border border-white/5">
+                                                <button
+                                                    onClick={() => setVoiceSettings(prev => ({ ...prev, gender: 'male' }))}
+                                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${voiceSettings.gender === 'male' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                                >
+                                                    {language === 'nl' ? 'Man' : 'Male'}
+                                                </button>
+                                                <button
+                                                    onClick={() => setVoiceSettings(prev => ({ ...prev, gender: 'female' }))}
+                                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${voiceSettings.gender === 'female' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                                >
+                                                    {language === 'nl' ? 'Vrouw' : 'Fem'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 3. App Theme */}
+                                <div className="space-y-1">
+                                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Thema' : 'Theme'}</label>
+                                    <div className="flex flex-wrap bg-slate-800/80 p-1 rounded-lg border border-white/5 gap-1">
+                                        {availableThemes && Object.values(availableThemes).map(t => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() => setActiveTheme(t.id)}
+                                                className={`flex-1 min-w-[30%] py-1.5 rounded-md transition-all flex items-center justify-center gap-2 ${activeTheme === t.id ? 'bg-primary text-white shadow-sm border border-white/10' : 'text-slate-400 hover:bg-white/5 border border-transparent'}`}
+                                            >
                                                 <div
-                                                    className="w-4 h-4 rounded-full shadow-lg border border-white/20"
+                                                    className="w-2.5 h-2.5 rounded-full shadow-sm"
                                                     style={{ backgroundColor: t.colors.primary }}
                                                 />
-                                                <span className="text-[10px] font-bold text-white tracking-wide shadow-black drop-shadow-md leading-none">
+                                                <span className={`text-[10px] font-semibold ${activeTheme === t.id ? 'text-white' : 'text-slate-400'}`}>
                                                     {language === 'nl' ? t.label.nl : t.label.en}
                                                 </span>
-                                            </div>
-                                        </button>
-                                    ))}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
+
+                                {/* 4. Detail Level */}
+                                <div className="space-y-1">
+                                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Detailniveau' : 'Detail Level'}</label>
+                                    <div className="flex bg-slate-800/80 p-1 rounded-lg border border-white/5">
+                                        {[
+                                            { id: 'short', label: { en: 'Brief', nl: 'Kort' }, icon: <path d="M11 7h2v2h-2zm0 4h2v6h-2z" /> },
+                                            { id: 'medium', label: { en: 'Standard', nl: 'Standaard' }, icon: <path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /> },
+                                            { id: 'max', label: { en: 'Deep', nl: 'Diep' }, icon: <path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /> }
+                                        ].map(opt => (
+                                            <button
+                                                key={opt.id}
+                                                onClick={() => setDescriptionLength(opt.id)}
+                                                className={`flex-1 py-1.5 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md transition-all ${descriptionLength === opt.id ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 opacity-80" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" opacity="0.4" />
+                                                    {opt.icon}
+                                                </svg>
+                                                <span>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
                             </div>
+
 
                             {/* Description Length Settings */}
-                            <div className="mb-6 space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{language === 'nl' ? 'Lengte Beschrijving POI' : 'POI Description Length'}</label>
-                                <div className="flex bg-slate-800/50 p-1 rounded-lg gap-1">
-                                    {[
-                                        { id: 'short', label: { en: 'Brief', nl: 'Kort' }, icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
-                                        { id: 'medium', label: { en: 'Standard', nl: 'Standaard' }, icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
-                                        { id: 'max', label: { en: 'Detailed', nl: 'Gedetailleerd' }, icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
-                                    ].map(opt => (
-                                        <button
-                                            key={opt.id}
-                                            onClick={() => setDescriptionLength(opt.id)}
-                                            className={`flex-1 flex flex-col items-center justify-center py-2 rounded-md transition-all ${descriptionLength === opt.id ? 'bg-primary text-white shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mb-1" viewBox="0 0 24 24" fill="currentColor">
-                                                {opt.icon}
-                                            </svg>
-                                            <span className="text-[10px] font-medium">{language === 'nl' ? opt.label.nl : opt.label.en}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
 
-                            {/* Search Sources (Collapsed) */}
-                            <div className="space-y-3">
+
+                            {/* 5. Search Sources (Compact & Collapsible) */}
+                            <div className="space-y-1 mt-4 border-t border-white/10 pt-4">
                                 <button
                                     onClick={() => setShowSources(!showSources)}
-                                    className="flex items-center justify-between w-full text-xs uppercase tracking-wider text-slate-500 font-semibold hover:text-white transition-colors"
+                                    className="flex items-center justify-between w-full text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 hover:text-white transition-colors"
                                 >
-                                    {text.sources_label || "Search Sources"}
-                                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${showSources ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                                    {text.sources_label || "Sources"}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${showSources ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
                                         <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                                     </svg>
                                 </button>
 
                                 {showSources && (
-                                    <div className="space-y-2 animate-in slide-in-from-top-2 fade-in">
-                                        {/* OSM */}
-                                        <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.osm ? 'bg-blue-600/10 border-blue-500/50' : 'bg-slate-800/60 border-white/5'}`}>
-                                            <span className={`font-medium ${searchSources.osm ? 'text-blue-300' : 'text-slate-400'}`}>OpenStreetMap</span>
-                                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.osm ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}`}>
-                                                {searchSources.osm && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                                            </div>
-                                            <input type="checkbox" className="hidden" checked={searchSources.osm} onChange={(e) => setSearchSources({ ...searchSources, osm: e.target.checked })} />
-                                        </label>
-                                        {/* Foursquare */}
-                                        <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.foursquare ? 'bg-pink-600/10 border-pink-500/50' : 'bg-slate-800/60 border-white/5'}`}>
-                                            <span className={`font-medium ${searchSources.foursquare ? 'text-pink-300' : 'text-slate-400'}`}>Foursquare</span>
-                                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.foursquare ? 'bg-pink-500 border-pink-500' : 'border-slate-600'}`}>
-                                                {searchSources.foursquare && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                                            </div>
-                                            <input type="checkbox" className="hidden" checked={searchSources.foursquare} onChange={(e) => setSearchSources({ ...searchSources, foursquare: e.target.checked })} />
-                                        </label>
-                                        {/* Google */}
-                                        <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${searchSources.google ? 'bg-green-600/10 border-green-500/50' : 'bg-slate-800/60 border-white/5'}`}>
-                                            <span className={`font-medium ${searchSources.google ? 'text-green-300' : 'text-slate-400'}`}>Google Places</span>
-                                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${searchSources.google ? 'bg-green-500 border-green-500' : 'border-slate-600'}`}>
-                                                {searchSources.google && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                                            </div>
-                                            <input type="checkbox" className="hidden" checked={searchSources.google} onChange={(e) => setSearchSources({ ...searchSources, google: e.target.checked })} />
-                                        </label>
+                                    <div className="space-y-2 pt-2 animate-in slide-in-from-top-2 fade-in">
+                                        {[
+                                            { id: 'osm', label: 'OpenStreetMap', color: 'bg-blue-600' },
+                                            { id: 'foursquare', label: 'Foursquare', color: 'bg-pink-600' },
+                                            { id: 'google', label: 'Google Places', color: 'bg-green-600' }
+                                        ].map(source => (
+                                            <button
+                                                key={source.id}
+                                                onClick={() => setSearchSources({ ...searchSources, [source.id]: !searchSources[source.id] })}
+                                                className={`w-full flex items-center justify-between p-2 rounded-lg border transition-all ${searchSources[source.id] ? 'bg-slate-800 border-white/20' : 'bg-transparent border-transparent opacity-60 hover:opacity-100'}`}
+                                            >
+                                                <span className={`text-xs font-semibold ${searchSources[source.id] ? 'text-white' : 'text-slate-500'}`}>{source.label}</span>
+                                                <div className={`w-3 h-3 rounded-full transition-all ${searchSources[source.id] ? source.color + ' shadow-[0_0_8px_currentColor]' : 'bg-slate-700'}`} />
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
                             </div>
@@ -640,6 +866,7 @@ const ItinerarySidebar = ({
                             /* VIEW 2: Itinerary List */
                             <div className="space-y-3">
                                 {routeData.pois.map((poi, index) => {
+
                                     const isExpanded = expandedPoi === poi.id;
                                     return (
                                         <div
@@ -706,7 +933,8 @@ const ItinerarySidebar = ({
                                             )}
                                         </div>
                                     );
-                                })}
+                                })
+                                }
                             </div>
                         ) : (
                             /* VIEW 3: Input Form (Start or Add) */

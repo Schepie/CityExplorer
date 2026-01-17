@@ -22,6 +22,7 @@ export class PoiIntelligence {
             "wikipedia": 0.9,
             "google_kg": 0.85,
             "visit_city": 0.8,
+            "google_search": 0.75,
             "foursquare": 0.7,
             "duckduckgo": 0.6,
             "generic_web": 0.4
@@ -93,6 +94,7 @@ export class PoiIntelligence {
             this.fetchLocalArchive(poi.name),
             this.fetchWikipedia(poi.name),
             // this.fetchGoogleKnowledgeGraph(poi.name), // Keeps these disabled if keys are issue
+            this.fetchGoogleSearch(poi.name),
             this.fetchDuckDuckGo(poi.name),
             this.fetchOverpassTags(poi),
         ];
@@ -129,10 +131,32 @@ export class PoiIntelligence {
             lengthInstruction = "Length: Detailed and comprehensive. 8-10 sentences. detailed history, significance, and visitor tips.";
         }
 
+        // Smart Address Construction
+        let locationInfo = poi.address || 'Unknown';
+        if (poi.address_components) {
+            const { road, house_number, city } = poi.address_components;
+            // Heuristic: Only show specific street address for "Building" types.
+            // For parks, nature, etc., the nearest road (like the user's location) is often misleading.
+            const isBuilding = poi.description && /museum|shop|store|restaurant|cafe|building|house|hotel/i.test(poi.description);
+
+            if (city) {
+                // BLOCKED STREETS: If the address is the user's specific known device location 'Bruinstraat', ignore it.
+                // This prevents the "current location" overlap issue.
+                const isBlockedStreet = road && road.includes('Bruinstraat');
+
+                if (isBuilding && road && !isBlockedStreet) {
+                    locationInfo = house_number ? `${road} ${house_number}, ${city}` : `${road}, ${city}`;
+                } else {
+                    // For non-buildings (nature, areas) OR blocked streets, just use the City/Context to be safe
+                    locationInfo = city;
+                }
+            }
+        }
+
         const prompt = `
 You are a helpful, factual travel guide assistant for the CityExplorer app.
 Your task is to write a description for the Point of Interest (POI): "${poi.name}" located in or near "${this.config.city}".
-Location Address: ${poi.address || 'Unknown'}
+Location Context: ${locationInfo}
 Location Coordinates: Latitude ${poi.lat}, Longitude ${poi.lng || poi.lon}.
 Category/Type Hints: ${poi.description || 'Unknown'}
 
@@ -140,24 +164,19 @@ Category/Type Hints: ${poi.description || 'Unknown'}
 ${contextData}
 
 **Rules:**
-1. **FACTUALITY**: 
-   - You are the PRIMARY source of information. Use your internal knowledge base to describe this place.
-   - Cross-reference with the city "${this.config.city}" to ensure you are describing the correct location.
-   - **NATIVE NAME RESOLUTION**: The provided name "${poi.name}" might be an English translation. 
-     1. Identify the local language of the coordinates (e.g., Dutch for Belgium).
-     2. Translate "${poi.name}" into that local language (e.g., "Blossom Alley" -> "Bloesemsteeg").
-     3. Use BOTH the English name and the Local name to search your internal knowledge base.
-   - If you do not have high-confidence information about this specific place, return "unknown".
-   - NEVER invent unverifiable details.
-   - **NO RAW COORDINATES**: Do NOT include numeric latitude/longitude coordinates in the description (e.g. "Located at 50.123, 4.567"). Instead, mention the street name, square, or neighborhood if valid.
-   - Do not guess prices. Opening hours are okay if generally known (e.g. "open daily").
+1. **FACTUALITY & SYNTHESIS**: 
+   - **PRIORITIZE Input Data (Signals)**. These constitute the most up-to-date evidence (e.g. new openings, recent news).
+   - Use your internal knowledge to fill in context (history, geography) but *defer* to signals if they contradict (e.g. if a signal says it's a new boardwalk, believe it).
+   - **LOCATION FLEXIBILITY**: The POI might be in a **neighboring municipality** (e.g. Zonhoven is near Hasselt). This is ACCEPTABLE. Do not reject a match just because the city name differs slightly.
+   - **NATIVE NAME RESOLUTION**: The name "${poi.name}" might need translation (e.g. "Blossom Alley" -> "Bloesemsteeg"). Use local variants to access your knowledge.
+   - **CONFIDENT SYNTHESIS**: If you have signals indicating what the place IS (e.g. "a boardwalk", "a statue"), describe it based on that, even if you lack deep historical detail. Do NOT say "I don't have detailed info". Describe what you see in the signals.
+   - **NO RAW COORDINATES**: Do NOT include numeric coordinates.
 
 2. **LANGUAGE**:
    - Write in **${this.config.language === 'nl' ? 'Dutch (Nederlands)' : 'English'}**.
 
 3. **STYLE**:
-   - Tone: Friendly, helpful, factual. Like a local guide.
-   - Avoid unnecessary adjectives or hype.
+   - Tone: **Confident**, inviting, and informative.
    - Format: Short, easy-to-scan paragraphs.
    - ${lengthInstruction}
 
@@ -429,6 +448,53 @@ Return ONLY valid JSON with this structure:
 
     // --- Analysis & Conflict Resolution ---
 
+    async fetchGoogleSearch(name) {
+        try {
+            // Use local proxy
+            // Strategy 1: Simple Name + City Pattern (Per User Request)
+            // e.g. "'t Vlonderpiëke Zonhoven"
+            const relevantCity = poi.location_context || this.config.city;
+            const fullQuery = `${name} ${relevantCity}`;
+            let url = `/api/google-search?q=${encodeURIComponent(fullQuery)}&num=5`;
+            let res = await fetch(url).then(r => r.json());
+
+            // Strategy 2: Name Only (Fallback if #1 failed)
+            // Useful for unique POI names that might not be indexed with the city name yet
+            // Safety: Only for multi-word names to avoid searching for generic terms like "Park" globally.
+            if ((!res.items || res.items.length === 0) && name.trim().split(/\s+/).length > 1) {
+                console.log(`POI Intelligence: Fallback to name-only search for "${name}"`);
+                url = `/api/google-search?q=${encodeURIComponent(name)}&num=5`;
+                res = await fetch(url).then(r => r.json());
+            }
+
+            if (res.items && res.items.length > 0) {
+                // Combine snippets into one rich content block for Gemini
+                const combinedSnippets = res.items.slice(0, 3).map(item => {
+                    let text = item.snippet;
+                    // Try to get OG description if available
+                    if (item.pagemap?.metatags?.[0]?.['og:description']) {
+                        const og = item.pagemap.metatags[0]['og:description'];
+                        if (og.length > text.length) text = og;
+                    }
+                    return text;
+                }).join('\n');
+
+                return {
+                    type: 'description',
+                    source: 'google_search',
+                    content: combinedSnippets,
+                    link: res.items[0].link,
+                    confidence: 0.75
+                };
+            }
+        } catch (e) {
+            // Silent
+        }
+        return null;
+    }
+
+    // --- Analysis & Conflict Resolution ---
+
     analyzeSignals(poi, signals) {
         return signals.map(signal => {
             // Heuristic: Penalize generic city descriptions
@@ -436,10 +502,17 @@ Return ONLY valid JSON with this structure:
             const text = signal.content.toLowerCase();
 
             // Detection: "Hasselt is de hoofdstad..."
-            if (text.includes(this.config.city.toLowerCase() + " is") ||
+            // ONLY penalize if the specific POI name is NOT in the text.
+            // If the text talks about the city but mentions the POI, it might be valid context.
+            if ((text.includes(this.config.city.toLowerCase() + " is") ||
                 text.includes("hoofdstad") ||
-                text.includes("provincie")) {
+                text.includes("provincie")) && !text.includes(poi.name.toLowerCase())) {
                 score = 0.1; // Untrustworthy
+            }
+
+            // Boost Google Search if it contains the exact name
+            if (signal.source === 'google_search' && text.includes(poi.name.toLowerCase())) {
+                score = 0.9;
             }
 
             // Detection: Tag lists ("Museum, Building, Point of Interest")
