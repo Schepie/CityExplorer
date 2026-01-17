@@ -46,7 +46,7 @@ const calcDistance = (p1, p2) => {
     const lat2 = toRad(p2.lat);
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return (R * c).toFixed(1);
+    return R * c; // Return raw km
 };
 const calcBearing = (p1, p2) => {
     const y = Math.sin(toRad(p2.lng - p1.lng)) * Math.cos(toRad(p2.lat));
@@ -157,19 +157,30 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
 
     // Fetch user location
     useEffect(() => {
+        let watchId;
         if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
+            watchId = navigator.geolocation.watchPosition(
                 (position) => {
                     setUserLocation({
                         lat: position.coords.latitude,
-                        lng: position.coords.longitude
+                        lng: position.coords.longitude,
+                        heading: position.coords.heading // Capture heading if available
                     });
                 },
                 (error) => {
                     console.log("Error getting location:", error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 0,
+                    timeout: 5000
                 }
             );
         }
+
+        return () => {
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+        };
     }, []);
 
     const [navigationPath, setNavigationPath] = useState(null);
@@ -534,8 +545,23 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, speaki
                             <div className="flex flex-col">
                                 <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">{text.next}: POI {targetIdx + 1}</span>
                                 <div className="flex items-baseline gap-1">
-                                    <span className="text-3xl font-bold text-white tracking-tight">{calcDistance(userLocation, targetPoi)}</span>
-                                    <span className="text-sm font-medium text-slate-400">km</span>
+                                    {(() => {
+                                        const distKm = calcDistance(userLocation, targetPoi);
+                                        let displayVal, unit;
+                                        if (distKm < 1) {
+                                            displayVal = Math.round(distKm * 1000);
+                                            unit = "m";
+                                        } else {
+                                            displayVal = distKm.toFixed(1);
+                                            unit = "km";
+                                        }
+                                        return (
+                                            <>
+                                                <span className="text-3xl font-bold text-white tracking-tight">{displayVal}</span>
+                                                <span className="text-sm font-medium text-slate-400">{unit}</span>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>
