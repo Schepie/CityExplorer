@@ -38,6 +38,7 @@
     "netlify-plugin-inline-functions-env": "^1.0.9",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }
