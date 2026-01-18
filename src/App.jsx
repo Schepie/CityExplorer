@@ -109,7 +109,10 @@ function App() {
       setIsBackgroundUpdating(true);
       // We do not set isLoading(true) here anymore, to allow user interaction.
 
-      enrichBackground(routeData.pois, city, language, descriptionLength)
+      // Construct Route Context for engine
+      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+
+      enrichBackground(routeData.pois, city, language, descriptionLength, interests, routeCtx)
         .finally(() => {
           setIsBackgroundUpdating(false);
         });
@@ -179,13 +182,15 @@ function App() {
   };
 
   // Main Enrichment Logic (Moved to top level for reuse)
-  const enrichBackground = async (pois, cityName, lang, lengthMode) => {
+  const enrichBackground = async (pois, cityName, lang, lengthMode, userInterests = '', routeCtx = '') => {
     // This implements the requested 7-Step "POI Intelligence" pipeline.
     setIsBackgroundUpdating(true); // START Indicator
     const engine = new PoiIntelligence({
       city: cityName,
       language: lang,
-      lengthMode: lengthMode // Pass length mode to engine config
+      lengthMode: lengthMode,
+      interests: userInterests,
+      routeContext: routeCtx
     });
 
     for (const poi of pois) {
@@ -901,60 +906,30 @@ function App() {
 
       // === MODE 1: RADIUS (Show All) ===
       if (searchMode === 'radius') {
-        // Enrichment for Radius Mode
         const topCandidates = candidates.slice(0, 50);
 
-        const enrichedPois = await Promise.all(topCandidates.map(async (poi) => {
-          // Detect "junk" descriptions that are just tag lists (common in raw data)
-          let desc = (poi.description || "").toLowerCase();
-          const isJunk = desc.includes('_') || // e.g. point_of_interest
-            (desc.split(',').length > 2 && !desc.includes('. ')) || // List of tags without sentences
-            desc.includes('point of interest') ||
-            desc.includes('establishment');
-
-          // Detect generic city descriptions (often erroneously attached to POIs in raw data)
-          const isGenericCityDesc =
-            poi.description.toLowerCase().startsWith(cityName.toLowerCase() + " is") ||
-            poi.description.toLowerCase().includes("hoofdstad") ||
-            poi.description.toLowerCase().includes("capital of") ||
-            poi.description.toLowerCase().includes("inhabitants") ||
-            poi.description.toLowerCase().includes("inwoners");
-
-          // If valid long description exists AND it's not junk AND not generic city info, keep it.
-          if (!isJunk && !isGenericCityDesc && poi.description && poi.description.length > 50) return poi;
-
-          const wikiResult = await fetchWikipediaSummary(poi.name, language, cityName);
-
-          // Handle object or string return
-          const d = (typeof wikiResult === 'object') ? wikiResult?.description : wikiResult;
-          const l = (typeof wikiResult === 'object') ? wikiResult?.link : null;
-
-          // If we found a good description, use it.
-          if (d) {
-            return { ...poi, description: d, link: l };
-          }
-
-          // If search failed and we have junk, try to clean it up or minimal fallback
-          if (isJunk) {
-            // Clean up underscores and generic terms for display
-            let clean = desc.replace(/_/g, ' ').replace(/point of interest|establishment|tourist attraction/g, '').replace(/,,/g, ',').replace(/^,|,$/g, '').trim();
-            if (clean.length < 3) clean = ""; // If it was just "point of interest", now empty.
-            return { ...poi, description: clean || (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available.") };
-          }
-
-          return poi;
+        // 1. Set initial state with basic POIs (loading descriptions)
+        const initialPois = topCandidates.map(p => ({
+          ...p,
+          description: language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...',
+          isLoading: true
         }));
 
         setRouteData({
           center: cityCenter,
-          pois: enrichedPois,
+          pois: initialPois,
           routePath: [], // No path for radius mode
           stats: {
             totalDistance: "0",
             limitKm: `Radius ${searchRadiusKm}`
           }
         });
+
         setIsSidebarOpen(false); // Close sidebar on result
+
+        // 2. Background Process: Enrich iteratively using the premium Intelligence Engine
+        const routeCtx = `Radius search (${searchRadiusKm} km)`;
+        enrichBackground(topCandidates, cityData.name, language, descriptionLength, activeInterest, routeCtx);
         return;
       }
 
@@ -1127,13 +1102,6 @@ function App() {
         }
       }
 
-      // 6. Enrich with POI Intelligence Engine (Generic, Multi-source, Probabilistic)
-      // This implements the requested 7-Step "POI Intelligence" pipeline.
-      const engine = new PoiIntelligence({
-        city: city,
-        language: language
-      });
-
       // --- OPTIMIZATION: Show Map Immediately ---
       // 1. Set initial state with basic POIs (loading descriptions)
       const initialPois = selectedPois.map(p => ({
@@ -1156,7 +1124,8 @@ function App() {
 
       // 2. Background Process: Enrich iteratively
       // We do this WITHOUT awaiting the loop here to block UI.
-      enrichBackground(selectedPois, cityData.name, language, descriptionLength);
+      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+      enrichBackground(selectedPois, cityData.name, language, descriptionLength, activeInterest, routeCtx);
 
 
 
@@ -1283,10 +1252,13 @@ function App() {
       };
     });
 
+    const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
     const engine = new PoiIntelligence({
       city: city,
       language: language,
-      lengthMode: lengthMode
+      lengthMode: lengthMode,
+      interests: interests,
+      routeContext: routeCtx
     });
 
     try {

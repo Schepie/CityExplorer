@@ -17,7 +17,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export class PoiIntelligence {
     constructor(config) {
-        this.config = config; // City Context, Language
+        this.config = config; // City Context, Language, Interests, RouteContext
         this.trustScores = {
             "wikipedia": 0.9,
             "google_kg": 0.85,
@@ -53,12 +53,14 @@ export class PoiIntelligence {
             // However, maybe it knows it? Rule: "If information is unknown... return null".
             // Let's passed analyzed signals.
             const geminiResult = await this.fetchGeminiDescription(candidate, analyzed, this.config.lengthMode || 'medium');
-            if (geminiResult && geminiResult.description && geminiResult.description !== 'unknown') {
+            if (geminiResult && geminiResult.full_description && geminiResult.full_description !== 'unknown') {
                 // Extract link from signals if Gemini didn't find a better one
                 const fallbackLink = this.resolveConflicts(analyzed).link;
 
+                // We store the rich structure in structured_info
                 bestData = {
-                    description: geminiResult.description,
+                    description: geminiResult.short_description + "\n\n" + geminiResult.full_description,
+                    structured_info: geminiResult,
                     link: geminiResult.link || fallbackLink,
                     source: "Gemini Intelligence",
                     confidence: 0.95
@@ -77,6 +79,7 @@ export class PoiIntelligence {
         return {
             ...candidate,
             description: bestData.description,
+            structured_info: bestData.structured_info || null,
             link: bestData.link,
             source: bestData.source,
             intelligence: {
@@ -118,86 +121,78 @@ export class PoiIntelligence {
     // --- Gemini Integration ---
 
     async fetchGeminiDescription(poi, signals, lengthMode = 'medium') {
-        // Construct Context from Signals
         const contextData = signals.length > 0
             ? signals.map(s => `[Source: ${s.source}] ${s.content} (Link: ${s.link})`).join('\n\n')
             : "No external data signals found.";
 
-        // Length instruction based on mode
-        let lengthInstruction = "Length: 2-4 sentences max."; // Default/Medium
-        if (lengthMode === 'short') {
-            lengthInstruction = "Length: Extremely short. Exactly 2 concise sentences.";
-        } else if (lengthMode === 'max') {
-            lengthInstruction = "Length: Detailed and comprehensive. 8-10 sentences. detailed history, significance, and visitor tips.";
-        } else if (lengthMode === 'retry') {
-            lengthInstruction = "CRITICAL INSTRUCTION: The user marked the previous description as WRONG/INACCURATE. You must strictly re-evaluate the signals. Do not provide generic fillers (e.g. 'although details are scarce...'). If the signals are weak, simply state 'Specific details for this location are currently unavailable' rather than hallucinating. If signals are good, prioritize them over general city knowledge. Length: 6-8 sentences.";
-        }
-
-        // Smart Address Construction
         let locationInfo = poi.address || 'Unknown';
         if (poi.address_components) {
             const { road, house_number, city } = poi.address_components;
-            // Heuristic: Only show specific street address for "Building" types.
-            // For parks, nature, etc., the nearest road (like the user's location) is often misleading.
             const isBuilding = poi.description && /museum|shop|store|restaurant|cafe|building|house|hotel/i.test(poi.description);
 
             if (city) {
-                // BLOCKED STREETS: If the address is the user's specific known device location 'Bruinstraat', ignore it.
-                // This prevents the "current location" overlap issue.
                 const isBlockedStreet = road && road.includes('Bruinstraat');
-
                 if (isBuilding && road && !isBlockedStreet) {
                     locationInfo = house_number ? `${road} ${house_number}, ${city}` : `${road}, ${city}`;
                 } else {
-                    // For non-buildings (nature, areas) OR blocked streets, just use the City/Context to be safe
                     locationInfo = city;
                 }
             }
         }
 
         const prompt = `
-You are a helpful, factual travel guide assistant for the CityExplorer app.
-Your task is to write a description for the Point of Interest (POI): "${poi.name}" located in or near "${this.config.city}".
-Location Context: ${locationInfo}
-Location Coordinates: Latitude ${poi.lat}, Longitude ${poi.lng || poi.lon}.
-Category/Type Hints: ${poi.description || 'Unknown'}
+Je bent een deskundige digitale stadsgids die toeristen helpt een stad te verkennen.
+Je taak is om hoogwaardige, boeiende en contextueel relevante informatie te genereren over een Point of Interest (POI).
 
-**Input Data (Signals):**
-${contextData}
+### INPUT
+- POI naam: ${poi.name}
+- Ruwe data over de POI: ${contextData}
+- Gebruikersinteresses: ${this.config.interests || 'Algemeen toerisme'}
+- Stad: ${this.config.city}
+- Gewenste taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+- Routecontext (bijv. type wandeling, lengte, thema): ${this.config.routeContext || 'Stadswandeling'}
 
-**Rules:**
-1. **FACTUALITY & SYNTHESIS**: 
-   - **PRIORITIZE Input Data (Signals)**. These constitute the most up-to-date evidence (e.g. new openings, recent news).
-   - Use your internal knowledge to fill in context (history, geography) but *defer* to signals if they contradict (e.g. if a signal says it's a new boardwalk, believe it).
-   - **LOCATION FLEXIBILITY**: The POI might be in a **neighboring municipality** (e.g. Zonhoven is near Hasselt). This is ACCEPTABLE. Do not reject a match just because the city name differs slightly.
-   - **NATIVE NAME RESOLUTION**: The name "${poi.name}" might need translation (e.g. "Blossom Alley" -> "Bloesemsteeg"). Use local variants to access your knowledge.
-   - **CONFIDENT SYNTHESIS**: If you have signals indicating what the place IS (e.g. "a boardwalk", "a statue"), describe it based on that, even if you lack deep historical detail. Do NOT say "I don't have detailed info". Describe what you see in the signals.
-   - **NO RAW COORDINATES**: Do NOT include numeric coordinates.
+### DOEL
+Verbeter en herschrijf de informatie zodat die:
+1. Perfect aansluit bij de interesses van de gebruiker.
+2. Geschreven is in de stijl van een ervaren lokale gids.
+3. Relevante details benadrukt die interessant zijn voor bezoekers.
+4. Zaken weglaat die niet relevant zijn voor toeristen.
+5. Zowel feitelijk correct als vlot leesbaar is.
+6. De gebruiker helpt begrijpen waarom dit POI de moeite waard is.
 
-2. **LANGUAGE**:
-   - Write in **${this.config.language === 'nl' ? 'Dutch (Nederlands)' : 'English'}**.
+### STIJLREGELS VOOR NARRATIE (TTS)
+Je tekst wordt voorgelezen door een hoogwaardige text-to-speech narrator. Optimaliseer je schrijfstijl hiervoor:
+1. Natuurlijk Ritme: Gebruik zinsstructuren met natuurlijke pauzes. Vermijd te lange, complexe bijzinnen.
+2. Levendige Prosodie: Schrijf op een manier die een menselijke gids toelaat om klemtoon en enthousiasme te leggen.
+3. Warme Tone-of-Voice: Houd de toon vriendelijk, uitnodigend en geloofwaardig.
+4. Locale Respect: Gebruik correcte zinsbouw en uitspraakvormen die passen bij de regio.
+5. Vermijd symbolen: Schrijf getallen en eenheden voluit (bijv. "vijf kilometer").
 
-3. **STYLE**:
-   - Tone: **Confident**, inviting, and informative.
-   - Format: Short, easy-to-scan paragraphs.
-   - ${lengthInstruction}
+### STIJLREGELS (ALGEMEEN)
+- Gebruik de taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}.
+- Duidelijke, natuurlijke en enthousiasmerende toon van een ervaren lokale gids.
+- Geen technische encyclopedische toon.
+- Geen verzonnen feiten – enkel afleiden uit de ruwe data of algemeen bekende feiten.
+- Geen numerieke coördinaten of ruwe JSON in de tekst.
 
-   - If the input data contains a URL/Link, extract the best one to include in your JSON response (not in the text).
-
-**Output Format:**
-Return ONLY valid JSON with this structure:
+### OUTPUTSTRUCTUUR (JSON Formaat)
+Return ONLY a valid JSON object with the following keys:
 {
-  "description": "The friendly description text here...",
-  "link": "The best url found in the data or null"
+  "short_description": "max 3 zinnen",
+  "full_description": "5–10 zinnen, boeiend en duidelijk",
+  "matching_reasons": ["Lijstje met 3–5 redenen op basis van de interesses"],
+  "fun_facts": ["2–4 leuke weetjes of anekdotes"],
+  "two_minute_highlight": "Wat moet je écht gezien hebben? (If you only have 2 minutes here)",
+  "visitor_tips": "Tips for visitors (praktische info)",
+  "link": "The best URL found in data or null"
 }
+
+### START NU
+Verwerk deze POI: "${poi.name}"
 `;
 
-        // console.log("--- GEMINI DEBUG PROMPT ---");
-        // console.log(prompt);
-        // console.log("---------------------------");
-
         try {
-            // Using Local Proxy
             const url = '/api/gemini';
             const response = await fetch(url, {
                 method: 'POST',
@@ -206,8 +201,7 @@ Return ONLY valid JSON with this structure:
             });
 
             if (!response.ok) {
-                // Warning only, as we have fallbacks
-                console.warn(`Gemini AI unavailable (${response.status}): Check API Key configuration.`);
+                console.warn(`Gemini AI unavailable (${response.status})`);
                 return null;
             }
 
@@ -216,14 +210,12 @@ Return ONLY valid JSON with this structure:
 
             if (!text) return null;
 
-            // Clean markdown code blocks if present
             const cleanText = text.replace(/```json/g, '').replace(/```/g, '').replace(/\[Alt:[^\]]*\]/g, '').trim();
 
             try {
                 return JSON.parse(cleanText);
             } catch (e) {
                 console.warn("Gemini JSON parse error, attempting regex extraction...");
-                // Fallback: Try to find the first '{' and last '}'
                 const firstBrace = text.indexOf('{');
                 const lastBrace = text.lastIndexOf('}');
                 if (firstBrace !== -1 && lastBrace !== -1) {
@@ -241,7 +233,6 @@ Return ONLY valid JSON with this structure:
             return null;
         }
     }
-
 
     // --- Signal Fetchers ---
 
@@ -549,12 +540,12 @@ Return ONLY valid JSON with this structure:
         return signals.map(signal => {
             // Heuristic: Penalize generic city descriptions
             let score = signal.confidence || 0.5;
-            const text = signal.content.toLowerCase();
+            const text = (signal.content || "").toLowerCase();
 
             // Detection: "Hasselt is de hoofdstad..."
             // ONLY penalize if the specific POI name is NOT in the text.
             // If the text talks about the city but mentions the POI, it might be valid context.
-            if ((text.includes(this.config.city.toLowerCase() + " is") ||
+            if (text && (text.includes(this.config.city.toLowerCase() + " is") ||
                 text.includes("hoofdstad") ||
                 text.includes("provincie")) && !text.includes(poi.name.toLowerCase())) {
                 score = 0.1; // Untrustworthy

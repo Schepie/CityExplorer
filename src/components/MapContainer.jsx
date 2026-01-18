@@ -55,6 +55,41 @@ const calcBearing = (p1, p2) => {
     return (toDeg(Math.atan2(y, x)) + 360) % 360;
 };
 
+// Navigation Helpers (Internalized for HUD)
+const getManeuverIcon = (modifier, type) => {
+    if (type === 'arrive') return '🏁';
+    if (type === 'depart') return '🚀';
+    switch (modifier) {
+        case 'left': return '⬅️';
+        case 'right': return '➡️';
+        case 'sharp left': return '↙️';
+        case 'sharp right': return '↘️';
+        case 'slight left': return '↖️';
+        case 'slight right': return '↗️';
+        case 'straight': return '⬆️';
+        case 'uturn': return '🔄';
+        default: return '⬆️';
+    }
+};
+
+const translateHUDInstruction = (step, lang) => {
+    const { maneuver, name } = step;
+    if (lang === 'en') {
+        if (maneuver.type === 'arrive') return `Arrive at destination`;
+        if (maneuver.type === 'depart') return `Head on ${name || 'path'}`;
+        const mod = maneuver.modifier || '';
+        return `${maneuver.type} ${mod} onto ${name || 'path'}`.replace(/\s+/g, ' ');
+    }
+    const dirs = {
+        'left': 'links', 'right': 'rechts', 'sharp left': 'scherp links', 'sharp right': 'scherp rechts',
+        'slight left': 'licht links', 'slight right': 'licht rechts', 'straight': 'rechtdoor', 'uturn': 'omkeren'
+    };
+    const m = dirs[maneuver.modifier] || maneuver.modifier || '';
+    if (maneuver.type === 'arrive') return `Bestemming bereikt`;
+    if (maneuver.type === 'depart') return `Vertrek op ${name || 'het pad'}`;
+    return `Ga ${m} op ${name || 'het pad'}`.replace(/\s+/g, ' ');
+};
+
 // Helper to control map view
 const MapController = ({ center, positions, userLocation, focusedLocation, viewAction, onActionHandled }) => {
     const map = useMap();
@@ -599,7 +634,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                     })}
                                 >
                                     <Popup className="glass-popup">
-                                        <div className="text-slate-900">
+                                        <div className="text-slate-900 w-[240px]">
                                             <div className="flex justify-between items-start mb-2">
                                                 <div className="flex-1">
                                                     <h3 className="font-bold text-lg m-0 leading-tight">{poi.name}</h3>
@@ -639,8 +674,8 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                                 </div>
                                             </div>
 
-                                            {/* Length Controls (Popup) */}
-                                            <div className="flex gap-2 mb-2">
+                                            {/* Length Controls (Fixed outside scroll area) */}
+                                            <div className="flex gap-2 my-2 border-t border-slate-100 pt-2">
                                                 {[
                                                     { id: 'short', label: 'Brief', icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
                                                     { id: 'medium', label: 'Standard', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
@@ -659,42 +694,45 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                                 ))}
                                             </div>
 
-                                            {/* UI FILTER: Block generic city descriptions */}
-                                            {(() => {
-                                                const d = poi.description || "";
-                                                const dLow = d.toLowerCase();
-                                                const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
-                                                const displayDesc = isBad ? "Geen beschrijving beschikbaar." : d;
-                                                return <p className="m-0 text-sm text-slate-600 mb-2">{displayDesc}</p>;
-                                            })()}
+                                            {/* Scrollable Scroll Area */}
+                                            <div className="max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
+                                                {/* UI FILTER: Block generic city descriptions */}
+                                                {(() => {
+                                                    const d = poi.description || "";
+                                                    const dLow = d.toLowerCase();
+                                                    const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
+                                                    const displayDesc = isBad ? "Geen beschrijving beschikbaar." : d;
+                                                    return <p className="m-0 text-sm text-slate-600 mb-2 leading-relaxed">{displayDesc}</p>;
+                                                })()}
 
-                                            {/* External Link (with Generic Fallback) */}
-                                            {(() => {
-                                                let link = poi.link;
-                                                let source = poi.source;
+                                                {/* External Link (with Generic Fallback) */}
+                                                {(() => {
+                                                    let link = poi.link;
+                                                    let source = poi.source;
 
-                                                // Universal Fallback: Google Search
-                                                if (!link) {
-                                                    link = `https://www.google.com/search?q=${encodeURIComponent(poi.name + " Hasselt")}`;
-                                                    source = "Google Search";
-                                                }
+                                                    // Universal Fallback: Google Search
+                                                    if (!link) {
+                                                        link = `https://www.google.com/search?q=${encodeURIComponent(poi.name + " Hasselt")}`;
+                                                        source = "Google Search";
+                                                    }
 
-                                                return (
-                                                    <div className="mb-2">
-                                                        <a
-                                                            href={link}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-xs text-blue-500 hover:text-blue-700 underline flex items-center gap-1"
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                            {source ? `Source: ${source}` : "Read more"}
-                                                        </a>
-                                                    </div>
-                                                );
-                                            })()}
+                                                    return (
+                                                        <div className="mb-2">
+                                                            <a
+                                                                href={link}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-xs text-blue-500 hover:text-blue-700 underline flex items-center gap-1"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                                {source ? `Source: ${source}` : "Read more"}
+                                                            </a>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
 
-                                            <div className="flex justify-between items-center mt-2">
+                                            <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -782,40 +820,94 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
             {
                 userLocation && pois.length > 0 && !isInputMode && (() => {
                     const targetPoi = focusedLocation || pois[0];
-                    const targetIdx = pois.findIndex(p => (p.id && p.id === targetPoi.id) || (p.lat === targetPoi.lat && p.lng === targetPoi.lng));
+                    const steps = routeData?.navigationSteps;
+
+                    // Calculate Next Maneuver if Navigating
+                    let hudIcon = '📍';
+                    let hudInstruction = targetPoi.name;
+                    let hudDistance = calcDistance(userLocation, targetPoi);
+                    let bearingTarget = targetPoi;
+                    let hudSubline = `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
+
+                    if (isNavigating && steps && steps.length > 0) {
+                        // Find closest step start point to know where we are
+                        let minD = Infinity;
+                        let closestIdx = 0;
+                        steps.forEach((s, i) => {
+                            const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                            if (d < minD) {
+                                minD = d;
+                                closestIdx = i;
+                            }
+                        });
+
+                        // closestIdx is the point we most recently passed (or are nearing).
+                        // The maneuver to show is the one at the END of the current leg.
+                        // Leg i starts at Step i and ends at Step i+1.
+                        let targetIdx = closestIdx + 1;
+
+                        // If we are already within 25m of the "next" turn, transition to the one after that
+                        if (targetIdx < steps.length) {
+                            const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                            if (distToTarget < 0.025) {
+                                targetIdx++;
+                            }
+                        }
+
+                        targetIdx = Math.min(targetIdx, steps.length - 1);
+
+                        const nextStep = steps[targetIdx];
+                        hudIcon = getManeuverIcon(nextStep.maneuver.modifier, nextStep.maneuver.type);
+                        hudInstruction = translateHUDInstruction(nextStep, language);
+                        hudDistance = calcDistance(userLocation, { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] });
+                        bearingTarget = { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] };
+                        hudSubline = (targetIdx === steps.length - 1 && hudDistance < 0.02)
+                            ? (language === 'nl' ? 'Bestemming bereikt' : 'Arrived')
+                            : (nextStep.name || targetPoi.name);
+                    }
 
                     return (
                         <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/10 shadow-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-700 transition-all duration-300 pointer-events-auto ${isPopupOpen ? 'opacity-20 hover:opacity-100 bg-slate-900/40' : 'opacity-100 bg-slate-900/90'}`}>
                             {/* Direction Arrow */}
                             <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center border border-white/5 shadow-inner">
-                                <div style={{ transform: `rotate(${calcBearing(userLocation, targetPoi) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md"><polygon points="12 2 22 22 12 18 2 22 12 2"></polygon></svg>
+                                <div style={{ transform: `rotate(${calcBearing(userLocation, bearingTarget) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
+                                    {isNavigating ? (
+                                        <div className="text-3xl">{hudIcon}</div>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md"><polygon points="12 2 22 22 12 18 2 22 12 2"></polygon></svg>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Distance & Label */}
-                            <div className="flex flex-col">
-                                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">{text.next}: POI {targetIdx + 1}</span>
-                                <div className="flex items-baseline gap-1">
-                                    {(() => {
-                                        const distKm = calcDistance(userLocation, targetPoi);
-                                        let displayVal, unit;
-                                        if (distKm < 1) {
-                                            displayVal = Math.round(distKm * 1000);
-                                            unit = "m";
-                                        } else {
-                                            displayVal = distKm.toFixed(1);
-                                            unit = "km";
-                                        }
-                                        return (
-                                            <>
-                                                <span className="text-3xl font-bold text-white tracking-tight">{displayVal}</span>
-                                                <span className="text-sm font-medium text-slate-400">{unit}</span>
-                                            </>
-                                        );
-                                    })()}
+                            <div className="flex flex-col min-w-[120px]">
+                                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1 truncate max-w-[200px]">{hudSubline}</span>
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex items-baseline gap-1">
+                                        {(() => {
+                                            const distKm = hudDistance;
+                                            let displayVal, unit;
+                                            if (distKm < 1) {
+                                                displayVal = Math.round(distKm * 1000);
+                                                unit = "m";
+                                            } else {
+                                                displayVal = distKm.toFixed(1);
+                                                unit = "km";
+                                            }
+                                            return (
+                                                <>
+                                                    <span className="text-3xl font-bold text-white tracking-tight">{displayVal}</span>
+                                                    <span className="text-sm font-medium text-slate-400">{unit}</span>
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                    {isNavigating && (
+                                        <div className="text-sm font-medium text-slate-200 line-clamp-2 max-w-[180px] leading-snug">
+                                            {hudInstruction}
+                                        </div>
+                                    )}
                                 </div>
-
                             </div>
                         </div>
                     );

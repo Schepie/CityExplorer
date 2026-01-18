@@ -177,40 +177,31 @@ body {
 }
 
 /* --- LEAFLET POPUP CUSTOMIZATION --- */
-/* Ensure map is scrollable/pannable even when touching the popup container */
-.leaflet-popup {
-  pointer-events: none !important;
-  /* Allow interactions to pass through the outer shell */
-}
-
-/* Re-enable interactions for the actual content wrapper */
 .leaflet-popup-content-wrapper {
-  pointer-events: auto !important;
-  /* Capture clicks for content */
   background: rgba(255, 255, 255, 0.95);
-  /* Ensure visibility */
   backdrop-filter: blur(8px);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
 }
 
-/* ...however, if we want to PAN the map by dragging the popup BACKGROUND,
-   we need the wrapper to also be none. But usually the wrapper IS the background.
-   So let's leave it auto, but maybe reduce the capture area? */
-
-/* Force transparency for the glass-popup class specifically if used */
-.glass-popup .leaflet-popup-content-wrapper {
-  background: rgba(255, 255, 255, 0.9) !important;
-  backdrop-filter: blur(10px);
+.leaflet-popup-content {
+  margin: 12px !important;
+  line-height: 1.5;
 }
 
-/* Specifically allow map panning if touching the tip */
-.leaflet-popup-tip-container {
-  pointer-events: none !important;
+/* Custom Scrollbar for Popups */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
 }
 
-/* FIX: Establish pointer-events for the close button which sits outside the wrapper */
-.leaflet-popup-close-button {
-  pointer-events: auto !important;
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
 }
 
-/* On Mobile, popups might need to just not block map gestures on the 'empty' parts */
-/* But 'empty' parts are rare in tight popups. */
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #6366f1;
+  /* Using primary color */
+  border-radius: 2px;
+}
