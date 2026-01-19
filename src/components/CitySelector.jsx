@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 
-const CitySelector = ({ onCitySelect }) => {
+const CitySelector = ({ onCitySelect, onStartFadeOut }) => {
     const [city, setCity] = useState('');
     const [isAnimating, setIsAnimating] = useState(false);
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!city.trim()) return;
+
+        // Notify parent that we are starting to leave (for immediate UI updates like showing loader)
+        if (onStartFadeOut) onStartFadeOut();
 
         setIsAnimating(true);
         // Delay parent callback slightly to allow animation to play
@@ -16,7 +19,7 @@ const CitySelector = ({ onCitySelect }) => {
     };
 
     return (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900 transition-opacity duration-1000 ${isAnimating ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+        <div className={`fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900 transition-opacity duration-1000 ${isAnimating ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             {/* Background Effects */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-indigo-900/30 to-slate-900"></div>

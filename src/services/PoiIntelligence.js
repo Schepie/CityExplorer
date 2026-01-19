@@ -120,6 +120,71 @@ export class PoiIntelligence {
 
     // --- Gemini Integration ---
 
+    /**
+     * Generates a personalized city welcome message for the tour.
+     */
+    async fetchCityWelcomeMessage(poiList) {
+        const poiNames = poiList.slice(0, 8).map(p => p.name).join(', ');
+        const prompt = `
+Je bent een ervaren, vriendelijke en enthousiaste digitale stadsgids die reizigers helpt een stad op een persoonlijke manier te ontdekken. 
+Je taak is om een introductie te geven vóór de wandeling of fietstocht begint.
+
+### CONTEXT
+De citynavigation‑app heeft een tocht aangemaakt op basis van:
+- De gekozen stad: ${this.config.city}
+- De interesses van de gebruiker: ${this.config.interests || 'Algemeen'}
+- De geselecteerde POI’s langs de route: ${poiNames}
+- Eventuele thema’s of routecontext: ${this.config.routeContext || 'Stadswandeling'}
+
+### DOEL
+Genereer een inspirerende, warme en duidelijke inleiding voor de tocht, die:
+1. De gebruiker welkom heet in ${this.config.city}
+2. Kort vertelt wat deze tocht bijzonder maakt
+3. Op een natuurlijke manier verwijst naar de interesses van de gebruiker
+4. Een beeld schetst van wat de bezoeker kan verwachten langs de route
+5. Het gevoel geeft dat dit een persoonlijke, zorgvuldig samengestelde route is
+6. Niet te veel verklapt over elke POI (dat gebeurt later), maar wel prikkelt
+7. Een menselijke, bezoekersvriendelijke toon gebruikt (niet encyclopedisch)
+8. Geschreven is in de gewenste taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+
+### OUTPUTSTRUCTUUR
+Geef de output als één vloeiende tekst van 6 tot 10 zinnen, met:
+- Een warme begroeting
+- Een korte introductie tot de stad
+- Een teaser van de tocht (stijl, sfeer, wat uniek is)
+- Verwijzing naar interesses van de gebruiker
+- Een uitnodiging om te vertrekken
+
+### STIJLREGELS
+- Gebruik duidelijke, natuurlijke, enthousiasmerende taal
+- Schrijf als een lokale gids die de stad goed kent
+- Maak het menselijk, warm en persoonlijk
+- Noem de POI’s niet allemaal één voor één op; houd het high‑level maar pakkend
+- Geen verzonnen feiten; gebruik enkel algemeen bekende eigenschappen of afleidingen uit de input
+
+### START NU
+Genereer de introductie voor de tocht in ${this.config.city}.
+`;
+
+        try {
+            const url = '/api/gemini';
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
+            });
+
+            if (!response.ok) return null;
+            const data = await response.json();
+            return data.text ? data.text.trim() : null;
+        } catch (e) {
+            console.warn("City Welcome Generation Failed:", e);
+            return null;
+        }
+    }
+
+
+
     async fetchGeminiDescription(poi, signals, lengthMode = 'medium') {
         const contextData = signals.length > 0
             ? signals.map(s => `[Source: ${s.source}] ${s.content} (Link: ${s.link})`).join('\n\n')
@@ -141,8 +206,13 @@ export class PoiIntelligence {
         }
 
         const prompt = `
-Je bent een deskundige digitale stadsgids die toeristen helpt een stad te verkennen.
-Je taak is om hoogwaardige, boeiende en contextueel relevante informatie te genereren over een Point of Interest (POI).
+In het settings menu kan het informatieniveau van alle Point of Interests (POI) worden aangepast.
+
+Er zijn drie informatieniveaus:
+
+1) Beknopte versie (kort, op de kaart)
+2) Standaard versie (voor wie meer wil weten)
+3) Uitgebreide versie (diepe context en verhalen)
 
 ### INPUT
 - POI naam: ${poi.name}
@@ -154,39 +224,45 @@ Je taak is om hoogwaardige, boeiende en contextueel relevante informatie te gene
 
 ### DOEL
 Verbeter en herschrijf de informatie zodat die:
-1. Perfect aansluit bij de interesses van de gebruiker.
-2. Geschreven is in de stijl van een ervaren lokale gids.
-3. Relevante details benadrukt die interessant zijn voor bezoekers.
-4. Zaken weglaat die niet relevant zijn voor toeristen.
-5. Zowel feitelijk correct als vlot leesbaar is.
-6. De gebruiker helpt begrijpen waarom dit POI de moeite waard is.
+1. Perfect aansluit bij de interesses van de gebruiker
+2. Geschreven is in de stijl van een ervaren lokale gids
+3. Relevante details benadrukt die interessant zijn voor bezoekers
+4. Zaken weglaat die niet relevant zijn voor toeristen
+5. Zowel feitelijk correct als vlot leesbaar is
+6. De gebruiker helpt begrijpen waarom dit POI de moeite waard is
+7. Per informatieniveau de juiste hoeveelheid info geeft
 
-### STIJLREGELS VOOR NARRATIE (TTS)
-Je tekst wordt voorgelezen door een hoogwaardige text-to-speech narrator. Optimaliseer je schrijfstijl hiervoor:
-1. Natuurlijk Ritme: Gebruik zinsstructuren met natuurlijke pauzes. Vermijd te lange, complexe bijzinnen.
-2. Levendige Prosodie: Schrijf op een manier die een menselijke gids toelaat om klemtoon en enthousiasme te leggen.
-3. Warme Tone-of-Voice: Houd de toon vriendelijk, uitnodigend en geloofwaardig.
-4. Locale Respect: Gebruik correcte zinsbouw en uitspraakvormen die passen bij de regio.
-5. Vermijd symbolen: Schrijf getallen en eenheden voluit (bijv. "vijf kilometer").
+### OUTPUTSTRUCTUUR
+Geef de output in de onderstaande JSON-structuur (geen extra tekst erbuiten):
 
-### STIJLREGELS (ALGEMEEN)
-- Gebruik de taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}.
-- Duidelijke, natuurlijke en enthousiasmerende toon van een ervaren lokale gids.
-- Geen technische encyclopedische toon.
-- Geen verzonnen feiten – enkel afleiden uit de ruwe data of algemeen bekende feiten.
-- Geen numerieke coördinaten of ruwe JSON in de tekst.
-
-### OUTPUTSTRUCTUUR (JSON Formaat)
-Return ONLY a valid JSON object with the following keys:
 {
-  "short_description": "max 3 zinnen",
-  "full_description": "5–10 zinnen, boeiend en duidelijk",
-  "matching_reasons": ["Lijstje met 3–5 redenen op basis van de interesses"],
-  "fun_facts": ["2–4 leuke weetjes of anekdotes"],
-  "two_minute_highlight": "Wat moet je écht gezien hebben? (If you only have 2 minutes here)",
-  "visitor_tips": "Tips for visitors (praktische info)",
-  "link": "The best URL found in data or null"
+  "short_version": {
+    "description": "Max 2 tot 3 zinnen – zeer beknopt, ideaal voor op de kaart."
+  },
+  "standard_version": {
+    "description": "4–6 zinnen – duidelijke uitleg voor de meeste gebruikers."
+  },
+  "extended_version": {
+    "short_description": "Max 3 zinnen.",
+    "full_description": "5–10 zinnen, boeiend en duidelijk.",
+    "why_this_matches_your_interests": [
+      "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
+    ],
+    "fun_facts": [
+      "2–4 leuke weetjes of anekdotes"
+    ],
+    "if_you_only_have_2_minutes": "Wat moet je écht gezien hebben?",
+    "visitor_tips": "Praktische info indien relevant."
+  }
 }
+
+### STIJLREGELS
+- Gebruik de taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+- Duidelijke, natuurlijke en enthousiasmerende toon
+- Schrijf zoals een menselijke, ervaren lokale gids
+- Geen technische encyclopedische toon
+- Geen verzonnen feiten – enkel afleiden uit de ruwe data of algemeen bekende feiten
+- Maak elke versie uniek (niet copy/paste met kleine variaties)
 
 ### START NU
 Verwerk deze POI: "${poi.name}"
@@ -213,19 +289,27 @@ Verwerk deze POI: "${poi.name}"
             const cleanText = text.replace(/```json/g, '').replace(/```/g, '').replace(/\[Alt:[^\]]*\]/g, '').trim();
 
             try {
-                return JSON.parse(cleanText);
+                const result = JSON.parse(cleanText);
+
+                // Map new structure to app compatibility structure
+                return {
+                    short_description: result.short_version?.description || "",
+                    standard_description: result.standard_version?.description || "", // New field
+                    full_description: result.extended_version?.full_description || result.standard_version?.description || "",
+
+                    // Map extended fields
+                    matching_reasons: result.extended_version?.why_this_matches_your_interests || [],
+                    fun_facts: result.extended_version?.fun_facts || [],
+                    two_minute_highlight: result.extended_version?.if_you_only_have_2_minutes || "",
+                    visitor_tips: result.extended_version?.visitor_tips || "",
+
+                    // No link in new prompt, falls back to triangulation
+                    link: null
+                };
             } catch (e) {
                 console.warn("Gemini JSON parse error, attempting regex extraction...");
-                const firstBrace = text.indexOf('{');
-                const lastBrace = text.lastIndexOf('}');
-                if (firstBrace !== -1 && lastBrace !== -1) {
-                    try {
-                        const jsonCandidate = text.substring(firstBrace, lastBrace + 1);
-                        return JSON.parse(jsonCandidate);
-                    } catch (e2) {
-                        console.warn("Gemini Regex extraction failed:", e2);
-                    }
-                }
+                // Simplified Regex fallback for the new structure would be complex. 
+                // Relying on clean JSON from Gemini.
                 return null;
             }
         } catch (e) {

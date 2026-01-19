@@ -81,7 +81,8 @@ body {
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -173,7 +174,34 @@ body {
 
 .breathing-marker {
   animation: breathing-poi 2s infinite ease-in-out;
-  /* z-index removed to avoid stacking context issues */
+}
+
+.user-marker-arrow {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 16px solid #3b82f6;
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
+}
+
+.leaflet-marker-icon {
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.poi-marker {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 4px solid white;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  color: white;
+  font-weight: bold;
 }
 
 /* --- LEAFLET POPUP CUSTOMIZATION --- */
@@ -201,7 +229,7 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #6366f1;
+  background: var(--primary);
   /* Using primary color */
   border-radius: 2px;
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { PoiIntelligence } from '../services/PoiIntelligence';
 
 const SidebarInput = ({
@@ -10,7 +10,8 @@ const SidebarInput = ({
     searchSources, setSearchSources,
     onJourneyStart, onCityValidation, onUseCurrentLocation,
     language, nearbyCities, isAddingMode, searchMode, setSearchMode,
-    shouldAutoFocusInterests, setShouldAutoFocusInterests, onLoad
+    shouldAutoFocusInterests, setShouldAutoFocusInterests, onLoad,
+    travelMode, onStyleChange
 }) => {
 
     // Translations
@@ -45,14 +46,18 @@ const SidebarInput = ({
             cat_transport: "Transport",
             cat_ent: "Fun",
             cat_night: "Nightlife",
-            settings: "Settings"
+            settings: "Settings",
+            mode_label: "Travel Mode",
+            walking: "Walking",
+            cycling: "Cycling",
+            search_mode_label: "POI Search Mode"
         },
         nl: {
             dest_label: "Bestemming",
             dest_ph: "Bijv. Amsterdam, Rome",
             int_label: "Interesses",
             int_ph: "Bijv. Koffie, Architectuur",
-            limit_label: "Reislimiet",
+            limit_label: "Triplimiet",
             switch_dur: "Wissel naar Tijd",
             switch_dist: "Wissel naar Afstand",
             sources_label: "Zoekbronnen",
@@ -66,7 +71,7 @@ const SidebarInput = ({
             add: "Spots Toevoegen",
             walk_min: "min lopen",
             walk_km: "km lopen",
-            rt_label: "Rondreis (Lus)",
+            rt_label: "Rondtrip (Lus)",
             start: "Start Ontdekken",
             pop: "Populair:",
             nearby: "In de buurt:",
@@ -77,7 +82,11 @@ const SidebarInput = ({
             cat_transport: "Vervoer",
             cat_ent: "Plezier",
             cat_night: "Uitgaan",
-            settings: "Instellingen"
+            settings: "Instellingen",
+            mode_label: "Tripwijze",
+            walking: "Wandelen",
+            cycling: "Fietsen",
+            search_mode_label: "POI Zoekwijze"
         }
     };
     const text = t[language || 'en'];
@@ -104,45 +113,19 @@ const SidebarInput = ({
     return (
         <div className="space-y-3 pt-2">
 
-            {/* Load Saved Journey (Top) - COMPACT */}
-            {!isAddingMode && (
-                <div className="relative group grayscale hover:grayscale-0 opacity-70 hover:opacity-100 transition-all">
-                    <input
-                        type="file"
-                        accept=".json"
-                        onChange={(e) => {
-                            if (e.target.files?.[0]) {
-                                if (onLoad) onLoad(e.target.files[0]);
-                                e.target.value = null;
-                            }
-                        }}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                    />
-                    <button
-                        type="button"
-                        className="w-full flex items-center justify-center gap-2 bg-slate-800/40 hover:bg-slate-700 text-slate-400 hover:text-white py-1.5 rounded-lg border border-white/5 hover:border-white/20 transition-all text-[10px] font-bold uppercase tracking-widest"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                        </svg>
-                        {language === 'nl' ? 'Laad Reis' : 'Load Journey'}
-                    </button>
-                </div>
-            )}
+
 
             {/* City Input */}
-            <div className="space-y-1">
+            <div className={`space-y-1 transition-all duration-500`}>
                 <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{text.dest_label}</label>
                 <div className="relative bg-slate-800/80 border border-primary/30 rounded-xl p-0.5 flex items-center shadow-lg focus-within:ring-2 ring-primary/50 transition-all">
                     <input
                         type="text"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
-                        onBlur={() => onCityValidation && onCityValidation('blur')}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                                 if (interestsInputRef.current) interestsInputRef.current.focus();
-                                else onCityValidation && onCityValidation('blur');
                             }
                         }}
                         placeholder={text.dest_ph}
@@ -219,27 +202,59 @@ const SidebarInput = ({
             <div className="bg-slate-800/60 rounded-xl p-2.5 border border-white/5 space-y-2">
                 {/* Mode Toggle */}
                 {!isAddingMode && (
-                    <div className="grid grid-cols-2 gap-1.5 bg-[var(--bg-gradient-start)]/40 p-1 rounded-lg">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setSearchMode('radius');
-                                if (constraintType !== 'distance') {
-                                    setConstraintType('distance');
-                                    setConstraintValue(5);
-                                }
-                            }}
-                            className={`py-1.5 rounded-md text-[10px] uppercase tracking-wider font-bold transition-all ${searchMode === 'radius' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
-                        >
-                            {language === 'nl' ? 'Radius' : 'Radius'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setSearchMode('journey')}
-                            className={`py-1.5 rounded-md text-[10px] uppercase tracking-wider font-bold transition-all ${searchMode === 'journey' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
-                        >
-                            {language === 'nl' ? 'Reis' : 'Journey'}
-                        </button>
+                    <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{text.search_mode_label}</label>
+                        <div className="grid grid-cols-2 gap-1.5 bg-[var(--bg-gradient-start)]/40 p-1 rounded-lg">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSearchMode('radius');
+                                    if (constraintType !== 'distance') {
+                                        setConstraintType('distance');
+                                        setConstraintValue(5);
+                                    }
+                                }}
+                                className={`py-1.5 rounded-md text-[10px] uppercase tracking-wider font-bold transition-all ${searchMode === 'radius' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
+                            >
+                                {language === 'nl' ? 'Zoekstraal' : 'Radius'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSearchMode('journey')}
+                                className={`py-1.5 rounded-md text-[10px] uppercase tracking-wider font-bold transition-all ${searchMode === 'journey' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
+                            >
+                                {language === 'nl' ? 'Trip' : 'Journey'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Travel Mode Toggle (Walking/Cycling) - Only for Journey */}
+                {searchMode === 'journey' && (
+                    <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{text.mode_label}</label>
+                        <div className="grid grid-cols-2 gap-1.5 bg-[var(--bg-gradient-start)]/40 p-1 rounded-lg">
+                            <button
+                                type="button"
+                                onClick={() => onStyleChange && onStyleChange('walking')}
+                                className={`flex items-center justify-center gap-2 py-1.5 rounded-md text-[10px] uppercase tracking-wider font-bold transition-all ${travelMode === 'walking' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <circle cx="12" cy="4" r="2" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v-4l-2-2 1-3h-2M12 9l2 2-1 6" />
+                                </svg>
+                                {text.walking}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onStyleChange && onStyleChange('cycling')}
+                                className={`flex items-center justify-center gap-2 py-1.5 rounded-md text-[10px] uppercase tracking-wider font-bold transition-all ${travelMode === 'cycling' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <circle cx="5.5" cy="17.5" r="3.5" strokeWidth={2} /><circle cx="18.5" cy="17.5" r="3.5" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-5 5-3-3 2-2M12 17.5V14l-3-3 4-3 2 3h2" />
+                                </svg>
+                                {text.cycling}
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -247,7 +262,7 @@ const SidebarInput = ({
                 <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                         <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">
-                            {searchMode === 'radius' ? (language === 'nl' ? 'Zoek Radius' : 'Search Radius') : text.limit_label}
+                            {searchMode === 'radius' ? (language === 'nl' ? 'Zoekstraal' : 'Search Radius') : text.limit_label}
                         </label>
 
                         {searchMode === 'journey' && (
@@ -296,7 +311,7 @@ const SidebarInput = ({
                 onClick={(e) => {
                     if (onJourneyStart) onJourneyStart(e);
                 }}
-                disabled={!city || !city.trim() || !interests || !interests.trim()}
+                disabled={!interests || !interests.trim()}
                 className="w-full relative group bg-primary/20 hover:bg-primary/40 text-primary hover:text-white text-sm font-bold py-3 px-4 rounded-xl border border-primary/30 hover:border-primary/50 shadow-lg active:scale-[0.98] transition-all duration-200 overflow-hidden"
             >
                 <div className="absolute inset-0 bg-gradient-to-t from-black/0 via-white/5 to-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -317,12 +332,36 @@ const SidebarInput = ({
     )
 }
 
-const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSpeak, interests, searchMode, constraintValue, constraintType, isRoundtrip }) => {
+const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSpeak, interests, searchMode, constraintValue, constraintType, isRoundtrip, activeTheme, travelMode }) => {
     const [weather, setWeather] = useState(null);
     const [description, setDescription] = useState(null);
     const [cityImage, setCityImage] = useState(null);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [userPos, setUserPos] = useState(null);
     const [currentTime, setCurrentTime] = useState('');
+    const [showDurationInfo, setShowDurationInfo] = useState(false);
+
+    // Watch User Location for accurate "To 1st Stop" distance
+    useEffect(() => {
+        if (!navigator.geolocation) return;
+        const watchId = navigator.geolocation.watchPosition(
+            (pos) => setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            (err) => console.warn("Loc error", err),
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+        return () => navigator.geolocation.clearWatch(watchId);
+    }, []);
+
+    // Use theme colors
+    const primaryColor = activeTheme?.colors?.primary || '#3b82f6';
+    const accentColor = activeTheme?.colors?.accent || '#60a5fa';
+
+    const hexToRgba = (hex, alpha) => {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
 
     useEffect(() => {
         if (!center) return;
@@ -334,7 +373,8 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
             .catch(e => console.warn("Weather fetch failed", e));
 
         // 2. City Description via Intelligence Engine
-        const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+        const actualDist = stats?.totalDistance ? `${stats.totalDistance} km` : `${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}`;
+        const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${actualDist}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
         const engine = new PoiIntelligence({
             city: city,
             language: language,
@@ -343,10 +383,10 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
         });
 
         // We use the engine to evaluate the City itself as a POI
-        engine.fetchGeminiDescription({ name: city, description: 'General city overview' }, [])
+        engine.fetchCityWelcomeMessage(pois || [])
             .then(res => {
                 if (res) {
-                    setDescription(res.full_description);
+                    setDescription(res);
                 } else {
                     // Fallback to Wiki if Gemini fails
                     fetchWikipediaSummary(city, language).then(data => {
@@ -359,7 +399,7 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
         // 3. Time
         setCurrentTime(new Date().toLocaleTimeString(language === 'nl' ? 'nl-NL' : 'en-US', { hour: '2-digit', minute: '2-digit' }));
 
-    }, [city, center, language, interests, searchMode, constraintValue, constraintType, isRoundtrip]);
+    }, [city, center, language, interests, searchMode, constraintValue, constraintType, isRoundtrip, stats]);
 
     // Cleanup image on city change
     useEffect(() => { setCityImage(null); }, [city]);
@@ -382,17 +422,28 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
         return null;
     };
 
-    // Estimation: 4km/h walking + 20 mins per POI
-    const calcDuration = () => {
-        if (!stats || !stats.totalDistance) return "";
-        const wSpeed = 4.0;
-        const walkTime = (parseFloat(stats.totalDistance) / wSpeed) * 60;
-        const visitTime = pois.length * 20;
-        const total = Math.round(walkTime + visitTime);
-        const h = Math.floor(total / 60);
-        const m = total % 60;
-        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    const calcDurationDetails = () => {
+        const walkDist = stats?.walkDistance || stats?.totalDistance;
+        if (!walkDist) return null;
+        const wSpeed = travelMode === 'cycling' ? 14.0 : 4.0;
+        const walkTimeMin = (parseFloat(walkDist) / wSpeed) * 60;
+        const bufferPerPoi = travelMode === 'cycling' ? 1 : 10;
+        const visitTimeMin = (pois?.length || 0) * bufferPerPoi;
+        const totalMin = Math.round(walkTimeMin + visitTimeMin);
+        const h = Math.floor(totalMin / 60);
+        const m = totalMin % 60;
+        return {
+            dist: walkDist,
+            speed: wSpeed,
+            walkTime: walkTimeMin,
+            poiCount: pois?.length || 0,
+            buffer: bufferPerPoi,
+            visitTime: visitTimeMin,
+            totalStr: h > 0 ? `${h}h ${m}m` : `${m}m`
+        };
     };
+
+    const durationDetails = calcDurationDetails();
 
     // Weather Code Interpretation (Simple)
     const getWeatherIcon = (code) => {
@@ -406,34 +457,29 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
         return "☁️";
     };
 
-    const highlights = pois.slice(0, 3).map(p => p.name).join(", ");
-
     return (
         <div
             onClick={() => setIsExpanded(!isExpanded)}
-            className={`group relative bg-gradient-to-br from-blue-900/40 to-slate-900/40 hover:from-blue-800/60 hover:to-slate-800/60 p-3 rounded-xl border transition-all cursor-pointer mb-3 ${isExpanded ? 'border-blue-400/50 shadow-lg shadow-blue-900/20' : 'border-blue-400/20 hover:border-blue-400/40'}`}
+            style={{
+                borderColor: isExpanded ? hexToRgba(primaryColor, 0.5) : 'rgba(255,255,255,0.05)'
+            }}
+            className={`group relative bg-slate-800/40 hover:bg-slate-800/80 p-4 rounded-xl border transition-all cursor-pointer`}
         >
             <div className="flex items-center gap-3">
-                {/* Compact Visual Identity */}
-                <div className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-lg shadow-inner overflow-hidden shrink-0">
-                    {cityImage ? (
-                        <img src={cityImage} alt={city} className="w-full h-full object-cover" />
-                    ) : (
-                        "🏙️"
-                    )}
-                </div>
-
                 <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline gap-2">
-                        <h3 className="font-bold text-white text-base leading-tight truncate">{city}</h3>
-                        <div className="flex items-center gap-2 text-[10px] font-medium text-blue-300/90 whitespace-nowrap">
+                        <h3 className={`font-bold text-base leading-tight truncate transition-colors ${isExpanded ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>{city}</h3>
+                        <div
+                            className="flex items-center gap-2 text-[10px] font-medium whitespace-nowrap text-white"
+                        >
                             <span>{weather ? `${getWeatherIcon(weather.weathercode)} ${weather.temperature}°C` : ''}</span>
-                            <span className="w-1 h-1 rounded-full bg-blue-400/30"></span>
-                            <span>{currentTime}</span>
                         </div>
                     </div>
                     {!isExpanded && (
-                        <p className="text-[10px] text-blue-200/50 mt-0.5 truncate uppercase tracking-widest font-bold">
+                        <p
+                            className="text-[10px] mt-0.5 truncate uppercase tracking-widest font-bold opacity-60 group-hover:opacity-100 transition-opacity"
+                            style={{ color: primaryColor }}
+                        >
                             {language === 'nl' ? 'KLIK VOOR INFO' : 'CLICK FOR INFO'}
                         </p>
                     )}
@@ -451,7 +497,11 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
                             };
                             onSpeak(cityPoi);
                         }}
-                        className={`p-1.5 rounded-full transition-all shrink-0 ${speakingId === `city-welcome-${city}` ? 'bg-blue-500 text-white shadow-lg' : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-white'}`}
+                        style={{
+                            backgroundColor: speakingId === `city-welcome-${city}` ? primaryColor : hexToRgba(primaryColor, 0.1),
+                            color: speakingId === `city-welcome-${city}` ? 'white' : primaryColor,
+                        }}
+                        className={`p-1.5 rounded-full transition-all shrink-0 ${speakingId === `city-welcome-${city}` ? 'shadow-lg' : 'hover:bg-opacity-20 hover:text-white'}`}
                         title="Read Aloud"
                     >
                         {speakingId === `city-welcome-${city}` ? (
@@ -462,7 +512,10 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
                     </button>
                 )}
 
-                <div className="text-blue-300/50 shrink-0 group-hover:text-blue-300 transition-colors">
+                <div
+                    className="shrink-0 transition-colors"
+                    style={{ color: hexToRgba(primaryColor, 0.5) }}
+                >
                     <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
@@ -471,24 +524,75 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
 
             {/* Expandable "Guide" Content */}
             {isExpanded && (
-                <div className="mt-3 pt-3 border-t border-blue-400/10 space-y-3 animate-in slide-in-from-top-2 fade-in">
-                    <div className="text-xs text-slate-300 leading-relaxed italic opacity-90 border-l-2 border-blue-500/30 pl-3">
+                <div className="mt-3 pt-3 space-y-3 animate-in slide-in-from-top-2 fade-in" style={{ borderTop: `1px solid ${hexToRgba(primaryColor, 0.1)}` }}>
+                    <div className="text-xs text-slate-300 leading-relaxed italic opacity-90 pl-3" style={{ borderLeft: `2px solid ${hexToRgba(primaryColor, 0.3)}` }}>
                         {description || (language === 'nl' ? "Informatie aan het laden..." : "Loading info...")}
                     </div>
 
                     <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 space-y-2">
                         <div className="flex justify-between items-center text-[10px]">
-                            <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Afstand' : 'Distance'}</span>
-                            <span className="text-slate-200 font-bold">{stats.totalDistance} km</span>
+                            <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Totaal' : 'Total'}</span>
+                            <span className="text-slate-200 font-bold">{stats.walkDistance || stats.totalDistance} km</span>
                         </div>
+                        {pois && pois.length > 0 && (
+                            <div className="flex justify-between items-center text-[10px]">
+                                <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Naar 1e Stop' : 'To 1st Stop'}</span>
+                                <span className="text-slate-200 font-bold">
+                                    {(() => {
+                                        // Use REAL user position if available, otherwise fallback to center or '-'
+                                        // The user specifically asked for "From My Location", so we should prioritize that.
+                                        const startLat = userPos ? userPos.lat : (center ? center[0] : null);
+                                        const startLon = userPos ? userPos.lng : (center ? center[1] : null);
+
+                                        if (!startLat || !pois[0]) return '-';
+
+                                        const lat1 = startLat;
+                                        const lon1 = startLon;
+                                        const lat2 = pois[0].lat;
+                                        const lon2 = pois[0].lng;
+                                        const R = 6371; // km
+                                        const dLat = (lat2 - lat1) * (Math.PI / 180);
+                                        const dLon = (lon2 - lon1) * (Math.PI / 180);
+                                        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                                            Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+                                            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                                        return (R * c).toFixed(1);
+                                    })()} km
+                                </span>
+                            </div>
+                        )}
                         <div className="flex justify-between items-center text-[10px]">
-                            <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Duur' : 'Duration'}</span>
-                            <span className="text-slate-200 font-bold">~{calcDuration()}</span>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Duur' : 'Duration'}</span>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setShowDurationInfo(!showDurationInfo); }}
+                                    className={`transition-colors ${showDurationInfo ? 'text-blue-400' : 'text-slate-600 hover:text-slate-400'}`}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <span className="text-slate-200 font-bold">~{durationDetails?.totalStr || '-'}</span>
                         </div>
-                        <div className="pt-1.5 border-t border-white/5">
-                            <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">{language === 'nl' ? 'Hoogtepunten' : 'Highlights'}</span>
-                            <p className="text-[10px] text-slate-300 leading-tight">{highlights}{pois.length > 3 ? '...' : ''}</p>
-                        </div>
+
+                        {showDurationInfo && durationDetails && (
+                            <div className="mt-2 p-2 bg-black/20 rounded-md text-[9px] text-slate-400 space-y-1 border border-white/5 animate-in fade-in zoom-in-95 duration-200">
+                                <div className="flex justify-between">
+                                    <span>{language === 'nl' ? 'Triptijd' : 'Travel time'}:</span>
+                                    <span className="text-slate-300">{durationDetails.dist}km @ {durationDetails.speed}km/u → {Math.round(durationDetails.walkTime)}m</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>{language === 'nl' ? 'Stoptijd' : 'Stop time'}:</span>
+                                    <span className="text-slate-300">{durationDetails.poiCount} {language === 'nl' ? 'stops' : 'spots'} x {durationDetails.buffer}m → {durationDetails.visitTime}m</span>
+                                </div>
+                                <div className="pt-1 border-t border-white/5 flex justify-between font-bold text-slate-300">
+                                    <span>{language === 'nl' ? 'Totaal' : 'Total'}:</span>
+                                    <span>{durationDetails.totalStr}</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -516,7 +620,9 @@ const ItinerarySidebar = ({
     onUpdatePoiDescription,
     onSave, onLoad,
     descriptionLength, setDescriptionLength,
-    activeTheme, setActiveTheme, availableThemes
+    activeTheme, setActiveTheme, availableThemes,
+    travelMode, onStyleChange,
+    isSimulating, setIsSimulating
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -627,50 +733,163 @@ const ItinerarySidebar = ({
     const showItinerary = !isAddingMode && routeData && routeData.pois && routeData.pois.length > 0;
     const showDisambiguation = disambiguationOptions && disambiguationOptions.length > 0;
 
+    const [touchStart, setTouchStart] = useState(null);
+    const [touchEnd, setTouchEnd] = useState(null);
+    const minSwipeDistance = 50;
+
+    const onTouchStart = (e) => {
+        setTouchEnd(null);
+        setTouchStart(e.targetTouches[0].clientX);
+    };
+
+    const onTouchMove = (e) => setTouchEnd(e.targetTouches[0].clientX);
+
+    const onTouchEnd = () => {
+        if (!touchStart || !touchEnd) return;
+        const distance = touchStart - touchEnd;
+        const isLeftSwipe = distance > minSwipeDistance;
+        const isRightSwipe = distance < -minSwipeDistance;
+
+        if (isOpen && isLeftSwipe) {
+            // Disabled: Sidebar cannot be closed
+            // setIsOpen(false);
+        }
+        if (!isOpen && isRightSwipe) {
+            setIsOpen(true);
+        }
+    };
+
+    // Scroll Preservation
+    const scrollContainerRef = useRef(null);
+    const scrollPosRef = useRef(0);
+
+    const handleScroll = (e) => {
+        if (e.target) scrollPosRef.current = e.target.scrollTop;
+    };
+
+    useLayoutEffect(() => {
+        // If data updates (e.g. enrichment), restore scroll position to prevent jump to top
+        if (scrollContainerRef.current && scrollPosRef.current > 0) {
+            scrollContainerRef.current.scrollTop = scrollPosRef.current;
+        }
+    }, [routeData]);
+
     return (
         <>
             {!isOpen && (
-                <button
-                    onClick={() => setIsOpen(true)}
-                    className="absolute top-4 left-4 z-[400] bg-slate-800/90 text-white p-3 rounded-full shadow-lg border border-white/10 hover:bg-slate-700 transition-all"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
-                </button>
+                <>
+                    {/* Invisible Edge Swipe Area for Mobile Opening */}
+                    <div
+                        className="fixed top-0 left-0 w-8 h-full z-[390]"
+                        onTouchStart={onTouchStart}
+                        onTouchMove={onTouchMove}
+                        onTouchEnd={onTouchEnd}
+                    />
+                    <button
+                        onClick={() => setIsOpen(true)}
+                        className="absolute top-4 left-4 z-[400] bg-slate-800/90 text-white p-3 rounded-full shadow-lg border border-white/10 hover:bg-slate-700 transition-all"
+                        title={language === 'nl' ? 'Uitklappen' : 'Expand'}
+                    >
+                        {/* Mobile arrow */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 md:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        {/* Desktop double arrow */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 hidden md:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </>
             )}
 
             <div
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                style={{
+                    '--primary': activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6',
+                    '--accent': activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.accent : '#60a5fa',
+                    '--primary-rgb': activeTheme && availableThemes?.[activeTheme] ?
+                        (() => {
+                            const hex = availableThemes[activeTheme].colors.primary;
+                            const r = parseInt(hex.slice(1, 3), 16);
+                            const g = parseInt(hex.slice(3, 5), 16);
+                            const b = parseInt(hex.slice(5, 7), 16);
+                            return `${r}, ${g}, ${b}`;
+                        })() : '59, 130, 246'
+                }}
                 className={`absolute top-0 left-0 h-full z-[500] w-80 bg-[var(--bg-gradient-end)]/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : '-translate-x-full'
                     }`}
             >
                 <div className="flex flex-col h-full bg-gradient-to-b from-[var(--bg-gradient-start)]/50 to-transparent">
                     {/* Header */}
-                    <div className="p-6 border-b border-white/10">
-                        <div className="flex justify-between items-start mb-2">
+                    <div className="p-4 pb-3 border-b border-white/10">
+                        <div className="flex justify-between items-center mb-2">
                             <div className="flex items-center gap-3">
                                 <img src="/logo.jpg" alt="App Icon" className="w-10 h-10 rounded-xl shadow-md border border-white/20" />
-                                <h2 className="text-2xl font-bold text-white tracking-tight">{text.journey}</h2>
+                                <h2 className="text-2xl font-bold text-white tracking-tight leading-none">{text.journey}</h2>
                             </div>
                             {/* Lang and Close Controls */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
+                                {/* Load Journey Icon - Only in Search View */}
+                                {!showItinerary && (
+                                    <div className="relative group">
+                                        <input
+                                            type="file"
+                                            accept=".json"
+                                            onChange={(e) => {
+                                                if (e.target.files?.[0]) {
+                                                    if (onLoad) onLoad(e.target.files[0]);
+                                                    e.target.value = null;
+                                                }
+                                            }}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                        />
+                                        <button
+                                            type="button"
+                                            className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5"
+                                            title={language === 'nl' ? 'Laad Trip' : 'Load Journey'}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                )}
+
                                 <button
                                     onClick={() => setShowSettings(!showSettings)}
-                                    className={`p-2 rounded-full transition-all ${showSettings ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                                    className={`p-2 rounded-full transition-all mt-1 ${showSettings ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
                                     title="Settings"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                         <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
                                     </svg>
                                 </button>
-                                <button
-                                    onClick={() => setIsOpen(false)}
-                                    className="text-slate-400 hover:text-white transition-colors"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
+
+                                {showItinerary && (
+                                    <>
+                                        <button
+                                            onClick={() => setIsOpen(false)}
+                                            className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5 md:hidden"
+                                            title={language === 'nl' ? 'Inklappen' : 'Collapse'}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                            </svg>
+                                        </button>
+
+                                        <button
+                                            onClick={() => setIsOpen(false)}
+                                            className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5 hidden md:block"
+                                            title={language === 'nl' ? 'Inklappen' : 'Collapse'}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                                            </svg>
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
 
@@ -690,6 +909,8 @@ const ItinerarySidebar = ({
                                     constraintValue={constraintValue}
                                     constraintType={constraintType}
                                     isRoundtrip={isRoundtrip}
+                                    activeTheme={availableThemes?.[activeTheme]}
+                                    travelMode={travelMode}
                                 />
                             </div>
                         )}
@@ -743,6 +964,32 @@ const ItinerarySidebar = ({
 
 
 
+
+                                {/* 2. Voice Preference */}
+                                <div className="space-y-1">
+                                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Stem' : 'Voice'}</label>
+                                    <div className="flex bg-slate-800/80 p-1 rounded-lg border border-white/5">
+                                        <button
+                                            onClick={() => setVoiceSettings && setVoiceSettings({ ...voiceSettings, gender: 'female' })}
+                                            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${voiceSettings?.gender === 'female' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                            </svg>
+                                            {language === 'nl' ? 'Vrouw' : 'Female'}
+                                        </button>
+                                        <button
+                                            onClick={() => setVoiceSettings && setVoiceSettings({ ...voiceSettings, gender: 'male' })}
+                                            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${voiceSettings?.gender === 'male' ? 'bg-primary text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                            </svg>
+                                            {language === 'nl' ? 'Man' : 'Male'}
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {/* 3. App Theme */}
                                 <div className="space-y-1">
                                     <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Thema' : 'Theme'}</label>
@@ -787,63 +1034,40 @@ const ItinerarySidebar = ({
                                             </button>
                                         ))}
                                     </div>
+                                    {/* 5. Simulation Mode */}
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Simulatie' : 'Simulation'}</label>
+                                        <button
+                                            onClick={() => setIsSimulating(!isSimulating)}
+                                            className={`w-full py-2 px-3 flex items-center justify-between text-xs font-semibold rounded-lg transition-all border ${isSimulating ? 'bg-blue-600/20 border-blue-500/50 text-blue-400' : 'bg-slate-800/80 border-white/5 text-slate-400 hover:text-slate-200'}`}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
+                                                <span>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
+                                            </div>
+                                            <div className={`w-8 h-4 rounded-full relative transition-colors ${isSimulating ? 'bg-blue-500' : 'bg-slate-700'}`}>
+                                                <div className={`absolute top-1 w-2 h-2 rounded-full bg-white transition-all ${isSimulating ? 'right-1' : 'left-1'}`} />
+                                            </div>
+                                        </button>
+                                    </div>
                                 </div>
 
-                            </div>
-
-
-                            {/* Description Length Settings */}
-
-
-                            {/* 5. Search Sources (Compact & Collapsible) */}
-                            <div className="space-y-1 mt-4 border-t border-white/10 pt-4">
-                                <button
-                                    onClick={() => setShowSources(!showSources)}
-                                    className="flex items-center justify-between w-full text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 hover:text-white transition-colors"
-                                >
-                                    {text.sources_label || "Sources"}
-                                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${showSources ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                                    </svg>
-                                </button>
-
-                                {showSources && (
-                                    <div className="space-y-2 pt-2 animate-in slide-in-from-top-2 fade-in">
-                                        {[
-                                            { id: 'osm', label: 'OpenStreetMap', color: 'bg-blue-600' },
-                                            { id: 'foursquare', label: 'Foursquare', color: 'bg-pink-600' },
-                                            { id: 'google', label: 'Google Places', color: 'bg-green-600' }
-                                        ].map(source => (
-                                            <button
-                                                key={source.id}
-                                                onClick={() => setSearchSources({ ...searchSources, [source.id]: !searchSources[source.id] })}
-                                                className={`w-full flex items-center justify-between p-2 rounded-lg border transition-all ${searchSources[source.id] ? 'bg-slate-800 border-white/20' : 'bg-transparent border-transparent opacity-60 hover:opacity-100'}`}
-                                            >
-                                                <span className={`text-xs font-semibold ${searchSources[source.id] ? 'text-white' : 'text-slate-500'}`}>{source.label}</span>
-                                                <div className={`w-3 h-3 rounded-full transition-all ${searchSources[source.id] ? source.color + ' shadow-[0_0_8px_currentColor]' : 'bg-slate-700'}`} />
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-
-
-                            {/* About Section */}
-                            <div className="mt-8 pt-4 border-t border-white/10">
-                                <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">{language === 'nl' ? 'Over' : 'About'}</h4>
-                                <div className="bg-slate-800/60 rounded-xl p-4 border border-white/5 space-y-3">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-400 text-sm">Version</span>
-                                        <span className="text-slate-300 text-sm font-medium">v1.1.0</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-400 text-sm">Author</span>
-                                        <span className="text-slate-300 text-sm font-medium">Geert Schepers</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-400 text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                        <span className="text-slate-300 text-sm font-medium">18 Jan 2026</span>
+                                {/* About Section */}
+                                <div className="mt-8 pt-4 border-t border-white/10">
+                                    <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">{language === 'nl' ? 'Over' : 'About'}</h4>
+                                    <div className="bg-slate-800/60 rounded-xl p-4 border border-white/5 space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-slate-400 text-sm">Version</span>
+                                            <span className="text-slate-300 text-sm font-medium">v1.2.0</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-slate-400 text-sm">Author</span>
+                                            <span className="text-slate-300 text-sm font-medium">Geert Schepers</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-slate-400 text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
+                                            <span className="text-slate-300 text-sm font-medium">19 Jan 2026</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -851,7 +1075,11 @@ const ItinerarySidebar = ({
                     )}
 
                     {/* Content Area */}
-                    <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                    <div
+                        ref={scrollContainerRef}
+                        onScroll={handleScroll}
+                        className="flex-1 overflow-y-auto p-4 custom-scrollbar"
+                    >
                         {/* VIEW 1: Disambiguation */}
                         {showDisambiguation ? (
                             <div className="space-y-3">
@@ -861,7 +1089,9 @@ const ItinerarySidebar = ({
                                         key={idx}
                                         onClick={() => {
                                             onDisambiguationSelect(option);
-                                            setShouldAutoFocusInterests(true);
+                                            if (!interests || !interests.trim()) {
+                                                setShouldAutoFocusInterests(true);
+                                            }
                                         }}
                                         className="w-full text-left bg-slate-800/50 hover:bg-slate-700 p-3 rounded-lg border border-white/5 text-sm"
                                     >
@@ -1033,6 +1263,8 @@ const ItinerarySidebar = ({
                                     shouldAutoFocusInterests={shouldAutoFocusInterests}
                                     setShouldAutoFocusInterests={setShouldAutoFocusInterests}
                                     onLoad={onLoad}
+                                    travelMode={travelMode}
+                                    onStyleChange={onStyleChange}
                                 />
                             </div>
                         )}
@@ -1044,7 +1276,7 @@ const ItinerarySidebar = ({
                             <div className="flex items-center justify-between">
                                 <button
                                     onClick={() => setAutoAudio(!autoAudio)}
-                                    className={`text-xs font-bold py-2 px-4 rounded-lg border transition-all flex items-center gap-2 ${autoAudio ? 'bg-primary/20 border-primary/50 text-primary' : 'bg-slate-800 border-white/10 text-slate-500 hover:text-white'}`}
+                                    className={`text-xs font-bold py-2 px-4 rounded-lg border transition-all flex items-center gap-2 ${autoAudio ? 'bg-primary/20 border-primary/50 text-primary' : 'bg-slate-800/40 border-white/5 text-white hover:bg-slate-800/80'}`}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>
                                     {autoAudio ? "Auto-Audio ON" : "Auto-Audio OFF"}
@@ -1052,7 +1284,7 @@ const ItinerarySidebar = ({
 
                                 <button
                                     onClick={() => setAreOptionsVisible(!areOptionsVisible)}
-                                    className="text-[10px] uppercase font-bold text-slate-500 hover:text-white transition-colors flex items-center gap-1"
+                                    className="text-[10px] uppercase font-bold text-slate-400 hover:text-white transition-colors flex items-center gap-1"
                                 >
                                     {text.options}
                                     <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${areOptionsVisible ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
@@ -1065,32 +1297,32 @@ const ItinerarySidebar = ({
                                 <div className="grid grid-cols-3 gap-2 animate-in slide-in-from-bottom-2 fade-in duration-200">
                                     <button
                                         onClick={onReset}
-                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/80 hover:bg-red-900/40 border border-white/5 hover:border-red-500/30 transition-all group"
+                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-white/5 hover:border-primary/30 transition-all group"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400 group-hover:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-primary group-hover:text-primary-hover" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                         </svg>
-                                        <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase">{text.reset}</span>
+                                        <span className="text-[10px] font-bold text-white uppercase">{text.reset}</span>
                                     </button>
 
                                     <button
                                         onClick={() => setIsAddingMode(true)}
-                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/80 hover:bg-primary/20 border border-white/5 hover:border-primary/30 transition-all group"
+                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-white/5 hover:border-primary/30 transition-all group"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400 group-hover:text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-primary group-hover:text-primary-hover" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                         </svg>
-                                        <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase">{text.add_short}</span>
+                                        <span className="text-[10px] font-bold text-white uppercase">{text.add_short}</span>
                                     </button>
 
                                     <button
                                         onClick={onSave}
-                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/80 hover:bg-green-900/40 border border-white/5 hover:border-green-500/30 transition-all group"
+                                        className="flex flex-col items-center gap-1 p-2 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-white/5 hover:border-primary/30 transition-all group"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400 group-hover:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-primary group-hover:text-primary-hover" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                                         </svg>
-                                        <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase">{text.save}</span>
+                                        <span className="text-[10px] font-bold text-white uppercase">{text.save}</span>
                                     </button>
                                 </div>
                             )}

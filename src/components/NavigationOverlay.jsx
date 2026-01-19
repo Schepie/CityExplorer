@@ -62,6 +62,27 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle })
 
     const hasSteps = activeSteps && activeSteps.length > 0;
 
+    const [touchStart, setTouchStart] = useState(null);
+    const [touchEnd, setTouchEnd] = useState(null);
+    const minSwipeDistance = 50;
+
+    const onTouchStart = (e) => {
+        setTouchEnd(null);
+        setTouchStart(e.targetTouches[0].clientX);
+    };
+
+    const onTouchMove = (e) => setTouchEnd(e.targetTouches[0].clientX);
+
+    const onTouchEnd = () => {
+        if (!touchStart || !touchEnd) return;
+        const distance = touchStart - touchEnd;
+        const isRightSwipe = distance < -minSwipeDistance;
+
+        if (isRightSwipe) {
+            onClose();
+        }
+    };
+
     return (
         <>
             {/* Toggle Button (Visible when route exists) */}
@@ -70,7 +91,12 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle })
             {/* Overlay Panel */}
             {isOpen && (
                 <div className="absolute inset-0 z-[1100] bg-slate-900/40 backdrop-blur-sm flex justify-end">
-                    <div className="w-full max-w-md h-full bg-slate-900 shadow-2xl border-l border-white/10 flex flex-col animate-in slide-in-from-right duration-300">
+                    <div
+                        onTouchStart={onTouchStart}
+                        onTouchMove={onTouchMove}
+                        onTouchEnd={onTouchEnd}
+                        className="w-full max-w-md h-full bg-slate-900 shadow-2xl border-l border-white/10 flex flex-col animate-in slide-in-from-right duration-300"
+                    >
 
                         {/* Header */}
                         <div className="p-4 border-b border-white/10 bg-slate-800/50 flex items-center justify-between">

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PoiIntelligence } from './services/PoiIntelligence';
 import MapContainer from './components/MapContainer';
 import ItinerarySidebar from './components/ItinerarySidebar';
+import CitySelector from './components/CitySelector';
 import './index.css'; // Ensure styles are loaded
 import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
 
@@ -55,6 +56,7 @@ function App() {
   useEffect(() => localStorage.setItem('app_language', language), [language]);
   useEffect(() => localStorage.setItem('app_theme', activeTheme), [activeTheme]);
   const [isBackgroundUpdating, setIsBackgroundUpdating] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(false);
 
   // Apply Theme Effect
   useEffect(() => {
@@ -86,6 +88,7 @@ function App() {
   // Default to Google only as requested
   const [searchMode, setSearchMode] = useState('journey'); // 'radius' or 'journey'
   const [searchSources, setSearchSources] = useState({ osm: false, foursquare: false, google: true });
+  const [travelMode, setTravelMode] = useState('walking'); // 'walking' or 'cycling'
 
   // Disambiguation State
   const [disambiguationOptions, setDisambiguationOptions] = useState(null);
@@ -97,6 +100,8 @@ function App() {
 
   // Limit Confirmation State
   const [limitConfirmation, setLimitConfirmation] = useState(null); // { proposedRouteData, message }
+
+  const [showCitySelector, setShowCitySelector] = useState(false);
 
   // Sidebar Visibility State (Lifted)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -131,6 +136,87 @@ function App() {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c; // Distance in km
   };
+
+  // Helper: Calculate Route Path & Steps
+  const calculateRoutePath = async (pois, center, mode) => {
+    const waypoints = [
+      `${center[1]},${center[0]}`,
+      ...pois.map(p => `${p.lng},${p.lat}`)
+    ];
+    if (isRoundtrip) waypoints.push(`${center[1]},${center[0]}`);
+
+    try {
+      const profile = mode === 'cycling' ? 'routed-bike' : 'routed-foot';
+      const osrmUrl = `https://routing.openstreetmap.de/${profile}/route/v1/driving/${waypoints.join(';')}?overview=full&geometries=geojson&steps=true`;
+
+      const res = await fetch(osrmUrl);
+      const json = await res.json();
+
+      if (json.routes && json.routes.length > 0) {
+        const route = json.routes[0];
+        const path = route.geometry.coordinates.map(c => [c[1], c[0]]);
+        const dist = route.distance / 1000;
+        let walkDist = 0;
+        if (route.legs && route.legs.length > 1) {
+          const poiLegs = isRoundtrip ? route.legs.slice(1, -1) : route.legs.slice(1);
+          walkDist = poiLegs.reduce((acc, leg) => acc + leg.distance, 0) / 1000;
+        }
+        let steps = [];
+        if (route.legs) {
+          steps = route.legs.flatMap(l => l.steps);
+        }
+        return { path, dist, walkDist, steps };
+      }
+    } catch (e) {
+      console.warn("Route calc failed", e);
+    }
+
+    // Fallback: Straight lines
+    const pts = [center, ...pois.map(p => [p.lat, p.lng])];
+    if (isRoundtrip) pts.push(center);
+
+    // Fallback steps
+    const steps = pois.map(p => ({
+      maneuver: { type: 'depart', modifier: 'straight' },
+      name: language === 'nl' ? `Ga naar ${p.name}` : `Walk to ${p.name}`,
+      distance: 0
+    }));
+
+    // Calc simple dist
+    let fallbackDist = 0;
+    let fallbackWalkDist = 0;
+    let prev = { lat: center[0], lng: center[1] };
+    pois.forEach((p, idx) => {
+      const d = getDistance(prev.lat, prev.lng, p.lat, p.lng);
+      fallbackDist += d;
+      if (idx > 0) fallbackWalkDist += d;
+      prev = p;
+    });
+    if (isRoundtrip) {
+      const last = pois[pois.length - 1];
+      fallbackDist += getDistance(last.lat, last.lng, center[0], center[1]);
+    }
+
+    return { path: pts, dist: fallbackDist * 1.3, walkDist: fallbackWalkDist * 1.3, steps };
+  };
+
+  // Effect: Recalculate Route when Travel Mode changes
+  useEffect(() => {
+    if (routeData && routeData.pois && routeData.pois.length > 0 && searchMode !== 'radius') {
+      calculateRoutePath(routeData.pois, routeData.center, travelMode).then(res => {
+        setRouteData(prev => ({
+          ...prev,
+          routePath: res.path,
+          navigationSteps: res.steps,
+          stats: {
+            ...prev.stats,
+            totalDistance: res.dist.toFixed(1),
+            walkDistance: res.walkDist.toFixed(1)
+          }
+        }));
+      });
+    }
+  }, [travelMode]);
 
   // Save Route
   const handleSaveRoute = () => {
@@ -270,7 +356,7 @@ function App() {
 
       if (context === 'submit') {
         // Proceed to map
-        loadMapWithCity(match, interestOverride);
+        await loadMapWithCity(match, interestOverride);
       } else {
         // On blur, maybe autofill
       }
@@ -562,7 +648,13 @@ function App() {
   const handleJourneyStart = async (e, interestOverride = null) => {
     e && e.preventDefault();
     const activeInterest = interestOverride || interests;
-    if (!city.trim() || !activeInterest.trim()) return;
+
+    if (!activeInterest.trim()) return;
+
+    if (!city.trim()) {
+      setShowCitySelector(true);
+      return;
+    }
 
     // Update state if override used
     if (interestOverride) setInterests(interestOverride);
@@ -683,44 +775,14 @@ function App() {
         return { ...p, description: desc };
       }));
 
-      const waypoints = [
-        `${cityCenter[1]},${cityCenter[0]}`,
-        ...fullyEnriched.map(p => `${p.lng},${p.lat}`)
-      ];
-      if (isRoundtrip) waypoints.push(`${cityCenter[1]},${cityCenter[0]}`);
-
-      const osrmUrl = `https://router.project-osrm.org/route/v1/foot/${waypoints.join(';')}?overview=full&geometries=geojson&steps=true`;
-      const res = await fetch(osrmUrl);
-      const json = await res.json();
-
       let finalPath = [];
       let finalDist = 0;
       let finalSteps = [];
 
-      if (json.routes && json.routes.length > 0) {
-        finalPath = json.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-        finalDist = json.routes[0].distance / 1000;
-
-        // Extract Steps
-        if (json.routes[0].legs) {
-          finalSteps = json.routes[0].legs.flatMap(l => l.steps);
-        }
-
-        // Fallback
-        if (!finalSteps || finalSteps.length === 0) {
-          finalSteps = fullyEnriched.map(p => ({
-            maneuver: { type: 'depart', modifier: 'straight' },
-            name: language === 'nl' ? `Ga naar ${p.name}` : `Walk to ${p.name}`,
-            distance: 0
-          }));
-        }
-      } else {
-        // Fallback straight lines (Mock dist)
-        const pts = [cityCenter, ...fullyEnriched.map(p => [p.lat, p.lng])];
-        if (isRoundtrip) pts.push(cityCenter);
-        finalPath = pts;
-        finalDist = 999;
-      }
+      const routeResult = await calculateRoutePath(fullyEnriched, cityCenter, travelMode);
+      finalPath = routeResult.path;
+      finalDist = routeResult.dist;
+      finalSteps = routeResult.steps;
 
       // Define Limit with tolerance
       let targetLimitKm = constraintValue;
@@ -734,6 +796,7 @@ function App() {
         navigationSteps: finalSteps,
         stats: {
           totalDistance: finalDist.toFixed(1),
+          walkDistance: (routeResult.walkDist || 0).toFixed(1),
           limitKm: targetLimitKm.toFixed(1)
         }
       };
@@ -772,7 +835,7 @@ function App() {
     setLimitConfirmation(null);
   };
 
-  const handleDisambiguationSelect = (selectedCityData) => {
+  const handleDisambiguationSelect = async (selectedCityData) => {
     setDisambiguationOptions(null);
 
     // Update city name to a more descriptive one (e.g. "Hasselt, Belgium")
@@ -793,7 +856,16 @@ function App() {
     setValidatedCityData(selectedCityData); // Mark as valid
 
     if (disambiguationContext === 'submit') {
-      loadMapWithCity(selectedCityData);
+      // Show loading screen immediately
+      setIsLoading(true);
+      setIsSidebarOpen(false);
+      setLoadingText(language === 'nl' ? 'Aan het verkennen...' : 'Exploring...');
+
+      try {
+        await loadMapWithCity(selectedCityData);
+      } finally {
+        setIsLoading(false);
+      }
     }
     // If 'blur', we just corrected the name and return to form.
     setDisambiguationContext(null);
@@ -921,6 +993,7 @@ function App() {
           routePath: [], // No path for radius mode
           stats: {
             totalDistance: "0",
+            walkDistance: "0",
             limitKm: `Radius ${searchRadiusKm}`
           }
         });
@@ -961,9 +1034,20 @@ function App() {
           .filter(c => !visitedIds.has(c.id))
           .map(c => ({
             ...c,
-            distFromCurr: getDistance(currentPos.lat, currentPos.lng, c.lat, c.lng)
+            // Ensure numeric types for correct math
+            lat: parseFloat(c.lat),
+            lng: parseFloat(c.lng),
+            distFromCurr: getDistance(
+              parseFloat(currentPos.lat), parseFloat(currentPos.lng),
+              parseFloat(c.lat), parseFloat(c.lng)
+            )
           }))
           .sort((a, b) => a.distFromCurr - b.distFromCurr);
+
+        // Debug Sorting
+        // if (potentialNext.length > 0) {
+        //    console.log(`Step from [${currentPos.lat},${currentPos.lng}]. Closest: ${potentialNext[0].name} (${potentialNext[0].distFromCurr.toFixed(2)}km)`);
+        // }
 
         if (potentialNext.length === 0) break;
 
@@ -1012,93 +1096,30 @@ function App() {
       let routeCoordinates = [];
       let realDistance = 0;
       let navigationSteps = [];
+      let finalRouteResult = null;
 
       // We might need to prune multiple times if the estimation was way off
       while (selectedPois.length > 0) {
-        try {
-          const waypoints = [
-            `${cityCenter[1]},${cityCenter[0]}`,
-            ...selectedPois.map(p => `${p.lng},${p.lat}`)
-          ];
+        const routeResult = await calculateRoutePath(selectedPois, cityCenter, travelMode);
+        const dKm = routeResult.dist;
 
-          // If Roundtrip, append start point at the end
-          if (isRoundtrip) {
-            waypoints.push(`${cityCenter[1]},${cityCenter[0]}`);
-          }
+        // Check if this real distance fits our limit (with tolerance)
+        // If it's the only POI left, we keep it even if slightly over, to show *something*
+        if (dKm <= maxLimitKm || selectedPois.length === 1) {
+          // ACCEPT this route
+          routeCoordinates = routeResult.path;
+          realDistance = dKm;
+          navigationSteps = routeResult.steps;
+          finalRouteResult = routeResult;
 
-          // Request steps=true for TBT navigation
-          const osrmUrl = `https://router.project-osrm.org/route/v1/foot/${waypoints.join(';')}?overview=full&geometries=geojson&steps=true`;
-          const routeResponse = await fetch(osrmUrl);
-          const routeJson = await routeResponse.json();
-
-          if (routeJson.code === 'Ok' && routeJson.routes && routeJson.routes.length > 0) {
-            const route = routeJson.routes[0];
-            const dKm = route.distance / 1000;
-
-            // Check if this real distance fits our limit (with tolerance)
-            // If it's the only POI left, we keep it even if slightly over, to show *something*
-            if (dKm <= maxLimitKm || selectedPois.length === 1) {
-              // ACCEPT this route
-              routeCoordinates = route.geometry.coordinates.map(c => [c[1], c[0]]);
-              realDistance = dKm;
-
-              // Extract Turn-by-Turn Steps
-              if (route.legs) {
-                navigationSteps = route.legs.flatMap(leg => leg.steps);
-              }
-
-              console.log("OSRM Steps Extracted:", navigationSteps ? navigationSteps.length : 0);
-
-              // Fallback: If no steps (e.g. OSRM issue), generate synthetic steps
-              if (!navigationSteps || navigationSteps.length === 0) {
-                console.warn("No OSRM steps. Generating custom fallback.");
-                navigationSteps = selectedPois.map((p, idx) => ({
-                  maneuver: { type: 'depart', modifier: 'straight' },
-                  name: language === 'nl' ? `Ga naar ${p.name}` : `Walk to ${p.name}`,
-                  distance: 0
-                }));
-              }
-
-              break; // Exit loop, we are good
-            } else {
-              // REJECT - Route is too long
-              const overflow = dKm - maxLimitKm;
-              console.warn(`Route real distance ${dKm}km exceeds limit ${maxLimitKm}km by ${overflow.toFixed(2)}km. Pruning last stop.`);
-              selectedPois.pop(); // Remove last added
-              // Loop continues and tries again with N-1 waypoints
-            }
-          } else {
-            // API Error or no route? Fallback to straight line logic (break loop)
-            throw new Error("OSRM No Route");
-          }
-        } catch (error) {
-          console.error("OSRM fetch failed/pruning error", error);
-          // Fallback to straight lines for whatever points we have left
-          const pts = [cityCenter, ...selectedPois.map(p => [p.lat, p.lng])];
-          if (isRoundtrip) pts.push(cityCenter);
-
-          routeCoordinates = pts;
-
-          // GENERATE SYNTHETIC STEPS FOR FALLBACK (Since OSRM failed)
-          navigationSteps = selectedPois.map((p, idx) => ({
-            maneuver: { type: 'depart', modifier: 'straight' },
-            name: language === 'nl' ? `Ga naar ${p.name}` : `Walk to ${p.name}`,
-            distance: 0
-          }));
-
-          // Simple sum of straight lines * 1.3 as fallback stats
-          let fallbackDist = 0;
-          let prev = { lat: cityCenter[0], lng: cityCenter[1] };
-          selectedPois.forEach(p => {
-            fallbackDist += getDistance(prev.lat, prev.lng, p.lat, p.lng);
-            prev = p;
-          });
-          if (isRoundtrip) {
-            const last = selectedPois[selectedPois.length - 1];
-            fallbackDist += getDistance(last.lat, last.lng, cityCenter[0], cityCenter[1]);
-          }
-          realDistance = fallbackDist * 1.3;
-          break;
+          console.log("OSRM Steps Extracted:", navigationSteps ? navigationSteps.length : 0);
+          break; // Exit loop, we are good
+        } else {
+          // REJECT - Route is too long
+          const overflow = dKm - maxLimitKm;
+          console.warn(`Route real distance ${dKm}km exceeds limit ${maxLimitKm}km by ${overflow.toFixed(2)}km. Pruning last stop.`);
+          selectedPois.pop(); // Remove last added
+          // Loop continues and tries again with N-1 waypoints
         }
       }
 
@@ -1117,6 +1138,7 @@ function App() {
         navigationSteps: navigationSteps,
         stats: {
           totalDistance: realDistance.toFixed(1),
+          walkDistance: (finalRouteResult?.walkDist || 0).toFixed(1),
           limitKm: targetLimitKm.toFixed(1)
         }
       });
@@ -1124,15 +1146,17 @@ function App() {
 
       // 2. Background Process: Enrich iteratively
       // We do this WITHOUT awaiting the loop here to block UI.
-      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${realDistance.toFixed(1)} km, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
       enrichBackground(selectedPois, cityData.name, language, descriptionLength, activeInterest, routeCtx);
-
-
 
     } catch (err) {
       console.error("Error fetching POIs", err);
-      // On error, stay on input screen
+      // On error, revert to input screen and RE-OPEN SIDEBAR
       setRouteData(null);
+      setIsSidebarOpen(true);
+      alert(language === 'nl'
+        ? "Er is een fout opgetreden bij het laden van de kaart. Probeer het opnieuw."
+        : "An error occurred while loading the map. Please try again.");
     }
   };
 
@@ -1150,6 +1174,7 @@ function App() {
 
   // Audio State
   const [speakingId, setSpeakingId] = useState(null);
+  const [currentSpeakingPoi, setCurrentSpeakingPoi] = useState(null); // Track object for auto-restart
   const [autoAudio, setAutoAudio] = useState(false);
 
   const [voiceSettings, setVoiceSettings] = useState(() => {
@@ -1158,6 +1183,15 @@ function App() {
   });
 
   useEffect(() => localStorage.setItem('app_voice_settings', JSON.stringify(voiceSettings)), [voiceSettings]);
+
+  // Auto-restart speech when voice settings change
+  useEffect(() => {
+    if (currentSpeakingPoi && speakingId) {
+      // Force restart with new settings
+      handleSpeak(currentSpeakingPoi, true);
+    }
+  }, [voiceSettings]);
+
   const [availableVoices, setAvailableVoices] = useState([]);
 
   useEffect(() => {
@@ -1175,41 +1209,55 @@ function App() {
   const stopSpeech = () => {
     window.speechSynthesis.cancel();
     setSpeakingId(null);
+    setCurrentSpeakingPoi(null);
   };
 
   const handleSpeak = (poi, force = false) => {
     const isSame = speakingId === poi.id;
-    stopSpeech(); // Always stop previous
 
+    // If not forcing (toggling off), stop and exit
     if (isSame && !force) {
-      return; // Just stopped (toggled off)
+      stopSpeech();
+      return;
     }
+
+    // Always stop previous before starting new
+    window.speechSynthesis.cancel();
 
     if (!poi) return;
 
-    const textToRead = `${poi.name}. ${poi.description || ''}`;
+    const textToRead = poi.description || '';
     const u = new SpeechSynthesisUtterance(textToRead);
 
     // Voice Selection Logic
-    // 1. Filter by Language Region (NL vs BE)
-    const targetLang = voiceSettings.variant === 'be' ? 'nl-BE' : 'nl-NL';
-    // Fallback logic: if we want BE but only have NL, use NL.
+    let targetLang = 'nl-NL';
+    if (voiceSettings.variant === 'en') targetLang = 'en-US';
+    else if (voiceSettings.variant === 'be') targetLang = 'nl-BE';
+
+    // Fallback logic for language
     let relevantVoices = availableVoices.filter(v => v.lang.includes(targetLang));
     if (relevantVoices.length === 0) {
-      // Fallback to strict 'nl' if specific region invalid
-      relevantVoices = availableVoices.filter(v => v.lang.includes('nl'));
+      // Try broader search (e.g. 'en' instead of 'en-US')
+      const shortLang = targetLang.split('-')[0];
+      relevantVoices = availableVoices.filter(v => v.lang.includes(shortLang));
     }
 
     // 2. Filter by Gender (Heuristic based on name)
-    // Common identifiers: "Google Nederlands" (Female), "Ellen" (Female), "Xander" (Male), "Claire" (Female), "Bart" (Male)
-    // Azure/Google voices often don't declare gender explicitly in the API object standardly, but names help.
     let selectedVoice = relevantVoices[0]; // Default to first found
 
     const targetGender = voiceSettings.gender;
     const genderMatch = relevantVoices.find(v => {
       const n = v.name.toLowerCase();
-      if (targetGender === 'male') return n.includes('male') || n.includes('man') || n.includes('xander') || n.includes('bart') || n.includes('arthur') || n.includes('david');
-      if (targetGender === 'female') return n.includes('female') || n.includes('woman') || n.includes('ellen') || n.includes('claire') || n.includes('laura') || n.includes('google'); // Google default often female
+      // Expanded heuristic list for common Windows/Mac/Chrome voices
+      const maleNames = ['male', 'man', 'xander', 'bart', 'arthur', 'david', 'frank', 'maarten', 'mark', 'stefan', 'rob', 'paul', 'daniel'];
+      const femaleNames = ['female', 'woman', 'lady', 'ellen', 'claire', 'laura', 'google', 'zira', 'eva', 'katja', 'fenna', 'samantha', 'tessa', 'karen', 'fiona', 'moira'];
+
+      if (targetGender === 'male') {
+        return maleNames.some(name => n.includes(name));
+      }
+      if (targetGender === 'female') {
+        return femaleNames.some(name => n.includes(name));
+      }
       return false;
     });
 
@@ -1219,15 +1267,18 @@ function App() {
       u.voice = selectedVoice;
       u.lang = selectedVoice.lang;
     } else {
-      // Fallback if no voices found at all (weird, but possible)
       u.lang = targetLang;
     }
 
-    console.log(`Speaking with voice: ${selectedVoice ? selectedVoice.name : 'Default'} (${u.lang})`);
+    // console.log(`Speaking with voice: ${selectedVoice ? selectedVoice.name : 'Default'} (${u.lang})`);
 
-    u.onend = () => setSpeakingId(null);
+    u.onend = () => {
+      setSpeakingId(null);
+      setCurrentSpeakingPoi(null);
+    };
 
     setSpeakingId(poi.id);
+    setCurrentSpeakingPoi(poi);
     window.speechSynthesis.speak(u);
   };
 
@@ -1252,7 +1303,8 @@ function App() {
       };
     });
 
-    const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+    const actualDist = routeData?.stats?.totalDistance ? `${routeData.stats.totalDistance} km` : `${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}`;
+    const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${actualDist}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
     const engine = new PoiIntelligence({
       city: city,
       language: language,
@@ -1304,7 +1356,7 @@ function App() {
       )}
 
       {/* Map Area */}
-      <div className={`absolute inset-0 z-0 h-full w-full visible`}>
+      <div className="flex-1 relative overflow-hidden">
         <MapContainer
           routeData={routeData}
           focusedLocation={focusedLocation}
@@ -1320,6 +1372,12 @@ function App() {
           onUpdatePoiDescription={handleUpdatePoiDescription}
           onNavigationRouteFetched={handleNavigationRouteFetched}
           onToggleNavigation={() => setIsNavigationOpen(prev => !prev)}
+          autoAudio={autoAudio}
+          setAutoAudio={setAutoAudio}
+          isSimulating={isSimulating}
+          setIsSimulating={setIsSimulating}
+          userSelectedStyle={travelMode}
+          onStyleChange={setTravelMode}
         />
       </div>
 
@@ -1349,6 +1407,9 @@ function App() {
         autoAudio={autoAudio}
         setAutoAudio={setAutoAudio}
 
+        isSimulating={isSimulating}
+        setIsSimulating={setIsSimulating}
+
         // Form Props
         city={city} setCity={handleSetCity}
         interests={interests} setInterests={setInterests}
@@ -1377,6 +1438,8 @@ function App() {
         availableThemes={APP_THEMES}
         onSave={handleSaveRoute}
         onLoad={handleLoadRoute}
+        travelMode={travelMode}
+        onStyleChange={setTravelMode}
       />
 
       {/* Refinement Modal */}
@@ -1441,6 +1504,49 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* City Picker Overlay */}
+      {showCitySelector && (
+        <CitySelector
+          onStartFadeOut={() => {
+            // Immediate UI update to prevent flashing background
+            // Only if we have interests (otherwise we will eventually show sidebar anyway)
+            if (interests && interests.trim().length > 0) {
+              setIsSidebarOpen(false); // Hide sidebar before it can be seen
+              setIsLoading(true); // Show loader immediately
+            }
+          }}
+          onCitySelect={async (selectedCity) => {
+            setCity(selectedCity);
+            setShowCitySelector(false); // Immediate close of overlay
+
+            // Check if we have interests to proceed immediately
+            const hasInterests = interests && interests.trim().length > 0;
+
+            if (hasInterests) {
+              // CASE 1: Full Info Available -> Go to Map
+              setIsLoading(true);
+              setIsSidebarOpen(false); // Ensure sidebar is closed
+              setLoadingText(language === 'nl' ? 'Bestemming verifiëren...' : 'Verifying destination...');
+
+              try {
+                // Submit directly with current interests
+                await handleCityValidation('submit', selectedCity, interests);
+              } finally {
+                setIsLoading(false);
+              }
+            } else {
+              // CASE 2: Missing Interests -> Open Sidebar for Input
+              setIsSidebarOpen(true); // Show sidebar
+              setShouldAutoFocusInterests(true); // Focus next step
+
+              // Validate city in background (get coords) but don't start journey
+              // 'blur' context ensures we fetch data/disambiguate without loading map
+              handleCityValidation('blur', selectedCity);
+            }
+          }}
+        />
       )}
 
     </div >

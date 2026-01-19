@@ -55,6 +55,20 @@ const calcBearing = (p1, p2) => {
     return (toDeg(Math.atan2(y, x)) + 360) % 360;
 };
 
+const getPointAhead = (center, bearing, distanceOffsetKm) => {
+    const R = 6371;
+    const lat1 = toRad(center.lat);
+    const lon1 = toRad(center.lng);
+    const brng = toRad(bearing);
+
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distanceOffsetKm / R) +
+        Math.cos(lat1) * Math.sin(distanceOffsetKm / R) * Math.cos(brng));
+    const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(distanceOffsetKm / R) * Math.cos(lat1),
+        Math.cos(distanceOffsetKm / R) - Math.sin(lat1) * Math.sin(lat2));
+
+    return [toDeg(lat2), toDeg(lon2)];
+};
+
 // Navigation Helpers (Internalized for HUD)
 const getManeuverIcon = (modifier, type) => {
     if (type === 'arrive') return '🏁';
@@ -91,11 +105,24 @@ const translateHUDInstruction = (step, lang) => {
 };
 
 // Helper to control map view
-const MapController = ({ center, positions, userLocation, focusedLocation, viewAction, onActionHandled }) => {
+const MapController = ({ center, positions, userLocation, focusedLocation, viewAction, onActionHandled, isNavigating, effectiveHeading }) => {
     const map = useMap();
     const hasAutoFit = useRef(false);
     const prevPositionsKey = useRef('');
     const prevFocusedLocation = useRef(null);
+    const isAutoFollow = useRef(true); // Default to following
+
+    // Disable auto-follow on user interaction
+    useEffect(() => {
+        const onDrag = () => {
+            if (isAutoFollow.current) {
+                // console.log("User dragged map. Disabling auto-follow.");
+                isAutoFollow.current = false;
+            }
+        };
+        map.on('dragstart', onDrag);
+        return () => map.off('dragstart', onDrag);
+    }, [map]);
 
     // Generate simple key to detect route changes
     const currentKey = positions && positions.length > 0
@@ -110,12 +137,16 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     useEffect(() => {
         // Priority 1: Explicit View Actions
         if (viewAction === 'USER' && userLocation) {
-            map.flyTo([userLocation.lat, userLocation.lng], 15, { duration: 1.5 });
+            // Re-enable auto-follow
+            isAutoFollow.current = true;
+            map.flyTo([userLocation.lat, userLocation.lng], 16, { duration: 1.5 });
             if (onActionHandled) onActionHandled();
             return;
         }
 
         if (viewAction === 'ROUTE' && positions && positions.length > 0) {
+            // Disable auto-follow to allow looking at the whole route
+            isAutoFollow.current = false;
             const bounds = L.latLngBounds(positions);
             map.fitBounds(bounds, { padding: [50, 50] });
             if (onActionHandled) onActionHandled();
@@ -130,12 +161,31 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
         );
 
         if (isNewFocus) {
+            // Disable auto-follow when explicitly focusing a location
+            isAutoFollow.current = false;
             map.flyTo([focusedLocation.lat, focusedLocation.lng], 16, { duration: 1.5 });
             prevFocusedLocation.current = focusedLocation;
             return;
         }
 
-        // Priority 3: Auto-fit on initial load/route change
+        // Priority 3: Follow User in Navigation Mode (ONLY IF ENABLED)
+        if (isNavigating && userLocation && isAutoFollow.current) {
+            // Use current zoom if available, otherwise default to 18
+            const currentZoom = map.getZoom();
+
+            // Only center if we are effectively moving or it's a significant update
+            // (Leaflet handles setView efficiently, but we can check distance if needed)
+
+            const lookAheadDist = 0.04; // 40 meters
+            const targetPoint = getPointAhead(userLocation, effectiveHeading, lookAheadDist);
+
+            // Use setView for smooth tracking (animate: true)
+            // But only if we are "locked"
+            map.setView(targetPoint, currentZoom || 18, { animate: true, duration: 1.0 });
+            return;
+        }
+
+        // Priority 4: Auto-fit on initial load/route change
         if (!hasAutoFit.current) {
             if (positions && positions.length > 0) {
                 const bounds = L.latLngBounds(positions);
@@ -152,10 +202,22 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
             }
         }
     }, [center, positions, userLocation, focusedLocation, map, viewAction, onActionHandled]);
+    useEffect(() => {
+        const container = map.getContainer();
+        // DISABLE ROTATION per user request: Always reset transforms
+        // if (isNavigating && effectiveHeading !== 0) { ... }
+
+        container.style.transition = 'transform 1.2s cubic-bezier(0.4, 0, 0.2, 1)';
+        container.style.transform = 'rotate(0deg) scale(1.0)';
+        container.style.setProperty('--map-rotation', '0deg');
+        container.style.setProperty('--map-scale', '1.0');
+
+    }, [map, isNavigating, effectiveHeading]);
+
     return null;
 };
 
-const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopupClose, speakingId, onSpeak, onStopSpeech, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation }) => {
+const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopupClose, speakingId, onSpeak, onStopSpeech, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating }) => {
     // Fix for stale closure in Leaflet listeners
     const speakingIdRef = useRef(speakingId);
     useEffect(() => { speakingIdRef.current = speakingId; }, [speakingId]);
@@ -168,7 +230,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
     // Default center (Amsterdam)
     const defaultCenter = [52.3676, 4.9041];
-    const [userSelectedStyle, setUserSelectedStyle] = useState('walking');
+    // const [userSelectedStyle, setUserSelectedStyle] = useState('walking'); // Lifted to App.jsx
     const [viewAction, setViewAction] = useState(null);
     const [isPopupOpen, setIsPopupOpen] = useState(false); // Track if any popup is open for HUD transparency
     const markerRefs = useRef({}); // Refs for markers to open programmatically
@@ -178,15 +240,26 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     const lastTriggeredPoiIdRef = useRef(null);
     const lastOpenedPopupIdRef = useRef(null);
 
+    // Track active POI index for sequential navigation
+    const [activePoiIndex, setActivePoiIndex] = useState(0);
+    const lastReachedPoiIndexRef = useRef(-1); // Separate ref to track navigation progress
+
+    // Reset active index when route changes
+    useEffect(() => {
+        setActivePoiIndex(0);
+        lastReachedPoiIndexRef.current = -1;
+    }, [routeData]);
+
     // Audio Context Ref (persistent)
     const audioCtxRef = useRef(null);
-    const [isSimulating, setIsSimulating] = useState(false);
+    // const [isSimulating, setIsSimulating] = useState(false); // NOW PASSED AS PROP
 
 
 
     const [navigationPath, setNavigationPath] = useState(null);
 
     const [userLocation, setUserLocation] = useState(null);
+    const setLocalUserLocation = (loc) => setUserLocation(loc); // Keep setter for interior logic
 
     // Fetch user location
     // Fetch user location
@@ -204,9 +277,17 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                     idx += 1;
                 } else {
                     clearInterval(interval);
-                    setIsSimulating(false); // Stop when done
+                    // Simulation finished this leg.
+                    // Force advance to next POI if available.
+                    console.log("Simulation leg complete. Checking for next POI...");
+                    if (routeData && routeData.pois && activePoiIndex < (routeData.pois.length - 1)) {
+                        console.log("Simulation finished leg. Advancing to next POI index:", activePoiIndex + 1);
+                        setActivePoiIndex(prev => prev + 1);
+                        // Also update strict tracker to prevent double-fire from proximity interaction
+                        lastReachedPoiIndexRef.current = activePoiIndex;
+                    }
                 }
-            }, 600); // 600ms per step
+            }, 500); // Speed up slightly to 500ms
 
             return () => clearInterval(interval);
         }
@@ -235,7 +316,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
         return () => {
             if (watchId) navigator.geolocation.clearWatch(watchId);
         };
-    }, [isSimulating, navigationPath]); // Re-run when toggle changes
+    }, [isSimulating, navigationPath, activePoiIndex, routeData]); // Re-run when toggle changes
 
     // Audio Trigger
     // Audio Trigger
@@ -306,9 +387,20 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                 }
 
                 // 2. Check for "Arrival" (Entering 25m Zone) - Open Popup
-                if (distKm < POPUP_THRESHOLD_KM) {
+                if (distKm < 0.06) { // Increased to 60m for failsafe detection
+
+                    // A. Navigation Advance Logic (Independent of Popup state)
+                    if (idx === activePoiIndex && activePoiIndex < (routeData.pois.length - 1)) {
+                        if (lastReachedPoiIndexRef.current !== activePoiIndex) {
+                            console.log("!!! ARRIVAL !!! Advancing navigation from index", activePoiIndex, "to", activePoiIndex + 1);
+                            lastReachedPoiIndexRef.current = activePoiIndex;
+                            setActivePoiIndex(prev => prev + 1);
+                        }
+                    }
+
+                    // B. UI Logic: Open Popup
                     if (lastOpenedPopupIdRef.current !== poi.id) {
-                        console.log("Arrived at POI (<25m):", poi.name, "Opening popup.");
+                        console.log("Arrived at POI (<60m):", poi.name, "Opening popup.");
 
                         // Select the POI in the app state (Sidebar etc)
                         if (onPoiClickRef.current) {
@@ -340,7 +432,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
         if (hasChanges) {
             setNearbyPoiIds(nextNearby);
         }
-    }, [userLocation, routeData, nearbyPoiIds]); // Check on location update
+    }, [userLocation, routeData, nearbyPoiIds, activePoiIndex]); // Check on location update
 
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
@@ -373,12 +465,50 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     };
     const text = t[language || 'en'];
 
-
-
-
     const [isNavigating, setIsNavigating] = useState(false);
     const isNavigatingRef = useRef(false); // Ref for immediate access in event handlers
     useEffect(() => { isNavigatingRef.current = isNavigating; }, [isNavigating]);
+
+
+
+    // Calculate effective heading for rotation
+    const [effectiveHeading, setEffectiveHeading] = useState(0);
+
+    useEffect(() => {
+        if (!isNavigating || !userLocation) {
+            setEffectiveHeading(0);
+            return;
+        }
+
+        const steps = routeData?.navigationSteps;
+        const targetPoi = focusedLocation || (routeData?.pois && routeData.pois[0]);
+
+        if (isNavigating && steps && steps.length > 0) {
+            // Find current maneuver bearing
+            let minD = Infinity;
+            let closestIdx = 0;
+            steps.forEach((s, i) => {
+                const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                if (d < minD) {
+                    minD = d;
+                    closestIdx = i;
+                }
+            });
+
+            let targetIdx = closestIdx + 1;
+            if (targetIdx < steps.length) {
+                const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                if (distToTarget < 0.025) targetIdx++;
+            }
+            targetIdx = Math.min(targetIdx, steps.length - 1);
+
+            const nextStep = steps[targetIdx];
+            const bearing = calcBearing(userLocation, { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] });
+            setEffectiveHeading(bearing);
+        } else if (targetPoi) {
+            setEffectiveHeading(calcBearing(userLocation, targetPoi));
+        }
+    }, [isNavigating, userLocation, focusedLocation, routeData]);
 
     const [feedbackRefresh, setFeedbackRefresh] = useState(0);
 
@@ -422,13 +552,16 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
     // Fetch real street navigation path
     useEffect(() => {
-        console.log("Nav check:", { user: !!userLocation, focus: !!focusedLocation, nav: isNavigating, style: userSelectedStyle });
+        // console.log("Nav check:", { user: !!userLocation, focus: !!focusedLocation, nav: isNavigating, style: userSelectedStyle });
         // TEST MODE GUARD: Do not re-fetch route if we are simulating (prevents loop)
         if (isSimulating && navigationPath && navigationPath.length > 0) {
             return;
         }
 
-        if (!userLocation || !focusedLocation || !isNavigating) {
+        // Target is determined by the sequential index
+        const navTarget = (pois && pois.length > activePoiIndex) ? pois[activePoiIndex] : (focusedLocation || (pois && pois[0]));
+
+        if (!userLocation || !navTarget || !isNavigating) {
             setNavigationPath(null);
             return;
         }
@@ -437,8 +570,8 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
             try {
                 const uLng = Number(userLocation.lng);
                 const uLat = Number(userLocation.lat);
-                const fLng = Number(focusedLocation.lng);
-                const fLat = Number(focusedLocation.lat);
+                const fLng = Number(navTarget.lng);
+                const fLat = Number(navTarget.lat);
 
                 // Switch profile based on map style
                 // 'foot' (pedestrian) prefers safe, smaller paths. 'bike'/'bicycle' prefers bike lanes/roads.
@@ -464,6 +597,12 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                 if (data.routes && data.routes.length > 0) {
                     const route = data.routes[0];
                     const path = route.geometry.coordinates.map(c => [c[1], c[0]]);
+
+                    // Force the path to end EXACTLY at the POI coordinate.
+                    // This solves the issue where OSRM stops on the street (e.g. 50m away)
+                    // and the simulation stops before triggering the "Arrival" threshold.
+                    path.push([fLat, fLng]);
+
                     setNavigationPath(path);
 
                     // Extract steps and lift them up
@@ -477,7 +616,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
         };
 
         fetchPath();
-    }, [userLocation, focusedLocation, isNavigating, userSelectedStyle]);
+    }, [userLocation, focusedLocation, isNavigating, userSelectedStyle, pois, activePoiIndex]);
 
     // Determine effective style
     // If no route data (input mode), use Dark. Otherwise use user selection.
@@ -492,12 +631,18 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     // Filter styles for switcher (exclude Dark/Default)
     const switcherStyles = Object.keys(MAP_STYLES).filter(k => k !== 'default');
 
-    // User Location Icon
+    // User Location Icon (with counter-rotation and counter-scale)
     const userIcon = L.divIcon({
-        className: 'custom-user-marker', // Changed class name to be safe
-        html: '<div class="user-marker-inner"></div>',
-        iconSize: [20, 20],
-        iconAnchor: [10, 10]
+        className: 'custom-user-marker',
+        html: isSimulating ?
+            `<div class="simulation-marker-inner" style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: transform 0.8s;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#3b82f6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="drop-shadow-lg"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
+             </div>` :
+            `<div class="user-marker-inner" style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: transform 0.8s;">
+                <div class="user-marker-arrow" style="transform: translateX(-50%) translateY(-12px)"></div>
+              </div>`,
+        iconSize: isSimulating ? [32, 32] : [24, 24],
+        iconAnchor: isSimulating ? [16, 16] : [12, 12]
     });
 
     // Helper: Determine Icon by Category
@@ -532,7 +677,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
     return (
         <div className="relative h-full w-full glass-panel overflow-hidden border-2 border-primary/20 shadow-2xl shadow-primary/10">
-            <LMapContainer center={center || defaultCenter} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={!isInputMode}>
+            <LMapContainer center={center || defaultCenter} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
                 <TileLayer
                     key={activeStyleKey} // Force re-render when style changes
                     attribution={MAP_STYLES[activeStyleKey].attribution}
@@ -546,6 +691,8 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                     focusedLocation={focusedLocation}
                     viewAction={viewAction}
                     onActionHandled={() => setViewAction(null)}
+                    isNavigating={isNavigating}
+                    effectiveHeading={effectiveHeading}
                 />
 
                 {/* User Location Marker */}
@@ -564,20 +711,31 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                     <>
                         {/* Dynamic Navigation Line from User to Focused POI */}
                         {/* Turn-by-Turn Navigation Line (Solid Blue, Transparent) */}
+                        {/* Active Navigation Leg (Solid, High Visibility) */}
                         {navigationPath && (
                             <Polyline
                                 positions={navigationPath}
-                                color="#3b82f6"
-                                weight={8}
-                                opacity={0.6}
-                                lineCap="round"
-                                lineJoin="round"
+                                pathOptions={{
+                                    color: '#3b82f6',
+                                    weight: 6,
+                                    opacity: 0.9,
+                                    lineCap: 'round',
+                                    lineJoin: 'round'
+                                }}
                             />
                         )}
+
+                        {/* Full Planned Route (Dotted/Inactive) */}
                         {polyline && polyline.length > 1 && (
                             <Polyline
                                 positions={polyline}
-                                pathOptions={{ color: 'var(--primary)', weight: 4, opacity: 0.5, dashArray: '10, 10', lineCap: 'round' }}
+                                pathOptions={{
+                                    color: isNavigating ? 'var(--primary)' : 'var(--primary)',
+                                    weight: 4,
+                                    opacity: 0.5,
+                                    dashArray: '4, 12', // Distinctly dotted
+                                    lineCap: 'round'
+                                }}
                             />
                         )}
 
@@ -625,7 +783,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                     }}
                                     icon={L.divIcon({
                                         className: 'bg-transparent border-none',
-                                        html: `<div class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
+                                        html: `<div style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: transform 0.8s;" class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
                                                  ${iconHtml ? `<div class="mb-[1px] -mt-1 scale-75">${iconHtml}</div>` : ''}
                                                  <span class="text-[10px] font-bold leading-none">${idx + 1}</span>
                                                </div>`,
@@ -635,13 +793,30 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                 >
                                     <Popup className="glass-popup">
                                         <div className="text-slate-900 w-[240px]">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div className="flex-1">
-                                                    <h3 className="font-bold text-lg m-0 leading-tight">{poi.name}</h3>
-                                                    <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-1">
-                                                        {poi.category || (poi.types ? poi.types[0] : 'Locatie')}
-                                                    </span>
+                                            <h3 className="font-bold text-lg m-0 leading-tight mb-2">{poi.name}</h3>
+
+                                            <div className="flex justify-between items-center mb-2">
+                                                {/* Left: Detail Level Toggles */}
+                                                <div className="flex bg-slate-100/80 rounded-lg p-0.5 border border-slate-200">
+                                                    {[
+                                                        { id: 'short', label: 'Brief', icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
+                                                        { id: 'medium', label: 'Standard', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
+                                                        { id: 'max', label: 'Detailed', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
+                                                    ].map(opt => (
+                                                        <button
+                                                            key={opt.id}
+                                                            onClick={(e) => { e.stopPropagation(); onUpdatePoiDescription(poi, opt.id); }}
+                                                            className="p-1.5 rounded-md text-slate-400 hover:text-primary hover:bg-white transition-all"
+                                                            title={opt.label}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                                                                {opt.icon}
+                                                            </svg>
+                                                        </button>
+                                                    ))}
                                                 </div>
+
+                                                {/* Right: Actions */}
                                                 <div className="flex items-center gap-1">
                                                     <button
                                                         onClick={(e) => {
@@ -658,7 +833,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                                         className="p-1.5 rounded-full text-slate-400 hover:text-blue-500 hover:bg-black/5 transition-all"
                                                         title={text.nav}
                                                     >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                                     </button>
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
@@ -666,32 +841,12 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                                         title="Read Aloud"
                                                     >
                                                         {speakingId === poi.id ? (
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                                                         ) : (
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                                                         )}
                                                     </button>
                                                 </div>
-                                            </div>
-
-                                            {/* Length Controls (Fixed outside scroll area) */}
-                                            <div className="flex gap-2 my-2 border-t border-slate-100 pt-2">
-                                                {[
-                                                    { id: 'short', label: 'Brief', icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
-                                                    { id: 'medium', label: 'Standard', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
-                                                    { id: 'max', label: 'Detailed', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
-                                                ].map(opt => (
-                                                    <button
-                                                        key={opt.id}
-                                                        onClick={(e) => { e.stopPropagation(); onUpdatePoiDescription(poi, opt.id); }}
-                                                        className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-primary transition-colors border border-slate-200"
-                                                        title={opt.label}
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                                                            {opt.icon}
-                                                        </svg>
-                                                    </button>
-                                                ))}
                                             </div>
 
                                             {/* Scrollable Scroll Area */}
@@ -776,7 +931,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                 !isInputMode && (
                     <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
                         {/* Test Button */}
-                        {navigationPath && (
+                        {navigationPath && isSimulating && (
                             <button
                                 onClick={() => {
                                     playProximitySound(); // Test sound immediately + init context
@@ -789,8 +944,9 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                             </button>
                         )}
                         {/* 1. Mode Toggle (Walk/Cycle) */}
+                        {/* 1. Mode Toggle (Walk/Cycle) */}
                         <button
-                            onClick={() => setUserSelectedStyle(prev => prev === 'walking' ? 'cycling' : 'walking')}
+                            onClick={() => onStyleChange && onStyleChange(userSelectedStyle === 'walking' ? 'cycling' : 'walking')}
                             className="bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg text-slate-200 hover:text-white hover:bg-slate-700/90 transition-all group relative"
                             title={language === 'nl' ? 'Wissel Modus' : 'Toggle Mode'}
                         >
@@ -801,13 +957,50 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                             )}
                         </button>
 
-                        {/* 2. Navigation List Toggle */}
+
+
+                        {/* 3. Start/Stop Navigation */}
                         <button
-                            onClick={onToggleNavigation}
-                            className="bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg text-slate-200 hover:text-white hover:bg-slate-700/90 transition-all group"
-                            title={language === 'nl' ? 'Routebeschrijving' : 'Directions'}
+                            onClick={() => {
+                                setIsNavigating(!isNavigating);
+                                if (!isNavigating) {
+                                    setViewAction('USER'); // Auto-center on start
+                                }
+                            }}
+                            className={`bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg hover:bg-slate-700/90 transition-all group ${isNavigating ? 'text-red-400 hover:text-red-300' : 'text-green-400 hover:text-green-300'}`}
+                            title={language === 'nl' ? (isNavigating ? 'Stop Navigatie' : 'Start Navigatie') : (isNavigating ? 'Stop Navigation' : 'Start Navigation')}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-blue-400 transition-colors"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                            {isNavigating ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z" /></svg>
+                            )}
+                        </button>
+
+                        {/* 4. Locate Me */}
+                        <button
+                            onClick={() => setViewAction('USER')}
+                            className="bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg text-blue-400 hover:text-blue-300 hover:bg-slate-700/90 transition-all group"
+                            title={language === 'nl' ? 'Mijn Locatie' : 'Locate Me'}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
+                        </button>
+
+                        {/* 5. Fit Route (Show All) */}
+                        <button
+                            onClick={() => setViewAction('ROUTE')}
+                            className="bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg text-slate-200 hover:text-white hover:bg-slate-700/90 transition-all group"
+                            title={language === 'nl' ? 'Toon Route' : 'Show Route'}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+                        </button>
+
+                        <button
+                            onClick={() => setAutoAudio && setAutoAudio(!autoAudio)}
+                            className={`bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg hover:bg-slate-700/90 transition-all group ${autoAudio ? 'text-primary border-primary/50' : 'text-slate-400 hover:text-white'}`}
+                            title={autoAudio ? "Auto-Audio ON" : "Auto-Audio OFF"}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>
                         </button>
                     </div>
                 )
@@ -816,13 +1009,12 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
             {/* Route Stats Overlay removed */}
 
 
-            {/* Top Navigation HUD */}
+            {/* Top Navigation HUD - Instruction Only */}
             {
                 userLocation && pois.length > 0 && !isInputMode && (() => {
                     const targetPoi = focusedLocation || pois[0];
                     const steps = routeData?.navigationSteps;
 
-                    // Calculate Next Maneuver if Navigating
                     let hudIcon = '📍';
                     let hudInstruction = targetPoi.name;
                     let hudDistance = calcDistance(userLocation, targetPoi);
@@ -830,7 +1022,6 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                     let hudSubline = `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
 
                     if (isNavigating && steps && steps.length > 0) {
-                        // Find closest step start point to know where we are
                         let minD = Infinity;
                         let closestIdx = 0;
                         steps.forEach((s, i) => {
@@ -841,19 +1032,13 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                             }
                         });
 
-                        // closestIdx is the point we most recently passed (or are nearing).
-                        // The maneuver to show is the one at the END of the current leg.
-                        // Leg i starts at Step i and ends at Step i+1.
                         let targetIdx = closestIdx + 1;
-
-                        // If we are already within 25m of the "next" turn, transition to the one after that
                         if (targetIdx < steps.length) {
                             const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
                             if (distToTarget < 0.025) {
                                 targetIdx++;
                             }
                         }
-
                         targetIdx = Math.min(targetIdx, steps.length - 1);
 
                         const nextStep = steps[targetIdx];
@@ -867,75 +1052,57 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                     }
 
                     return (
-                        <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/10 shadow-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-700 transition-all duration-300 pointer-events-auto ${isPopupOpen ? 'opacity-20 hover:opacity-100 bg-slate-900/40' : 'opacity-100 bg-slate-900/90'}`}>
-                            {/* Direction Arrow */}
-                            <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center border border-white/5 shadow-inner">
-                                <div style={{ transform: `rotate(${calcBearing(userLocation, bearingTarget) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
-                                    {isNavigating ? (
-                                        <div className="text-3xl">{hudIcon}</div>
-                                    ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-md"><polygon points="12 2 22 22 12 18 2 22 12 2"></polygon></svg>
-                                    )}
+                        <>
+                            {/* 1. Compass Icon (Left Side, below Sidebar toggle) */}
+                            <div className="absolute top-[72px] left-4 z-[400] animate-in slide-in-from-left duration-500 transition-all opacity-100">
+                                <div className="bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12">
+                                    <div style={{ transform: `rotate(${calcBearing(userLocation, bearingTarget) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
+                                        {isNavigating ? (
+                                            <div className="text-xl leading-none">{hudIcon}</div>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 22 22 12 18 2 22 12 2"></polygon></svg>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Distance & Label */}
-                            <div className="flex flex-col min-w-[120px]">
-                                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1 truncate max-w-[200px]">{hudSubline}</span>
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="flex items-baseline gap-1">
-                                        {(() => {
-                                            const distKm = hudDistance;
-                                            let displayVal, unit;
-                                            if (distKm < 1) {
-                                                displayVal = Math.round(distKm * 1000);
-                                                unit = "m";
-                                            } else {
-                                                displayVal = distKm.toFixed(1);
-                                                unit = "km";
-                                            }
-                                            return (
-                                                <>
-                                                    <span className="text-3xl font-bold text-white tracking-tight">{displayVal}</span>
-                                                    <span className="text-sm font-medium text-slate-400">{unit}</span>
-                                                </>
-                                            );
-                                        })()}
-                                    </div>
-                                    {isNavigating && (
-                                        <div className="text-sm font-medium text-slate-200 line-clamp-2 max-w-[180px] leading-snug">
-                                            {hudInstruction}
-                                        </div>
-                                    )}
+                            {/* 2. Distance Icon (Left Side, below Compass) */}
+                            <div className="absolute top-[128px] left-4 z-[400] animate-in slide-in-from-left duration-700 transition-all opacity-100">
+                                <div className="bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12">
+                                    {(() => {
+                                        const distKm = hudDistance;
+                                        let displayVal, unit;
+                                        if (distKm < 1) {
+                                            displayVal = Math.round(distKm * 1000);
+                                            unit = "m";
+                                        } else {
+                                            displayVal = distKm.toFixed(1);
+                                            unit = "km";
+                                        }
+                                        return (
+                                            <div className="flex flex-col items-center justify-center leading-none">
+                                                <span className="text-[13px] font-bold text-white tracking-tighter">{displayVal}</span>
+                                                <span className="text-[8px] text-slate-400 uppercase font-bold mt-0.5">{unit}</span>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </div>
-                        </div>
+
+                            {/* 2. Instruction Banner (Top Center, Narrower) */}
+                            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-xl px-4 py-2 border border-white/10 shadow-2xl flex flex-col items-center max-w-[calc(100%-160px)] animate-in slide-in-from-top duration-500 transition-all opacity-100 bg-slate-900/80">
+                                <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold leading-none mb-1 truncate w-full text-center">
+                                    {hudSubline}
+                                </span>
+                                <div className="text-xs font-semibold text-white truncate w-full text-center leading-tight">
+                                    {isNavigating ? hudInstruction : (language === 'nl' ? 'Kies een bestemming' : 'Select a destination')}
+                                </div>
+                            </div>
+                        </>
                     );
                 })()
             }
 
-            {/* Map Controls */}
-            {
-                !isInputMode && (
-                    <div className="absolute bottom-8 right-8 z-[400] flex flex-col gap-3">
-                        <button
-                            onClick={() => setViewAction('USER')}
-                            disabled={!userLocation}
-                            className="bg-slate-800/90 hover:bg-slate-700/90 text-white p-3 rounded-full shadow-lg border border-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                            title={text.locate}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-primary transition-colors"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
-                        </button>
-                        <button
-                            onClick={() => setViewAction('ROUTE')}
-                            className="bg-slate-800/90 hover:bg-slate-700/90 text-white p-3 rounded-full shadow-lg border border-white/10 transition-all group"
-                            title={text.fit}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-emerald-400 text-slate-200 transition-colors"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                        </button>
-                    </div>
-                )
-            }
 
             {/* Loading Overlay */}
             {
