@@ -1062,7 +1062,6 @@ function App() {
         // Show suggestions after a brief delay to allow UI to update
         setTimeout(() => {
           alert(msg);
-          setIsSidebarOpen(true); // Re-open sidebar so user can try again
         }, 100);
         return;
       }
@@ -1106,7 +1105,6 @@ function App() {
           }
         });
 
-        setIsSidebarOpen(false); // Close sidebar on result
 
         // 2. Background Process: Enrich iteratively using the premium Intelligence Engine
         const routeCtx = `Radius search (${searchRadiusKm} km)`;
@@ -1251,7 +1249,6 @@ function App() {
           limitKm: targetLimitKm.toFixed(1)
         }
       });
-      setIsSidebarOpen(false); // Close sidebar immediately
 
       // 2. Background Process: Enrich iteratively
       // We do this WITHOUT awaiting the loop here to block UI.
@@ -1278,7 +1275,7 @@ function App() {
     setCity('');
     setInterests('');
     setConstraintValue(5);
-    setIsSidebarOpen(true); // Re-open for new search
+    setIsSidebarOpen(true); // Keep open
   };
 
   // Audio State
@@ -1670,7 +1667,6 @@ function App() {
             // Immediate UI update to prevent flashing background
             // Only if we have interests (otherwise we will eventually show sidebar anyway)
             if (interests && interests.trim().length > 0) {
-              setIsSidebarOpen(false); // Hide sidebar before it can be seen
               setIsLoading(true); // Show loader immediately
             }
           }}
@@ -1684,7 +1680,6 @@ function App() {
             if (hasInterests) {
               // CASE 1: Full Info Available -> Go to Map
               setIsLoading(true);
-              setIsSidebarOpen(false); // Ensure sidebar is closed
               setLoadingText(language === 'nl' ? 'Bestemming verifiëren...' : 'Verifying destination...');
 
               try {

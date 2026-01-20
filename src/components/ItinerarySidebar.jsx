@@ -868,35 +868,6 @@ const ItinerarySidebar = ({
     const showItinerary = !isAddingMode && routeData && routeData.pois && routeData.pois.length > 0;
     const showDisambiguation = disambiguationOptions && disambiguationOptions.length > 0;
 
-    const [touchStart, setTouchStart] = useState(null);
-    const [touchEnd, setTouchEnd] = useState(null);
-    const minSwipeDistance = 50;
-
-    const onTouchStart = (e) => {
-        setTouchEnd(null);
-        setTouchStart(e.targetTouches[0].clientX);
-    };
-
-    const onTouchMove = (e) => setTouchEnd(e.targetTouches[0].clientX);
-
-    const onTouchEnd = (targetMode) => {
-        if (!touchStart || (!touchEnd && !targetMode)) return; // Allow click if only targetMode
-
-        const distance = (touchStart && touchEnd) ? touchStart - touchEnd : 0;
-        const isLeftSwipe = distance > minSwipeDistance;
-        const isRightSwipe = distance < -minSwipeDistance;
-
-        if (isOpen && isLeftSwipe) {
-            setIsOpen(false);
-        }
-        // If closed, check for right swipe OR explicit open request (if invoked via click/touch logic)
-        // Note: For click handlers we use specific functions, this is mainly for the generic edge swipe area
-        if (!isOpen && isRightSwipe) {
-            setIsOpen(true);
-            // Default to itinerary if generic edge swipe
-            setShowSettings(false);
-        }
-    };
 
     const handleOpenItinerary = () => {
         setIsOpen(true);
@@ -910,17 +881,6 @@ const ItinerarySidebar = ({
         setSettingsOpenedFromMap(true);
     };
 
-    // Specific touch end handlers for buttons to support "Swipe to Open" specifics
-    const onButtonTouchEnd = (mode) => {
-        if (!touchStart || !touchEnd) return;
-        const distance = touchStart - touchEnd;
-        const isRightSwipe = distance < -minSwipeDistance;
-
-        if (isRightSwipe) {
-            setIsOpen(true);
-            setShowSettings(mode === 'settings');
-        }
-    };
 
     // Scroll Preservation
     const scrollContainerRef = useRef(null);
@@ -939,64 +899,8 @@ const ItinerarySidebar = ({
 
     return (
         <>
-            {!isOpen && (
-                <>
-                    {/* Invisible Edge Swipe Area for Mobile Opening */}
-                    <div
-                        className="fixed top-0 left-0 w-8 h-full z-[390]"
-                        onTouchStart={onTouchStart}
-                        onTouchMove={onTouchMove}
-                        onTouchEnd={onTouchEnd}
-                    />
-                    <button
-                        onClick={handleOpenItinerary}
-                        onTouchStart={onTouchStart}
-                        onTouchMove={onTouchMove}
-                        onTouchEnd={() => onButtonTouchEnd('itinerary')}
-                        className="absolute top-4 left-0 z-[400] w-[120px] h-20 flex items-center group outline-none"
-                        title={language === 'nl' ? 'Uitklappen' : 'Expand'}
-                    >
-                        <div
-                            style={{ backgroundColor: activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6' }}
-                            className="w-12 h-full rounded-r-2xl flex items-center justify-center shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 group-hover:opacity-100"
-                        >
-                            {/* Mobile arrow */}
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 md:hidden group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                            {/* Desktop double arrow */}
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 hidden md:block group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                            </svg>
-                        </div>
-                    </button>
-
-                    {/* Left Bottom Settings Toggle */}
-                    <button
-                        onClick={handleOpenSettings}
-                        onTouchStart={onTouchStart}
-                        onTouchMove={onTouchMove}
-                        onTouchEnd={() => onButtonTouchEnd('settings')}
-                        className="absolute bottom-4 left-0 z-[400] w-[120px] h-20 flex items-center group outline-none"
-                        title={language === 'nl' ? 'Instellingen' : 'Settings'}
-                    >
-                        <div
-                            style={{ backgroundColor: activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6' }}
-                            className="w-12 h-full rounded-r-2xl flex items-center justify-center shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 group-hover:opacity-100"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-hover:rotate-45 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                        </div>
-                    </button>
-                </>
-            )}
 
             <div
-                onTouchStart={onTouchStart}
-                onTouchMove={onTouchMove}
-                onTouchEnd={onTouchEnd}
                 style={{
                     '--primary': activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6',
                     '--accent': activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.accent : '#60a5fa',
@@ -1009,8 +913,7 @@ const ItinerarySidebar = ({
                             return `${r}, ${g}, ${b}`;
                         })() : '59, 130, 246'
                 }}
-                className={`absolute top-0 left-0 h-full z-[500] w-[400px] max-w-full bg-[var(--bg-gradient-end)]/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : '-translate-x-full'
-                    }`}
+                className="absolute top-0 left-0 h-full z-[500] w-[400px] max-w-full bg-[var(--bg-gradient-end)]/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform translate-x-0"
             >
                 <div className="flex flex-col h-full bg-gradient-to-b from-[var(--bg-gradient-start)]/50 to-transparent">
                     {/* Header */}
@@ -1062,29 +965,6 @@ const ItinerarySidebar = ({
                                     </svg>
                                 </button>
 
-                                {showItinerary && (
-                                    <>
-                                        <button
-                                            onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
-                                            className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5 md:hidden"
-                                            title={language === 'nl' ? 'Inklappen' : 'Collapse'}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                                            </svg>
-                                        </button>
-
-                                        <button
-                                            onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
-                                            className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5 hidden md:block"
-                                            title={language === 'nl' ? 'Inklappen' : 'Collapse'}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                                            </svg>
-                                        </button>
-                                    </>
-                                )}
                             </div>
                         </div>
 
