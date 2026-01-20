@@ -1238,7 +1238,7 @@ const ItinerarySidebar = ({
                                     <div className="bg-slate-800/60 rounded-xl p-4 border border-white/5 space-y-3">
                                         <div className="flex justify-between items-center">
                                             <span className="text-slate-400 text-sm">Version</span>
-                                            <span className="text-slate-300 text-sm font-medium">v1.2.0</span>
+                                            <span className="text-slate-300 text-sm font-medium">v1.3.0</span>
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-slate-400 text-sm">Author</span>
@@ -1246,7 +1246,7 @@ const ItinerarySidebar = ({
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-slate-400 text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                            <span className="text-slate-300 text-sm font-medium">19 Jan 2026</span>
+                                            <span className="text-slate-300 text-sm font-medium">20 Jan 2026</span>
                                         </div>
                                     </div>
                                 </div>
