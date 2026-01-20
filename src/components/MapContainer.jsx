@@ -134,11 +134,15 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
         prevPositionsKey.current = currentKey;
     }
 
+    // Priority 1: Explicit View Actions
+    const lastActionTime = useRef(0);
+
     useEffect(() => {
         // Priority 1: Explicit View Actions
         if (viewAction === 'USER' && userLocation) {
             // Re-enable auto-follow
             isAutoFollow.current = true;
+            lastActionTime.current = Date.now();
             map.flyTo([userLocation.lat, userLocation.lng], 16, { duration: 1.5 });
             if (onActionHandled) onActionHandled();
             return;
@@ -147,6 +151,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
         if (viewAction === 'ROUTE' && positions && positions.length > 0) {
             // Disable auto-follow to allow looking at the whole route
             isAutoFollow.current = false;
+            lastActionTime.current = Date.now();
             const bounds = L.latLngBounds(positions);
             map.fitBounds(bounds, { padding: [50, 50] });
             if (onActionHandled) onActionHandled();
@@ -163,17 +168,14 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
         if (isNewFocus) {
             // Disable auto-follow when explicitly focusing a location
             isAutoFollow.current = false;
+            lastActionTime.current = Date.now();
 
             // Calculate offset to position selected POI near the bottom (85% down)
             // This maximizes space above for the popup.
             const targetZoom = 16;
             const size = map.getSize();
 
-            // Target Y = 85% of height (near bottom)
-            // Center Y = 50% of height
-            // Offset needed = 35% of height
             const shiftY = size.y * 0.35;
-
             const centerPoint = map.project([focusedLocation.lat, focusedLocation.lng], targetZoom);
             const newCenterPoint = centerPoint.subtract([0, shiftY]);
             const newCenterLatLng = map.unproject(newCenterPoint, targetZoom);
@@ -185,18 +187,12 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
 
         // Priority 3: Follow User in Navigation Mode (ONLY IF ENABLED)
         if (isNavigating && userLocation && isAutoFollow.current && !isPopupOpen) {
-            // Use current zoom if available, otherwise default to 18
+            // Don't fight with manual actions (fly To)
+            if (Date.now() - lastActionTime.current < 2000) return;
+
             const currentZoom = map.getZoom();
-
-            // Only center if we are effectively moving or it's a significant update
-            // (Leaflet handles setView efficiently, but we can check distance if needed)
-
-            const lookAheadDist = 0.04; // 40 meters
-            const targetPoint = getPointAhead(userLocation, effectiveHeading, lookAheadDist);
-
-            // Use setView for smooth tracking (animate: true)
-            // But only if we are "locked"
-            map.setView(targetPoint, currentZoom || 18, { animate: true, duration: 1.0 });
+            // Center exactly on user (identical to Locate Me behavior) and use zoom 16 as base
+            map.setView([userLocation.lat, userLocation.lng], currentZoom < 16 ? 16 : currentZoom, { animate: true, duration: 1.0 });
             return;
         }
 
