@@ -294,7 +294,7 @@ function App() {
           if (!prev || !prev.pois) return prev; // Safety check if user navigated away
           return {
             ...prev,
-            pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false } : p)
+            pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false, active_mode: lengthMode } : p)
           };
         });
       } catch (err) {
@@ -1086,7 +1086,8 @@ function App() {
         const initialPois = topCandidates.map(p => ({
           ...p,
           description: language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...',
-          isLoading: true
+          isLoading: true,
+          active_mode: descriptionLength
         }));
 
         setRouteData({
@@ -1230,7 +1231,8 @@ function App() {
       const initialPois = selectedPois.map(p => ({
         ...p,
         description: language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...',
-        isLoading: true
+        isLoading: true,
+        active_mode: descriptionLength
       }));
 
       setRouteData({
@@ -1340,7 +1342,15 @@ function App() {
 
     if (!poi) return;
 
-    const textToRead = poi.description || '';
+    // Determine the exact text to read based on current active mode
+    const activeMode = poi.active_mode || descriptionLength;
+    let textToRead = poi.description || '';
+    if (poi.structured_info) {
+      if (activeMode === 'short') textToRead = poi.structured_info.short_description;
+      else if (activeMode === 'medium') textToRead = poi.structured_info.standard_description + (poi.structured_info.one_fun_fact ? ". " + poi.structured_info.one_fun_fact : "");
+      else if (activeMode === 'max') textToRead = poi.structured_info.full_description;
+    }
+
     const u = new SpeechSynthesisUtterance(textToRead);
 
     // Voice Selection Logic
@@ -1417,12 +1427,16 @@ function App() {
     // 1. Mark as loading (optional, or optimistically update UI inside Sidebar)
     console.log("Updating POI", poi.name, "to length:", lengthMode);
 
-    // Optimistic UI Update: Show "Updating..."
+    // Optimistic UI Update: Show "Updating..." and switch mode immediately for visual feedback
     setRouteData((prev) => {
       if (!prev || !prev.pois) return prev;
       return {
         ...prev,
-        pois: prev.pois.map(p => p.id === poi.id ? { ...p, description: language === 'nl' ? 'Bezig met bijwerken...' : 'Updating...' } : p)
+        pois: prev.pois.map(p => p.id === poi.id ? {
+          ...p,
+          active_mode: lengthMode,
+          description: language === 'nl' ? 'Bezig met bijwerken...' : 'Updating...'
+        } : p)
       };
     });
 
@@ -1442,7 +1456,7 @@ function App() {
         if (!prev || !prev.pois) return prev;
         return {
           ...prev,
-          pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false } : p)
+          pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false, active_mode: lengthMode } : p)
         };
       });
     } catch (err) {

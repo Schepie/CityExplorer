@@ -953,20 +953,22 @@ const ItinerarySidebar = ({
                         onTouchStart={onTouchStart}
                         onTouchMove={onTouchMove}
                         onTouchEnd={() => onButtonTouchEnd('itinerary')}
-                        style={{
-                            backgroundColor: activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6',
-                        }}
-                        className="absolute top-4 left-0 -translate-x-1/3 z-[400] text-white w-14 h-24 rounded-r-3xl flex items-center justify-end pr-3 shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 hover:opacity-100 hover:translate-x-0 group"
+                        className="absolute top-4 left-0 z-[400] w-[120px] h-20 flex items-center group outline-none"
                         title={language === 'nl' ? 'Uitklappen' : 'Expand'}
                     >
-                        {/* Mobile arrow */}
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 md:hidden group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                        {/* Desktop double arrow */}
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 hidden md:block group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                        </svg>
+                        <div
+                            style={{ backgroundColor: activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6' }}
+                            className="w-12 h-full rounded-r-2xl flex items-center justify-center shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 group-hover:opacity-100"
+                        >
+                            {/* Mobile arrow */}
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 md:hidden group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            {/* Desktop double arrow */}
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 hidden md:block group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                            </svg>
+                        </div>
                     </button>
 
                     {/* Left Bottom Settings Toggle */}
@@ -975,16 +977,18 @@ const ItinerarySidebar = ({
                         onTouchStart={onTouchStart}
                         onTouchMove={onTouchMove}
                         onTouchEnd={() => onButtonTouchEnd('settings')}
-                        style={{
-                            backgroundColor: activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6',
-                        }}
-                        className="absolute bottom-4 left-0 -translate-x-1/3 z-[400] text-white w-14 h-24 rounded-r-3xl flex items-center justify-end pr-3 shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 hover:opacity-100 hover:translate-x-0 group"
+                        className="absolute bottom-4 left-0 z-[400] w-[120px] h-20 flex items-center group outline-none"
                         title={language === 'nl' ? 'Instellingen' : 'Settings'}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 group-hover:rotate-45 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
+                        <div
+                            style={{ backgroundColor: activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6' }}
+                            className="w-12 h-full rounded-r-2xl flex items-center justify-center shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 group-hover:opacity-100"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-hover:rotate-45 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </div>
                     </button>
                 </>
             )}
@@ -1433,27 +1437,25 @@ const ItinerarySidebar = ({
                                             {/* Expandable Content */}
                                             {isExpanded && (
                                                 <div className="mt-3 pl-9 animate-in slide-in-from-top-2 fade-in duration-200">
-                                                    {/* Length Controls */}
-                                                    <div className="flex gap-2 mb-3">
-                                                        {[
-                                                            { id: 'short', label: 'Brief', icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
-                                                            { id: 'medium', label: 'Standard', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
-                                                            { id: 'max', label: 'Detailed', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
-                                                        ].map(opt => (
-                                                            <button
-                                                                key={opt.id}
-                                                                onClick={(e) => { e.stopPropagation(); onUpdatePoiDescription(poi, opt.id); }}
-                                                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-transparent hover:border-white/10"
-                                                                title={opt.label}
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                                                    {opt.icon}
-                                                                </svg>
-                                                            </button>
-                                                        ))}
-                                                    </div>
 
                                                     <div className="space-y-4 pr-8">
+                                                        {/* POI Image */}
+                                                        {poi.image && (
+                                                            <div className="mb-2 rounded-xl overflow-hidden border border-white/10 shadow-2xl h-52 bg-slate-800/50 relative group">
+                                                                <img
+                                                                    src={poi.image}
+                                                                    alt={poi.name}
+                                                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                                                    onLoad={(e) => e.target.style.opacity = '1'}
+                                                                    onError={(e) => {
+                                                                        e.target.closest('.group').style.display = 'none';
+                                                                    }}
+                                                                    style={{ opacity: 0, transition: 'opacity 0.8s' }}
+                                                                />
+                                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+                                                            </div>
+                                                        )}
+
                                                         {/* High-level short description */}
                                                         <div className="text-sm text-slate-300 font-medium leading-relaxed italic border-l-2 border-primary/30 pl-3">
                                                             {(() => {
@@ -1516,7 +1518,7 @@ const ItinerarySidebar = ({
 
                                                         {/* Full Description (only if expanded or on Standard/Deep) */}
                                                         {poi.structured_info?.full_description && (
-                                                            <div className="text-sm text-slate-400 leading-relaxed">
+                                                            <div className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
                                                                 {(() => {
                                                                     const short = poi.structured_info?.short_description || "";
                                                                     const displayDesc = poi.structured_info.full_description;

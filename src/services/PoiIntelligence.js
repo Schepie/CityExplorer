@@ -54,14 +54,15 @@ export class PoiIntelligence {
             // Let's passed analyzed signals.
             const geminiResult = await this.fetchGeminiDescription(candidate, analyzed, this.config.lengthMode || 'medium');
             if (geminiResult && geminiResult.full_description && geminiResult.full_description !== 'unknown') {
-                // Extract link from signals if Gemini didn't find a better one
-                const fallbackLink = this.resolveConflicts(analyzed).link;
+                // Extract link and image from signals if Gemini didn't find a better one
+                const signalData = this.resolveConflicts(analyzed);
 
                 // We store the rich structure in structured_info
                 bestData = {
                     description: geminiResult.short_description + "\n\n" + geminiResult.full_description,
                     structured_info: geminiResult,
-                    link: geminiResult.link || fallbackLink,
+                    link: geminiResult.link || signalData.link,
+                    image: signalData.image,
                     source: "Gemini Intelligence",
                     confidence: 0.95
                 };
@@ -80,6 +81,7 @@ export class PoiIntelligence {
             ...candidate,
             description: bestData.description,
             structured_info: bestData.structured_info || null,
+            image: bestData.image || candidate.image || null,
             link: bestData.link,
             source: bestData.source,
             intelligence: {
@@ -237,14 +239,15 @@ Geef de output in de onderstaande JSON-structuur (geen extra tekst erbuiten):
 
 {
   "short_version": {
-    "description": "Max 2 tot 3 zinnen – zeer beknopt, ideaal voor op de kaart."
+    "description": "5 tot 7 regels tekst – beknopt, ideaal voor op de kaart."
   },
   "standard_version": {
-    "description": "4–6 zinnen – duidelijke uitleg voor de meeste gebruikers."
+    "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
+    "fun_fact": "Eén boeiend weetje of anekdote."
   },
   "extended_version": {
     "short_description": "Max 3 zinnen.",
-    "full_description": "5–10 zinnen, boeiend en duidelijk.",
+    "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
     "why_this_matches_your_interests": [
       "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
     ],
@@ -294,7 +297,8 @@ Verwerk deze POI: "${poi.name}"
                 // Map new structure to app compatibility structure
                 return {
                     short_description: result.short_version?.description || "",
-                    standard_description: result.standard_version?.description || "", // New field
+                    standard_description: result.standard_version?.description || "",
+                    one_fun_fact: result.standard_version?.fun_fact || "", // Single fun fact for "normal" mode
                     full_description: result.extended_version?.full_description || result.standard_version?.description || "",
 
                     // Map extended fields
@@ -454,10 +458,12 @@ Verwerk deze POI: "${poi.name}"
             // Semantic Check: Reject if title is JUST the City Name (Generic)
             if (bestMatch.title.toLowerCase() === this.config.city.toLowerCase()) return null;
 
-            const detailsUrl = `https://${this.config.language}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&explaintext&redirects=1&titles=${encodeURIComponent(bestMatch.title)}&format=json&origin=*`;
+            const detailsUrl = `https://${this.config.language}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&exintro&explaintext&piprop=original&redirects=1&titles=${encodeURIComponent(bestMatch.title)}&format=json&origin=*`;
             const details = await fetch(detailsUrl).then(r => r.json());
             const pageId = Object.keys(details.query.pages)[0];
-            const extract = details.query.pages[pageId].extract;
+            const page = details.query.pages[pageId];
+            const extract = page.extract;
+            const image = page.original?.source;
 
             if (extract && extract.length > 50) {
                 return {
@@ -465,6 +471,7 @@ Verwerk deze POI: "${poi.name}"
                     source: 'wikipedia',
                     content: this.cleanText(extract),
                     link: `https://${this.config.language}.wikipedia.org/?curid=${pageId}`,
+                    image: image,
                     confidence: 0.95
                 };
             }
@@ -601,14 +608,18 @@ Verwerk deze POI: "${poi.name}"
                             text = richDesc;
                         }
                     }
-                    return text;
-                }).join('\n\n');
+                    return {
+                        text,
+                        image: item.pagemap?.cse_image?.[0]?.src || item.pagemap?.metatags?.[0]?.['og:image'] || null
+                    };
+                }).filter(s => s.text);
 
                 return {
                     type: 'description',
                     source: 'google_search',
-                    content: combinedSnippets,
+                    content: combinedSnippets.map(s => s.text).join('\n\n'),
                     link: res.items[0].link,
+                    image: combinedSnippets.find(s => s.image)?.image,
                     confidence: 0.75
                 };
             }
@@ -657,6 +668,7 @@ Verwerk deze POI: "${poi.name}"
             return {
                 description: ranked[0].content,
                 link: ranked[0].link,
+                image: ranked.find(r => r.image)?.image || null,
                 source: ranked[0].source,
                 confidence: ranked[0].score
             };

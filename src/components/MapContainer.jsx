@@ -907,12 +907,19 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                                         <button
                                                             key={opt.id}
                                                             onClick={(e) => { e.stopPropagation(); onUpdatePoiDescription(poi, opt.id); }}
-                                                            className="p-1.5 rounded-md text-slate-400 hover:text-primary hover:bg-white transition-all"
+                                                            className={`p-1.5 rounded-md transition-all duration-300 flex items-center justify-center gap-1.5 min-w-[70px] ${(poi.active_mode || 'medium') === opt.id
+                                                                ? 'bg-primary text-white shadow-[0_2px_8px_rgba(0,0,0,0.2)] scale-105 z-10'
+                                                                : 'text-slate-400 hover:text-primary hover:bg-white/50'}`}
                                                             title={opt.label}
                                                         >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
                                                                 {opt.icon}
                                                             </svg>
+                                                            <span className="text-[10px] font-bold uppercase tracking-tighter">
+                                                                {opt.id === 'short' ? (language === 'nl' ? 'Kort' : 'Brief') :
+                                                                    opt.id === 'medium' ? (language === 'nl' ? 'Norm 1' : 'Std') :
+                                                                        (language === 'nl' ? 'Lang' : 'Full')}
+                                                            </span>
                                                         </button>
                                                     ))}
                                                 </div>
@@ -956,9 +963,42 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
                                             {/* Scrollable Scroll Area */}
                                             <div className="max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
+                                                {/* Image for MAX mode - Positioned at top of scroll area */}
+                                                {(() => {
+                                                    const activeMode = poi.active_mode || 'medium';
+                                                    if (activeMode === 'max' && poi.image) {
+                                                        return (
+                                                            <div className="mb-3 rounded-xl overflow-hidden border border-slate-100 shadow-sm h-40 bg-slate-50 relative group">
+                                                                <img
+                                                                    src={poi.image}
+                                                                    alt={poi.name}
+                                                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                                                    onLoad={(e) => e.target.style.opacity = '1'}
+                                                                    onError={(e) => {
+                                                                        console.warn("Popup image failed to load:", poi.image);
+                                                                        e.target.closest('.group').style.display = 'none';
+                                                                    }}
+                                                                    style={{ opacity: 0, transition: 'opacity 0.5s' }}
+                                                                />
+                                                                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
+
                                                 {/* UI FILTER: Block generic city descriptions */}
                                                 {(() => {
-                                                    const d = poi.description || "";
+                                                    const activeMode = poi.active_mode || 'medium';
+                                                    let d = poi.description || "";
+
+                                                    // Map structured info if available
+                                                    if (poi.structured_info) {
+                                                        if (activeMode === 'short') d = poi.structured_info.short_description || d;
+                                                        else if (activeMode === 'medium') d = poi.structured_info.standard_description || d;
+                                                        else if (activeMode === 'max') d = poi.structured_info.full_description || d;
+                                                    }
+
                                                     const dLow = d.toLowerCase();
                                                     const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
                                                     const displayDesc = isBad ? "Geen beschrijving beschikbaar." : d;
@@ -992,7 +1032,24 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                                             );
                                                         }
                                                     }
-                                                    return <p className="m-0 text-sm text-slate-600 mb-2 leading-relaxed">{displayDesc}</p>;
+                                                    return <p className="m-0 text-sm text-slate-600 mb-2 leading-relaxed whitespace-pre-wrap">{displayDesc}</p>;
+                                                })()}
+
+                                                {/* Fun Fact for MEDIUM mode */}
+                                                {(() => {
+                                                    const activeMode = poi.active_mode || 'medium';
+                                                    if (activeMode === 'medium' && poi.structured_info?.one_fun_fact) {
+                                                        return (
+                                                            <div className="mt-3 p-3 bg-blue-50/80 border border-blue-100 rounded-lg text-xs text-blue-800 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                                                                <div className="flex items-center gap-1.5 mb-1">
+                                                                    <span role="img" aria-label="light bulb">💡</span>
+                                                                    <span className="font-bold uppercase tracking-wider text-[10px]">Wist je dat?</span>
+                                                                </div>
+                                                                <p className="m-0 italic leading-relaxed">{poi.structured_info.one_fun_fact}</p>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return null;
                                                 })()}
 
                                                 {/* External Link (with Generic Fallback) */}
