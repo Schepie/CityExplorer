@@ -116,8 +116,13 @@ function App() {
     if (routeData && routeData.pois && routeData.pois.length > 0) {
       console.log("Description length changed to:", descriptionLength);
 
+      // Optimistically update ALL pois to the new mode so UI (popups/sidebar) reflects change immediately
+      setRouteData(prev => ({
+        ...prev,
+        pois: prev.pois.map(p => ({ ...p, active_mode: descriptionLength }))
+      }));
+
       setIsBackgroundUpdating(true);
-      // We do not set isLoading(true) here anymore, to allow user interaction.
 
       // Construct Route Context for engine
       const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
