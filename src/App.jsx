@@ -46,6 +46,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Exploring...');
   const [foundPoisCount, setFoundPoisCount] = useState(0);
+  const [spokenCharCount, setSpokenCharCount] = useState(0);
 
   // Settings: Load from LocalStorage or Default
   const [language, setLanguage] = useState(() => localStorage.getItem('app_language') || 'nl');
@@ -330,18 +331,91 @@ function App() {
     }
 
     try {
-      const cityResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, {
-        headers: { 'Accept-Language': language }
-      });
-      const cityData = await cityResponse.json();
+      let results = [];
+      try {
+        // 1. Try Nominatim (via Local Proxy to avoid CORS)
+        const cityResponse = await fetch(`/api/nominatim?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, {
+          headers: { 'Accept-Language': language },
+          signal: AbortSignal.timeout(8000)
+        });
 
-      if (!cityData || cityData.length === 0) {
+        // Check if response is actually JSON (proxy might return HTML on 404/500)
+        const contentType = cityResponse.headers.get("content-type");
+        if (cityResponse.ok && contentType && contentType.includes("application/json")) {
+          results = await cityResponse.json();
+        } else {
+          // If proxy returns HTML error page (e.g. 500), text() to debug but throw to trigger fallback
+          const errText = await cityResponse.text().catch(() => "Unknown error");
+          throw new Error(`Nominatim Proxy failed: ${cityResponse.status} ${errText.substring(0, 50)}`);
+        }
+      } catch (err) {
+        console.warn("Nominatim search failed, trying Photon fallback...", err);
+
+        try {
+          // 2. Try Photon API (Fallback)
+          // Photon is very lenient and fast.
+          // Note: Photon supports limited languages (en, de, fr, it). Defaulting to 'en' to avoid 400 errors.
+          const photonRes = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=en`, {
+            signal: AbortSignal.timeout(5000)
+          });
+          const photonData = await photonRes.json();
+
+          if (photonData && photonData.features) {
+            // Map Photon GeoJSON to pseudo-Nominatim format
+            results = photonData.features.map(f => {
+              const p = f.properties;
+              // Construct display name
+              const parts = [p.name, p.city, p.state, p.country].filter(Boolean);
+              return {
+                lat: f.geometry.coordinates[1].toString(), // Photon is [lon, lat]
+                lon: f.geometry.coordinates[0].toString(),
+                display_name: parts.join(", "),
+                name: p.name,
+                address: {
+                  city: p.city || p.name,
+                  state: p.state,
+                  country: p.country
+                },
+                // Add a flag to identify source preference if needed
+                importance: 0.5 // Default importance
+              };
+            });
+          }
+        } catch (errPhoton) {
+          console.warn("Photon search failed, trying OpenMeteo fallback...", errPhoton);
+
+          // 3. Try OpenMeteo Geocoding (Robust Fallback)
+          const omRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=${language}&format=json`, {
+            signal: AbortSignal.timeout(5000)
+          });
+          const omData = await omRes.json();
+
+          if (omData && omData.results) {
+            results = omData.results.map(r => ({
+              lat: r.latitude.toString(),
+              lon: r.longitude.toString(),
+              display_name: `${r.name}, ${r.country}`,
+              name: r.name,
+              address: {
+                city: r.name,
+                state: r.admin1,
+                country: r.country
+              },
+              importance: 0.4
+            }));
+          }
+        }
+      }
+
+      if (!results || results.length === 0) {
         if (context === 'submit') {
           alert("City not found. Please try again.");
           setIsSidebarOpen(true); // Re-open sidebar on error
         }
         return;
       }
+
+      const cityData = results;
 
       if (cityData.length > 1) {
         setDisambiguationOptions(cityData);
@@ -371,44 +445,68 @@ function App() {
 
     // Helper: Process Coordinates into City Data
     const processCoordinates = async (latitude, longitude) => {
-      try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-        const data = await res.json();
+      let foundCity = null;
+      let displayName = null;
+      let address = null;
 
+      // 1. Try Nominatim (OSM) - High Quality
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
+          headers: {
+            'Accept-Language': language === 'nl' ? 'nl' : 'en'
+          }
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
         if (data && data.address) {
           const addr = data.address;
-          const foundCity = addr.city || addr.town || addr.village || addr.municipality || "Current Location";
-
-          let display = foundCity;
-          if (addr.country) display += `, ${addr.country}`;
-
-          setCity(display);
-          setValidatedCityData({
-            lat: latitude.toString(),
-            lon: longitude.toString(),
-            name: foundCity,
-            display_name: data.display_name,
-            address: data.address
-          });
-          setFocusedLocation({ lat: latitude, lng: longitude });
-        } else {
-          // Coordinate Fallback
-          const name = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-          setCity(name);
-          setValidatedCityData({ lat: latitude, lon: longitude, name: name, display_name: name });
-          setFocusedLocation({ lat: latitude, lng: longitude });
+          foundCity = addr.city || addr.town || addr.village || addr.municipality;
+          displayName = foundCity;
+          if (addr.country) displayName += `, ${addr.country}`;
+          address = data.address;
         }
       } catch (err) {
-        console.error("Reverse geocode failed", err);
-        // Coordinate Fallback
+        console.warn("Nominatim Reverse Geocode failed, trying fallback...", err);
+      }
+
+      // 2. Fallback: BigDataCloud (Client-side friendly)
+      if (!foundCity) {
+        try {
+          const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=${language === 'nl' ? 'nl' : 'en'}`);
+          const data = await res.json();
+          if (data && (data.city || data.locality)) {
+            foundCity = data.city || data.locality;
+            displayName = foundCity;
+            if (data.countryName) displayName += `, ${data.countryName}`;
+            // Construct pseudo-address object for compatibility
+            address = { city: foundCity, country: data.countryName };
+          }
+        } catch (err) {
+          console.warn("BigDataCloud fallback failed", err);
+        }
+      }
+
+      // 3. Final Result or Coordinate Fallback
+      if (foundCity) {
+        setCity(displayName);
+        setValidatedCityData({
+          lat: latitude.toString(),
+          lon: longitude.toString(),
+          name: foundCity,
+          display_name: displayName,
+          address: address
+        });
+        setFocusedLocation({ lat: latitude, lng: longitude });
+      } else {
+        // Absolute Fallback: Coordinates
         const name = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
         setCity(name);
         setValidatedCityData({ lat: latitude, lon: longitude, name: name, display_name: name });
         setFocusedLocation({ lat: latitude, lng: longitude });
-      } finally {
-        setIsLoading(false);
-        setLoadingText('Exploring...');
       }
+
+      setIsLoading(false);
+      setLoadingText('Exploring...');
     };
 
     // Fallback: IP-based Location
@@ -447,7 +545,7 @@ function App() {
         // On error (Permission denied or Timeout), try IP fallback
         runIpFallback();
       },
-      { timeout: 8000, enableHighAccuracy: false }
+      { timeout: 20000, enableHighAccuracy: false, maximumAge: 60000 }
     );
   };
 
@@ -1210,6 +1308,7 @@ function App() {
     window.speechSynthesis.cancel();
     setSpeakingId(null);
     setCurrentSpeakingPoi(null);
+    setSpokenCharCount(0);
   };
 
   const handleSpeak = (poi, force = false) => {
@@ -1223,6 +1322,7 @@ function App() {
 
     // Always stop previous before starting new
     window.speechSynthesis.cancel();
+    setSpokenCharCount(0);
 
     if (!poi) return;
 
@@ -1275,6 +1375,13 @@ function App() {
     u.onend = () => {
       setSpeakingId(null);
       setCurrentSpeakingPoi(null);
+      setSpokenCharCount(0);
+    };
+
+    u.onboundary = (event) => {
+      // 'word' boundaries are most reliable for highlighting
+      // Use charIndex to track progress
+      setSpokenCharCount(event.charIndex);
     };
 
     setSpeakingId(poi.id);
@@ -1341,7 +1448,12 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-900 text-white relative">
+    <div
+      className="flex h-screen w-screen overflow-hidden bg-slate-900 text-white relative transition-all duration-500"
+      style={{
+        boxShadow: isSimulating ? `inset 0 0 0 4px ${APP_THEMES[activeTheme]?.colors?.accent || '#60a5fa'}` : 'none'
+      }}
+    >
       {/* Journey Input Overlay */}
 
       {/* Background Update Indicator */}
@@ -1362,10 +1474,11 @@ function App() {
           focusedLocation={focusedLocation}
           language={language}
           onPoiClick={handlePoiClick}
-          onPopupClose={() => setFocusedLocation(null)}
+          onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
           speakingId={speakingId}
           onSpeak={handleSpeak}
           onStopSpeech={stopSpeech}
+          spokenCharCount={spokenCharCount}
           isLoading={isLoading}
           loadingText={loadingText}
           loadingCount={foundPoisCount}
@@ -1403,9 +1516,11 @@ function App() {
         setVoiceSettings={setVoiceSettings}
 
         speakingId={speakingId}
+        spokenCharCount={spokenCharCount}
         onSpeak={handleSpeak}
         autoAudio={autoAudio}
         setAutoAudio={setAutoAudio}
+        focusedLocation={focusedLocation}
 
         isSimulating={isSimulating}
         setIsSimulating={setIsSimulating}
@@ -1440,6 +1555,8 @@ function App() {
         onLoad={handleLoadRoute}
         travelMode={travelMode}
         onStyleChange={setTravelMode}
+        onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
+        onStopSpeech={stopSpeech}
       />
 
       {/* Refinement Modal */}

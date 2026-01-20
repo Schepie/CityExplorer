@@ -205,6 +205,10 @@ body {
 }
 
 /* --- LEAFLET POPUP CUSTOMIZATION --- */
+.leaflet-popup-pane {
+  z-index: 2000 !important;
+}
+
 .leaflet-popup-content-wrapper {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(8px);
@@ -212,11 +216,20 @@ body {
   padding: 0;
   overflow: hidden;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  min-width: 300px;
 }
 
 .leaflet-popup-content {
-  margin: 12px !important;
-  line-height: 1.5;
+  margin: 0 !important;
+  line-height: 1.6;
+  width: 480px !important;
+  /* Considerably wider */
+  max-width: 90vw;
+  /* Responsive */
+  max-height: 70vh;
+  /* Taller */
+  overflow-y: auto;
+  /* Scrollable if text is very long */
 }
 
 /* Custom Scrollbar for Popups */
@@ -232,4 +245,21 @@ body {
   background: var(--primary);
   /* Using primary color */
   border-radius: 2px;
+}
+
+/* Standard scroll containers for TTS */
+.city-welcome-scroll-container,
+.itinerary-scroll-container,
+.leaflet-popup-content,
+.overflow-y-auto {
+  scroll-behavior: auto !important;
+  /* Stop browser from fighting with our custom JS scroller */
+  overflow-anchor: none !important;
+  /* Prevent browser from "jumping" to keep elements in view */
+  overscroll-behavior: none;
+  /* Prevent browser "bounce" effects */
+  scrollbar-gutter: stable;
+  /* Prevent layout shift when scrollbar appears */
+  position: relative;
+  /* Ensure offsetTop is relative to this container */
 }

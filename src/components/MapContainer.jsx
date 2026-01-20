@@ -3,6 +3,7 @@ import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useM
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { recordFeedback, getFeedback } from '../services/feedbackService';
+import { SmartAutoScroller } from '../utils/AutoScroller';
 
 // Fix for default Leaflet marker icons in React
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -105,7 +106,7 @@ const translateHUDInstruction = (step, lang) => {
 };
 
 // Helper to control map view
-const MapController = ({ center, positions, userLocation, focusedLocation, viewAction, onActionHandled, isNavigating, effectiveHeading }) => {
+const MapController = ({ center, positions, userLocation, focusedLocation, viewAction, onActionHandled, isNavigating, effectiveHeading, isPopupOpen }) => {
     const map = useMap();
     const hasAutoFit = useRef(false);
     const prevPositionsKey = useRef('');
@@ -163,13 +164,28 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
         if (isNewFocus) {
             // Disable auto-follow when explicitly focusing a location
             isAutoFollow.current = false;
-            map.flyTo([focusedLocation.lat, focusedLocation.lng], 16, { duration: 1.5 });
+
+            // Calculate offset to position selected POI near the bottom (85% down)
+            // This maximizes space above for the popup.
+            const targetZoom = 16;
+            const size = map.getSize();
+
+            // Target Y = 85% of height (near bottom)
+            // Center Y = 50% of height
+            // Offset needed = 35% of height
+            const shiftY = size.y * 0.35;
+
+            const centerPoint = map.project([focusedLocation.lat, focusedLocation.lng], targetZoom);
+            const newCenterPoint = centerPoint.subtract([0, shiftY]);
+            const newCenterLatLng = map.unproject(newCenterPoint, targetZoom);
+
+            map.flyTo(newCenterLatLng, targetZoom, { duration: 1.5 });
             prevFocusedLocation.current = focusedLocation;
             return;
         }
 
         // Priority 3: Follow User in Navigation Mode (ONLY IF ENABLED)
-        if (isNavigating && userLocation && isAutoFollow.current) {
+        if (isNavigating && userLocation && isAutoFollow.current && !isPopupOpen) {
             // Use current zoom if available, otherwise default to 18
             const currentZoom = map.getZoom();
 
@@ -217,7 +233,14 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopupClose, speakingId, onSpeak, onStopSpeech, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating }) => {
+const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopupClose, speakingId, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating }) => {
+    const { pois = [], center, routePath } = routeData || {};
+    const isInputMode = !routeData;
+
+    // track simulation index to allow pausing
+    const simulationIndexRef = useRef(0);
+    const lastFetchedIndexRef = useRef(-1); // Sync fetcher with target POI
+    const [simulationSpeed, setSimulationSpeed] = useState(1); // 1x, 2x, 5x
     // Fix for stale closure in Leaflet listeners
     const speakingIdRef = useRef(speakingId);
     useEffect(() => { speakingIdRef.current = speakingId; }, [speakingId]);
@@ -227,6 +250,40 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
     const onPoiClickRef = useRef(onPoiClick);
     useEffect(() => { onPoiClickRef.current = onPoiClick; }, [onPoiClick]);
+
+    const popupHighlightedWordRef = useRef(null);
+    const activeScrollerRef = useRef(null);
+
+    // Auto-scroll logic for Marker Popups using SmartAutoScroller
+    useEffect(() => {
+        const el = popupHighlightedWordRef.current;
+        if (speakingId && el) {
+            const container = el.closest('.overflow-y-auto') || el.closest('.leaflet-popup-content');
+            if (container) {
+                // Initialize scroller ONLY if container changed or it doesn't exist
+                if (!activeScrollerRef.current || activeScrollerRef.current.container !== container) {
+                    activeScrollerRef.current?.destroy();
+                    activeScrollerRef.current = new SmartAutoScroller(container, {
+                        pinStrategy: 'top',
+                        topMargin: 10,
+                        bottomMargin: 40
+                    });
+                }
+                activeScrollerRef.current.syncHighlight(el);
+            }
+        }
+    }, [spokenCharCount]); // Character level sync
+
+    // Separate effect for teardown
+    useEffect(() => {
+        if (!speakingId) {
+            activeScrollerRef.current?.destroy();
+            activeScrollerRef.current = null;
+        }
+    }, [speakingId]);
+
+    const focusedLocationRef = useRef(focusedLocation);
+    useEffect(() => { focusedLocationRef.current = focusedLocation; }, [focusedLocation]);
 
     // Default center (Amsterdam)
     const defaultCenter = [52.3676, 4.9041];
@@ -244,11 +301,21 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     const [activePoiIndex, setActivePoiIndex] = useState(0);
     const lastReachedPoiIndexRef = useRef(-1); // Separate ref to track navigation progress
 
-    // Reset active index when route changes
+    // Reset active index ONLY when the route's POIs change fundamentally.
+    // We use a join of IDs to avoid resetting when descriptions or steps are updated.
+    const poiIdsString = pois?.map(p => p.id).join(',');
     useEffect(() => {
         setActivePoiIndex(0);
         lastReachedPoiIndexRef.current = -1;
-    }, [routeData]);
+        simulationIndexRef.current = 0;
+        lastFetchedIndexRef.current = -1;
+        setNavigationPath(null);
+    }, [poiIdsString]);
+
+    // Reset simulation index when target advances
+    useEffect(() => {
+        simulationIndexRef.current = 0;
+    }, [activePoiIndex]);
 
     // Audio Context Ref (persistent)
     const audioCtxRef = useRef(null);
@@ -268,26 +335,40 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
         // --- SIMULATION ---
         if (isSimulating && navigationPath && navigationPath.length > 0) {
-            console.warn("SIMULATION STARTING");
-            let idx = 0;
+            console.warn("SIMULATION RUNNING at", simulationSpeed, "x");
+
+            // Base delay for 1x speed (e.g. 600ms per step)
+            // Adjust this base value to feel "natural" for 1x
+            const baseDelay = 600;
+            const intervalDelay = baseDelay / simulationSpeed;
+
             const interval = setInterval(() => {
-                if (idx < navigationPath.length) {
-                    const [lat, lng] = navigationPath[idx];
+                if (simulationIndexRef.current < navigationPath.length) {
+                    const [lat, lng] = navigationPath[simulationIndexRef.current];
                     setUserLocation({ lat, lng, heading: 0 });
-                    idx += 1;
+                    simulationIndexRef.current += 1;
                 } else {
                     clearInterval(interval);
                     // Simulation finished this leg.
                     // Force advance to next POI if available.
                     console.log("Simulation leg complete. Checking for next POI...");
                     if (routeData && routeData.pois && activePoiIndex < (routeData.pois.length - 1)) {
-                        console.log("Simulation finished leg. Advancing to next POI index:", activePoiIndex + 1);
-                        setActivePoiIndex(prev => prev + 1);
-                        // Also update strict tracker to prevent double-fire from proximity interaction
-                        lastReachedPoiIndexRef.current = activePoiIndex;
+                        const nextIdx = activePoiIndex + 1;
+                        console.log("Simulation finished leg. Advancing to next POI index:", nextIdx);
+
+                        // IMPORTANT: Clear the current path to allow the fetcher to get the next leg
+                        setNavigationPath(null);
+                        simulationIndexRef.current = 0;
+                        setActivePoiIndex(nextIdx);
+
+                        // Update strict tracker to prevent double-fire from proximity interaction
+                        lastReachedPoiIndexRef.current = nextIdx - 1;
+                    } else {
+                        console.log("Simulation reached the end of the entire route.");
+                        setIsSimulating(false);
                     }
                 }
-            }, 500); // Speed up slightly to 500ms
+            }, intervalDelay);
 
             return () => clearInterval(interval);
         }
@@ -306,9 +387,9 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                     console.log("Error getting location:", error);
                 },
                 {
-                    enableHighAccuracy: true,
-                    maximumAge: 0,
-                    timeout: 5000
+                    enableHighAccuracy: false,
+                    maximumAge: 10000,
+                    timeout: 20000
                 }
             );
         }
@@ -316,7 +397,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
         return () => {
             if (watchId) navigator.geolocation.clearWatch(watchId);
         };
-    }, [isSimulating, navigationPath, activePoiIndex, routeData]); // Re-run when toggle changes
+    }, [isSimulating, navigationPath, activePoiIndex, routeData, simulationSpeed]); // Re-run when toggle changes
 
     // Audio Trigger
     // Audio Trigger
@@ -432,10 +513,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
         if (hasChanges) {
             setNearbyPoiIds(nextNearby);
         }
-    }, [userLocation, routeData, nearbyPoiIds, activePoiIndex]); // Check on location update
-
-    const { pois = [], center, routePath } = routeData || {};
-    const isInputMode = !routeData;
+    }, [userLocation, routeData, activePoiIndex]); // Removed'nearbyPoiIds' from deps to avoid cycles, rely on userLocation updates
 
     const t = {
         en: {
@@ -544,8 +622,13 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
         } else {
             // Reset if focus is cleared
             if (lastFocusedIdRef.current !== null) {
-                console.log("Focus cleared. Resetting lastFocusedIdRef.");
+                console.log("Focus cleared. Resetting lastFocusedIdRef and closing popup.");
+                const oldId = lastFocusedIdRef.current;
+                if (markerRefs.current && markerRefs.current[oldId]) {
+                    markerRefs.current[oldId].closePopup();
+                }
                 lastFocusedIdRef.current = null;
+                setIsPopupOpen(false);
             }
         }
     }, [focusedLocation, pois]);
@@ -553,10 +636,11 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
     // Fetch real street navigation path
     useEffect(() => {
         // console.log("Nav check:", { user: !!userLocation, focus: !!focusedLocation, nav: isNavigating, style: userSelectedStyle });
-        // TEST MODE GUARD: Do not re-fetch route if we are simulating (prevents loop)
-        if (isSimulating && navigationPath && navigationPath.length > 0) {
+        // TEST MODE GUARD: Do not re-fetch route if we are simulating AND we already have the path for the current target
+        if (isSimulating && navigationPath && navigationPath.length > 0 && lastFetchedIndexRef.current === activePoiIndex) {
             return;
         }
+        lastFetchedIndexRef.current = activePoiIndex;
 
         // Target is determined by the sequential index
         const navTarget = (pois && pois.length > activePoiIndex) ? pois[activePoiIndex] : (focusedLocation || (pois && pois[0]));
@@ -575,7 +659,6 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
                 // Switch profile based on map style
                 // 'foot' (pedestrian) prefers safe, smaller paths. 'bike'/'bicycle' prefers bike lanes/roads.
-                // We default to 'foot' to ensure we never get car routes.
                 // We default to 'foot' to ensure we never get car routes.
                 const profile = userSelectedStyle === 'cycling' ? 'bicycle' : 'foot';
 
@@ -693,6 +776,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                     onActionHandled={() => setViewAction(null)}
                     isNavigating={isNavigating}
                     effectiveHeading={effectiveHeading}
+                    isPopupOpen={isPopupOpen}
                 />
 
                 {/* User Location Marker */}
@@ -773,7 +857,11 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                             console.log("Popup closing for", poi.name);
                                             // Only clear focus if we are NOT navigating (to preserve route)
                                             if (!isNavigatingRef.current) {
-                                                onPopupCloseRef.current && onPopupCloseRef.current();
+                                                // IMPORTANT: Only clear if the closed popup is the CURRENTLY focused one.
+                                                // This prevents resetting focus when opening a new popup (which closes the old one).
+                                                if (focusedLocationRef.current && focusedLocationRef.current.id === poi.id) {
+                                                    onPopupCloseRef.current && onPopupCloseRef.current();
+                                                }
                                             }
                                             setIsPopupOpen(false);
                                             if (speakingIdRef.current === poi.id) {
@@ -791,8 +879,21 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                         iconAnchor: [20, 20]
                                     })}
                                 >
-                                    <Popup className="glass-popup">
-                                        <div className="text-slate-900 w-[240px]">
+                                    <Popup
+                                        autoPan={false}
+                                        className="custom-poi-popup"
+                                        eventHandlers={{
+                                            add: () => setIsPopupOpen(true),
+                                            remove: () => {
+                                                setIsPopupOpen(false);
+                                                // Only trigger clear if it was the focused one
+                                                if (!isNavigatingRef.current && focusedLocationRef.current && focusedLocationRef.current.id === poi.id) {
+                                                    if (onPopupCloseRef.current) onPopupCloseRef.current();
+                                                }
+                                            }
+                                        }}
+                                    >
+                                        <div className="text-slate-900 w-full p-4">
                                             <h3 className="font-bold text-lg m-0 leading-tight mb-2">{poi.name}</h3>
 
                                             <div className="flex justify-between items-center mb-2">
@@ -850,13 +951,43 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                             </div>
 
                                             {/* Scrollable Scroll Area */}
-                                            <div className="max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
+                                            <div className="max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
                                                 {/* UI FILTER: Block generic city descriptions */}
                                                 {(() => {
                                                     const d = poi.description || "";
                                                     const dLow = d.toLowerCase();
                                                     const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
                                                     const displayDesc = isBad ? "Geen beschrijving beschikbaar." : d;
+
+                                                    if (speakingId === poi.id && spokenCharCount !== undefined) {
+                                                        const idx = spokenCharCount;
+                                                        // Simple word finding heuristic
+                                                        let endIdx = displayDesc.indexOf(' ', idx);
+                                                        if (endIdx === -1) endIdx = displayDesc.length;
+
+                                                        // Ensure valid indices
+                                                        if (idx >= 0 && idx < displayDesc.length) {
+                                                            const before = displayDesc.slice(0, idx);
+                                                            const current = displayDesc.slice(idx, endIdx);
+                                                            const after = displayDesc.slice(endIdx);
+
+                                                            return (
+                                                                <p className="m-0 text-sm text-slate-600 mb-2 leading-relaxed">
+                                                                    <span className="text-slate-800">{before}</span>
+                                                                    <span
+                                                                        ref={popupHighlightedWordRef}
+                                                                        style={{
+                                                                            backgroundColor: 'rgba(99, 102, 241, 0.2)'
+                                                                        }}
+                                                                        className="text-primary not-italic"
+                                                                    >
+                                                                        {current}
+                                                                    </span>
+                                                                    <span className="text-slate-500">{after}</span>
+                                                                </p>
+                                                            );
+                                                        }
+                                                    }
                                                     return <p className="m-0 text-sm text-slate-600 mb-2 leading-relaxed">{displayDesc}</p>;
                                                 })()}
 
@@ -929,78 +1060,61 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
             {/* Map Controls (Top Right) */}
             {
                 !isInputMode && (
-                    <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
-                        {/* Test Button */}
+                    <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[400] flex flex-row items-center gap-3 bg-slate-900/60 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl">
+                        {/* Speed Toggle (Only when simulating) */}
                         {navigationPath && isSimulating && (
                             <button
                                 onClick={() => {
-                                    playProximitySound(); // Test sound immediately + init context
+                                    const nextSpeed = simulationSpeed === 1 ? 2 : (simulationSpeed === 2 ? 5 : 1);
+                                    setSimulationSpeed(nextSpeed);
+                                }}
+                                className="p-3 rounded-xl border border-white/10 shadow-lg bg-slate-800/90 text-slate-200 hover:bg-slate-700 transition-all font-bold text-sm min-w-[48px]"
+                                title="Simulation Speed"
+                            >
+                                {simulationSpeed}x
+                            </button>
+                        )}
+
+                        {/* Test Button - Always Show if Path Exists */}
+                        {navigationPath && (
+                            <button
+                                onClick={() => {
+                                    if (!isSimulating) {
+                                        playProximitySound(); // Init context on start
+                                        setIsNavigating(true); // Ensure fetcher is active
+                                    }
                                     setIsSimulating(!isSimulating);
                                 }}
-                                className={`p-3 rounded-xl border border-white/10 shadow-lg transition-all ${isSimulating ? 'bg-green-600 text-white' : 'bg-slate-800/90 text-slate-200'}`}
-                                title="Test Walk & Sound"
+                                className={`p-3 rounded-xl border border-white/10 shadow-lg transition-all ${isSimulating ? 'bg-green-600 text-white animate-pulse' : 'bg-slate-800/90 text-slate-200'}`}
+                                title={isSimulating ? "Pause Simulation" : "Start Simulation"}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
                             </button>
                         )}
-                        {/* 1. Mode Toggle (Walk/Cycle) */}
-                        {/* 1. Mode Toggle (Walk/Cycle) */}
-                        <button
-                            onClick={() => onStyleChange && onStyleChange(userSelectedStyle === 'walking' ? 'cycling' : 'walking')}
-                            className="bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg text-slate-200 hover:text-white hover:bg-slate-700/90 transition-all group relative"
-                            title={language === 'nl' ? 'Wissel Modus' : 'Toggle Mode'}
-                        >
-                            {userSelectedStyle === 'walking' ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><circle cx="13" cy="4" r="2" /><path d="M13 20v-5l-3-3 2-3h-3" /><path d="M13 9l3 3-1 8" /></svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400"><circle cx="5.5" cy="17.5" r="3.5" /><circle cx="18.5" cy="17.5" r="3.5" /><path d="M15 6l-5 5-3-3 2-2" /><path d="M12 17.5V14l-3-3 4-3 2 3h2" /></svg>
-                            )}
-                        </button>
+                    </div>
+                )
+            }
 
-
-
-                        {/* 3. Start/Stop Navigation */}
-                        <button
-                            onClick={() => {
-                                setIsNavigating(!isNavigating);
-                                if (!isNavigating) {
-                                    setViewAction('USER'); // Auto-center on start
-                                }
-                            }}
-                            className={`bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg hover:bg-slate-700/90 transition-all group ${isNavigating ? 'text-red-400 hover:text-red-300' : 'text-green-400 hover:text-green-300'}`}
-                            title={language === 'nl' ? (isNavigating ? 'Stop Navigatie' : 'Start Navigatie') : (isNavigating ? 'Stop Navigation' : 'Start Navigation')}
-                        >
-                            {isNavigating ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z" /></svg>
-                            )}
-                        </button>
-
-                        {/* 4. Locate Me */}
+            {/* Bottom Right: Subtle View Controls */}
+            {
+                !isInputMode && (
+                    <div className="absolute bottom-6 right-4 z-[400] flex flex-col gap-2">
+                        {/* Locate Me */}
                         <button
                             onClick={() => setViewAction('USER')}
-                            className="bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg text-blue-400 hover:text-blue-300 hover:bg-slate-700/90 transition-all group"
+                            className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
                             title={language === 'nl' ? 'Mijn Locatie' : 'Locate Me'}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
                         </button>
 
-                        {/* 5. Fit Route (Show All) */}
+                        {/* Fit Route */}
                         <button
                             onClick={() => setViewAction('ROUTE')}
-                            className="bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg text-slate-200 hover:text-white hover:bg-slate-700/90 transition-all group"
+                            className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
                             title={language === 'nl' ? 'Toon Route' : 'Show Route'}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
-                        </button>
-
-                        <button
-                            onClick={() => setAutoAudio && setAutoAudio(!autoAudio)}
-                            className={`bg-slate-800/90 backdrop-blur-md rounded-xl p-3 border border-white/10 shadow-lg hover:bg-slate-700/90 transition-all group ${autoAudio ? 'text-primary border-primary/50' : 'text-slate-400 hover:text-white'}`}
-                            title={autoAudio ? "Auto-Audio ON" : "Auto-Audio OFF"}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
                         </button>
                     </div>
                 )
@@ -1053,21 +1167,19 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
 
                     return (
                         <>
-                            {/* 1. Compass Icon (Left Side, below Sidebar toggle) */}
-                            <div className="absolute top-[72px] left-4 z-[400] animate-in slide-in-from-left duration-500 transition-all opacity-100">
+                            {/* 1. Compass Icon (Right Side, below Map Controls) */}
+                            <div className={`absolute top-[80px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>
                                 <div className="bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12">
                                     <div style={{ transform: `rotate(${calcBearing(userLocation, bearingTarget) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
-                                        {isNavigating ? (
-                                            <div className="text-xl leading-none">{hudIcon}</div>
-                                        ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 22 22 12 18 2 22 12 2"></polygon></svg>
-                                        )}
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-primary drop-shadow-[0_0_2px_rgba(0,0,0,0.5)]">
+                                            <path d="M5 15l7-7 7 7" />
+                                        </svg>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* 2. Distance Icon (Left Side, below Compass) */}
-                            <div className="absolute top-[128px] left-4 z-[400] animate-in slide-in-from-left duration-700 transition-all opacity-100">
+                            {/* 2. Distance Icon (Right Side, below Compass) */}
+                            <div className={`absolute top-[136px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>
                                 <div className="bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12">
                                     {(() => {
                                         const distKm = hudDistance;
@@ -1090,13 +1202,33 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                             </div>
 
                             {/* 2. Instruction Banner (Top Center, Narrower) */}
-                            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-xl px-4 py-2 border border-white/10 shadow-2xl flex flex-col items-center max-w-[calc(100%-160px)] animate-in slide-in-from-top duration-500 transition-all opacity-100 bg-slate-900/80">
+                            <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-xl px-4 py-2 border border-white/10 shadow-2xl flex flex-col items-center max-w-[calc(100%-160px)] transition-all duration-300 bg-slate-900/80 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-top'}`}>
                                 <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold leading-none mb-1 truncate w-full text-center">
                                     {hudSubline}
                                 </span>
                                 <div className="text-xs font-semibold text-white truncate w-full text-center leading-tight">
                                     {isNavigating ? hudInstruction : (language === 'nl' ? 'Kies een bestemming' : 'Select a destination')}
                                 </div>
+                            </div>
+
+                            {/* 3. Start/Stop Navigation (Right Side, below Distance) */}
+                            <div className={`absolute top-[192px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>
+                                <button
+                                    onClick={() => {
+                                        setIsNavigating(!isNavigating);
+                                        if (!isNavigating) {
+                                            setViewAction('USER'); // Auto-center on start
+                                        }
+                                    }}
+                                    className={`bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12 hover:bg-slate-800 transition-all group ${isNavigating ? 'text-red-500' : 'text-green-500'}`}
+                                    title={language === 'nl' ? (isNavigating ? 'Stop Navigatie' : 'Start Navigatie') : (isNavigating ? 'Stop Navigation' : 'Start Navigation')}
+                                >
+                                    {isNavigating ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z" /></svg>
+                                    )}
+                                </button>
                             </div>
                         </>
                     );

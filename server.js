@@ -166,6 +166,38 @@ app.get('/api/google-search', async (req, res) => {
     }
 });
 
+// --- Nominatim Proxy Endpoint (Avoids CORS) ---
+app.get('/api/nominatim', async (req, res) => {
+    try {
+        const queryParams = new URLSearchParams(req.query).toString();
+        // Heuristic: If 'q' is missing but 'lat'/'lon' are there, assume reverse geocoding.
+        const isReverse = !req.query.q && req.query.lat && req.query.lon;
+        const endpoint = isReverse ? 'reverse' : 'search';
+
+        const url = `https://nominatim.openstreetmap.org/${endpoint}?${queryParams}`;
+
+        console.log(`[Proxy] Nominatim (${endpoint}): ${queryParams}`);
+
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'CityExplorer/1.0 (Student Project; educational use)',
+                'Accept-Language': req.headers['accept-language'] || 'en'
+            }
+        });
+
+        if (!response.ok) {
+            console.error(`[Proxy] Nominatim Error ${response.status}`);
+            return res.status(response.status).send(await response.text());
+        }
+
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error("Nominatim Proxy Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Static Files (Production) ---
 import path from 'path';
 import { fileURLToPath } from 'url';
