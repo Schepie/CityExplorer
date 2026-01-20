@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from 'react';
 import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useMap, Tooltip, Circle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { recordFeedback, getFeedback } from '../services/feedbackService';
 import { SmartAutoScroller } from '../utils/AutoScroller';
 
 // Fix for default Leaflet marker icons in React
@@ -588,7 +587,6 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
         }
     }, [isNavigating, userLocation, focusedLocation, routeData]);
 
-    const [feedbackRefresh, setFeedbackRefresh] = useState(0);
 
     // Fix: Track last opened focus ID to prevent re-opening on generic re-renders
     const lastFocusedIdRef = useRef(null);
@@ -1097,17 +1095,6 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                                     {text.nav}
                                                 </button>
 
-                                                {/* Feedback Buttons */}
-                                                <div className="flex items-center gap-2">
-                                                    <button onClick={(e) => { e.stopPropagation(); recordFeedback(poi.id, 'up'); setFeedbackRefresh(r => r + 1); }} className="flex items-center text-green-500 hover:text-green-700 bg-transparent border-none cursor-pointer p-0">
-                                                        👍
-                                                        <span className="ml-1 text-sm">{getFeedback(poi.id).up}</span>
-                                                    </button>
-                                                    <button onClick={(e) => { e.stopPropagation(); recordFeedback(poi.id, 'down'); setFeedbackRefresh(r => r + 1); onUpdatePoiDescription(poi, 'retry'); }} className="flex items-center text-red-500 hover:text-red-700 bg-transparent border-none cursor-pointer p-0">
-                                                        👎
-                                                        <span className="ml-1 text-sm">{getFeedback(poi.id).down}</span>
-                                                    </button>
-                                                </div>
                                             </div>
                                         </div>
                                     </Popup>
