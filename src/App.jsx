@@ -58,6 +58,10 @@ function App() {
   useEffect(() => localStorage.setItem('app_theme', activeTheme), [activeTheme]);
   const [isBackgroundUpdating, setIsBackgroundUpdating] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [isSimulationEnabled, setIsSimulationEnabled] = useState(() => localStorage.getItem('app_simulation_enabled') === 'true');
+
+  // Persist Simulation Setting
+  useEffect(() => localStorage.setItem('app_simulation_enabled', isSimulationEnabled), [isSimulationEnabled]);
 
   // Apply Theme Effect
   useEffect(() => {
@@ -1273,7 +1277,10 @@ function App() {
   // Audio State
   const [speakingId, setSpeakingId] = useState(null);
   const [currentSpeakingPoi, setCurrentSpeakingPoi] = useState(null); // Track object for auto-restart
-  const [autoAudio, setAutoAudio] = useState(false);
+  const [isSpeechPaused, setIsSpeechPaused] = useState(false);
+  const [autoAudio, setAutoAudio] = useState(() => localStorage.getItem('app_auto_audio') === 'true');
+
+  useEffect(() => localStorage.setItem('app_auto_audio', autoAudio), [autoAudio]);
 
   const [voiceSettings, setVoiceSettings] = useState(() => {
     const saved = localStorage.getItem('app_voice_settings');
@@ -1309,14 +1316,21 @@ function App() {
     setSpeakingId(null);
     setCurrentSpeakingPoi(null);
     setSpokenCharCount(0);
+    setIsSpeechPaused(false);
   };
 
   const handleSpeak = (poi, force = false) => {
     const isSame = speakingId === poi.id;
 
-    // If not forcing (toggling off), stop and exit
+    // If not forcing (toggle), handle pause/resume
     if (isSame && !force) {
-      stopSpeech();
+      if (isSpeechPaused) {
+        window.speechSynthesis.resume();
+        setIsSpeechPaused(false);
+      } else {
+        window.speechSynthesis.pause();
+        setIsSpeechPaused(true);
+      }
       return;
     }
 
@@ -1376,6 +1390,7 @@ function App() {
       setSpeakingId(null);
       setCurrentSpeakingPoi(null);
       setSpokenCharCount(0);
+      setIsSpeechPaused(false);
     };
 
     u.onboundary = (event) => {
@@ -1386,6 +1401,7 @@ function App() {
 
     setSpeakingId(poi.id);
     setCurrentSpeakingPoi(poi);
+    setIsSpeechPaused(false);
     window.speechSynthesis.speak(u);
   };
 
@@ -1476,6 +1492,7 @@ function App() {
           onPoiClick={handlePoiClick}
           onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
           speakingId={speakingId}
+          isSpeechPaused={isSpeechPaused}
           onSpeak={handleSpeak}
           onStopSpeech={stopSpeech}
           spokenCharCount={spokenCharCount}
@@ -1489,6 +1506,7 @@ function App() {
           setAutoAudio={setAutoAudio}
           isSimulating={isSimulating}
           setIsSimulating={setIsSimulating}
+          isSimulationEnabled={isSimulationEnabled}
           userSelectedStyle={travelMode}
           onStyleChange={setTravelMode}
         />
@@ -1516,6 +1534,7 @@ function App() {
         setVoiceSettings={setVoiceSettings}
 
         speakingId={speakingId}
+        isSpeechPaused={isSpeechPaused}
         spokenCharCount={spokenCharCount}
         onSpeak={handleSpeak}
         autoAudio={autoAudio}
@@ -1524,6 +1543,8 @@ function App() {
 
         isSimulating={isSimulating}
         setIsSimulating={setIsSimulating}
+        isSimulationEnabled={isSimulationEnabled}
+        setIsSimulationEnabled={setIsSimulationEnabled}
 
         // Form Props
         city={city} setCity={handleSetCity}

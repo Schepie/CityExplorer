@@ -341,7 +341,7 @@ const hexToRgba = (hex, alpha) => {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSpeak, autoAudio, interests, searchMode, constraintValue, constraintType, isRoundtrip, activeTheme, travelMode, onStopSpeech, spokenCharCount, scroller }) => {
+const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSpeechPaused, onSpeak, autoAudio, interests, searchMode, constraintValue, constraintType, isRoundtrip, activeTheme, travelMode, onStopSpeech, spokenCharCount, scroller }) => {
     const [weather, setWeather] = useState(null);
     const [description, setDescription] = useState(null);
     const [cityImage, setCityImage] = useState(null);
@@ -546,7 +546,11 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, onSp
                         title="Read Aloud"
                     >
                         {speakingId === `city-welcome-${city}` ? (
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                            isSpeechPaused ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                            )
                         ) : (
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                         )}
@@ -696,8 +700,11 @@ const ItinerarySidebar = ({
     onSave, onLoad,
     descriptionLength, setDescriptionLength,
     activeTheme, setActiveTheme, availableThemes,
-    isSimulating, setIsSimulating, focusedLocation,
-    spokenCharCount
+    isSimulating, setIsSimulating,
+    isSimulationEnabled, setIsSimulationEnabled,
+    focusedLocation,
+    spokenCharCount,
+    isSpeechPaused
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -1099,6 +1106,7 @@ const ItinerarySidebar = ({
                                     userLocation={focusedLocation}
                                     onStopSpeech={onStopSpeech}
                                     spokenCharCount={spokenCharCount}
+                                    isSpeechPaused={isSpeechPaused}
                                     scroller={scrollerRef.current}
                                 />
                             </div>
@@ -1301,17 +1309,40 @@ const ItinerarySidebar = ({
                                     <div className="space-y-1">
                                         <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Simulatie' : 'Simulation'}</label>
                                         <button
-                                            onClick={() => setIsSimulating(!isSimulating)}
-                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulating ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                            onClick={() => {
+                                                const newVal = !isSimulationEnabled;
+                                                setIsSimulationEnabled(newVal);
+                                                if (!newVal) setIsSimulating(false);
+                                            }}
+                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulationEnabled ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className={`p-1.5 rounded-full ${isSimulating ? 'bg-slate-500/20 text-white' : 'bg-slate-700/50 text-slate-400'}`}>
+                                                <div className={`p-1.5 rounded-full ${isSimulationEnabled ? 'bg-slate-500/20 text-white' : 'bg-slate-700/50 text-slate-400'}`}>
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
                                                 </div>
-                                                <span className={`text-sm font-medium ${isSimulating ? 'text-white' : 'text-slate-300'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
+                                                <span className={`text-sm font-medium ${isSimulationEnabled ? 'text-white' : 'text-slate-300'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
                                             </div>
-                                            <div className={`w-9 h-5 rounded-full relative transition-colors ${isSimulating ? 'bg-primary' : 'bg-slate-600'}`}>
-                                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${isSimulating ? 'right-1' : 'left-1'}`} />
+                                            <div className={`w-9 h-5 rounded-full relative transition-colors ${isSimulationEnabled ? 'bg-primary' : 'bg-slate-600'}`}>
+                                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${isSimulationEnabled ? 'right-1' : 'left-1'}`} />
+                                            </div>
+                                        </button>
+                                    </div>
+
+                                    {/* 6. Auto Audio */}
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Auto Audio' : 'Auto Audio'}</label>
+                                        <button
+                                            onClick={() => setAutoAudio(!autoAudio)}
+                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${autoAudio ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`p-1.5 rounded-full ${autoAudio ? 'bg-slate-500/20 text-white' : 'bg-slate-700/50 text-slate-400'}`}>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                                                </div>
+                                                <span className={`text-sm font-medium ${autoAudio ? 'text-white' : 'text-slate-300'}`}>{language === 'nl' ? 'Automatisch Voorlezen' : 'Auto-Audio Mode'}</span>
+                                            </div>
+                                            <div className={`w-9 h-5 rounded-full relative transition-colors ${autoAudio ? 'bg-primary' : 'bg-slate-600'}`}>
+                                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${autoAudio ? 'right-1' : 'left-1'}`} />
                                             </div>
                                         </button>
                                     </div>
@@ -1578,7 +1609,11 @@ const ItinerarySidebar = ({
                                                         title="Read Aloud"
                                                     >
                                                         {speakingId === poi.id ? (
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                                            isSpeechPaused ? (
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                                            ) : (
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                                            )
                                                         ) : (
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                                                         )}
