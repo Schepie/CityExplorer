@@ -90,10 +90,20 @@ function App() {
   const [constraintType, setConstraintType] = useState('distance');
   const [constraintValue, setConstraintValue] = useState(5);
   const [isRoundtrip, setIsRoundtrip] = useState(true);
+  const [startPoint, setStartPoint] = useState('');
   // Default to Google only as requested
-  const [searchMode, setSearchMode] = useState('journey'); // 'radius' or 'journey'
+  const [searchMode, setSearchMode] = useState('journey'); // 'radius', 'journey', or 'prompt'
   const [searchSources, setSearchSources] = useState({ osm: false, foursquare: false, google: true });
   const [travelMode, setTravelMode] = useState('walking'); // 'walking' or 'cycling'
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiChatHistory, setAiChatHistory] = useState([
+    {
+      role: 'brain', text: language === 'nl'
+        ? 'Hoi! Ik ben de Brain van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Is het een **rondtrip** (start en stop op hetzelfde punt)?'
+        : 'Hi! I am the Brain of CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. Is it a **round trip** (start and end at the same place)?'
+    }
+  ]);
+  const [isAiViewActive, setIsAiViewActive] = useState(true);
 
   // Disambiguation State
   const [disambiguationOptions, setDisambiguationOptions] = useState(null);
@@ -319,27 +329,31 @@ function App() {
 
   // Wrapper for city setter to invalidate validation on edit
   const handleSetCity = (val) => {
-    // Only reset validation if the value actually changes
+    // Wrap setCity to clear validation when user types
     if (val !== city) {
       setCity(val);
       setValidatedCityData(null);
+      setStartPoint(''); // Reset start point when city changes
     }
   };
 
-  const handleCityValidation = async (context = 'blur', queryOverride = null, interestOverride = null) => {
+  const handleCityValidation = async (context = 'blur', queryOverride = null, interestOverride = null, paramsOverride = null) => {
     const query = queryOverride || city;
     if (!query || query.length < 2) return;
 
     // If already validated and input hasn't changed (data exists), skip fetch
-    // Only ignore cache if we have an explicit override
-    if (!queryOverride && validatedCityData) {
+    // Only ignore cache if we have an explicit override or new params
+    if (!queryOverride && validatedCityData && !paramsOverride) {
       if (context === 'submit') {
-        loadMapWithCity(validatedCityData, interestOverride);
+        loadMapWithCity(validatedCityData, interestOverride, paramsOverride);
       }
       return;
     }
 
     try {
+      // ... Nominatim logic continues ...
+      // In the successful match block (around line 430), pass paramsOverride:
+      // await loadMapWithCity(bestMatch, interestOverride, paramsOverride);
       let results = [];
       try {
         // 1. Try Nominatim (via Local Proxy to avoid CORS)
@@ -418,15 +432,25 @@ function App() {
 
       if (!results || results.length === 0) {
         if (context === 'submit') {
-          alert("City not found. Please try again.");
-          setIsSidebarOpen(true); // Re-open sidebar on error
+          if (searchMode === 'prompt') {
+            setIsAiViewActive(true);
+            setAiChatHistory(prev => [...prev, {
+              role: 'brain',
+              text: language === 'nl'
+                ? `Ik kon helaas geen stad of plek vinden met de naam "${query}". Weet je zeker dat de naam klopt?`
+                : `I couldn't find a city or place called "${query}". Are you sure the name is correct?`
+            }]);
+          } else {
+            alert("City not found. Please try again.");
+            setIsSidebarOpen(true); // Re-open sidebar on error
+          }
         }
         return;
       }
 
       const cityData = results;
 
-      if (cityData.length > 1) {
+      if (cityData.length > 1 && searchMode !== 'prompt') {
         setDisambiguationOptions(cityData);
         setDisambiguationContext(context);
         setIsSidebarOpen(true); // Re-open sidebar for disambiguation
@@ -439,7 +463,7 @@ function App() {
 
       if (context === 'submit') {
         // Proceed to map
-        await loadMapWithCity(match, interestOverride);
+        await loadMapWithCity(match, interestOverride, paramsOverride);
       } else {
         // On blur, maybe autofill
       }
@@ -752,8 +776,107 @@ function App() {
 
 
 
-  const handleJourneyStart = async (e, interestOverride = null) => {
+  const processAIPrompt = async (promptText, shouldAutoRead = false) => {
+    if (!promptText.trim()) return;
+
+    // Add user message to history
+    const newUserMsg = { role: 'user', text: promptText };
+    setAiChatHistory(prev => [...prev, newUserMsg]);
+    setAiPrompt(''); // Clear input
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Brain denkt na...' : 'Brain is thinking...');
+
+    try {
+      const updatedHistory = [...aiChatHistory, newUserMsg];
+      const engine = new PoiIntelligence({ language });
+      const result = await engine.parseNaturalLanguageInput(promptText, language, updatedHistory);
+
+      if (!result) throw new Error("Brain translation failed");
+
+      // Update local history with AI message
+      // Update local history with AI message
+      const aiResponseText = result.message;
+      setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
+
+      // Auto-read if requested
+      if (shouldAutoRead) {
+        const msgId = `brain-msg-${updatedHistory.length}`; // Next index
+        handleSpeak(aiResponseText, msgId);
+      }
+
+      // Extract and update state if params found
+      if (result.params) {
+        const p = result.params;
+        if (p.city) setCity(p.city);
+        if (p.interests) setInterests(p.interests);
+        if (p.travelMode) setTravelMode(p.travelMode);
+        if (p.constraintType) setConstraintType(p.constraintType);
+        if (p.constraintValue) setConstraintValue(p.constraintValue);
+        if (p.isRoundtrip !== undefined) setIsRoundtrip(p.isRoundtrip);
+        if (p.startPoint) setStartPoint(p.startPoint);
+      }
+
+      // Action based on status
+      if (result.status === 'close') {
+        setIsAiViewActive(false);
+        return null;
+      }
+
+      if (result.status === 'complete' && result.params?.interests) {
+
+        // INTELLIGENT ROUTE SWITCHING
+        // Determine if we should Start New or Add based on city context
+        const newCity = result.params.city;
+        const currentActiveCity = validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null);
+
+        // 1. Check for City Switch: If AI provides a city different from current one
+        // Note: 'city' state is updated above but 'validatedCityData' is from previous render, which is what we want to compare against.
+        const isCitySwitch = newCity && currentActiveCity && newCity.toLowerCase().trim() !== currentActiveCity.toLowerCase().trim();
+
+        // 2. Decide Action
+        // Start New if: No route exists, OR it's a different city
+        if (!routeData || isCitySwitch) {
+          if (!newCity && !routeData) return null; // Safety: need city to start
+
+          setIsAiViewActive(true); // Ensure we stay in chat to see final confirmation
+          await new Promise(r => setTimeout(r, 1500));
+          await handleCityValidation('submit', newCity || city, result.params.interests, result.params);
+          setIsAiViewActive(false); // Switch to itinerary view
+          return;
+        }
+
+        // Otherwise: ADD to current journey (Same city or implicit context)
+        if (routeData) {
+          setIsAiViewActive(true);
+          await new Promise(r => setTimeout(r, 1000));
+          return await handleAddToJourney(null, result.params.interests, result.params);
+        }
+      }
+
+      // Still interactive or missing city
+      return null;
+    } catch (err) {
+      console.error("AI Prompt processing failed", err);
+      setAiChatHistory(prev => [...prev, { role: 'brain', text: 'Oei, er liep iets mis bij het verwerken van je vraag. Probeer je het nog eens?' }]);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleJourneyStart = async (e, interestOverride = null, promptOverride = null) => {
     e && e.preventDefault();
+
+    if (searchMode === 'prompt') {
+      const activePrompt = promptOverride || aiPrompt;
+      if (!activePrompt.trim()) return;
+
+      const isVoice = e && e.isVoice === true;
+      await processAIPrompt(activePrompt, isVoice);
+      return;
+    }
+
     const activeInterest = interestOverride || interests;
 
     if (!activeInterest.trim()) return;
@@ -790,8 +913,15 @@ function App() {
     }
   };
 
-  const handleAddToJourney = async (e, interestOverride = null) => {
+  const handleAddToJourney = async (e, interestOverride = null, paramsOverride = null) => {
     e && e.preventDefault();
+
+    // AI ADDING SUPPORT: Use the unified conversational agent
+    if (searchMode === 'prompt' && !interestOverride) {
+      if (!aiPrompt.trim()) return;
+      return await processAIPrompt(aiPrompt);
+    }
+
     const activeInterest = interestOverride || interests;
     if (!activeInterest.trim()) return;
 
@@ -804,14 +934,25 @@ function App() {
       const currentPois = routeData.pois;
       const cityCenter = routeData.center;
 
-      // Use current sidebar constraints for the NEW search
-      // BUT for budget validation, we arguably should respect the ORIGINAL limit or at least the one currently set on the slider.
-      // Let's use the one on the slider (state), so if user increases it, we allow more. 
-      const constraints = { type: constraintType, value: constraintValue, isRoundtrip };
+      const activeParams = paramsOverride || {};
+      const effectiveTravelMode = activeParams.travelMode || travelMode;
+      const effectiveConstraintType = activeParams.constraintType || constraintType;
+      const effectiveConstraintValue = activeParams.constraintValue || constraintValue;
+      const effectiveRoundtrip = activeParams.isRoundtrip !== undefined ? activeParams.isRoundtrip : isRoundtrip;
+
+      // Use effective constraints
+      const constraints = {
+        type: effectiveConstraintType,
+        value: effectiveConstraintValue,
+        isRoundtrip: effectiveRoundtrip
+      };
 
       // 1. Fetch NEW candidates
-      let searchRadiusKm = constraintValue;
-      if (constraintType === 'duration') searchRadiusKm = (constraintValue / 60) * 5;
+      let searchRadiusKm = constraints.value;
+      if (constraints.type === 'duration') {
+        const speed = effectiveTravelMode === 'cycling' ? 15 : 5;
+        searchRadiusKm = (constraints.value / 60) * speed;
+      }
 
       let targetCityData = validatedCityData;
       if (!targetCityData) {
@@ -824,15 +965,23 @@ function App() {
       setFoundPoisCount(newCandidates.length);
 
       if (newCandidates.length === 0) {
-        // Propose Refinement
-        const suggestions = getInterestSuggestions(activeInterest, language);
-        if (suggestions.length > 0) {
-          setRefinementProposals(suggestions);
-          setLastAction('add');
-          return;
+        if (searchMode === 'prompt') {
+          setAiChatHistory(prev => [...prev, {
+            role: 'brain',
+            text: language === 'nl'
+              ? `Ik heb gezocht naar "${activeInterest}", maar ik kon helaas geen nieuwe plekjes vinden in de buurt van je route.`
+              : `I searched for "${activeInterest}", but unfortunately I couldn't find any new spots near your route.`
+          }]);
+        } else {
+          // Propose Refinement
+          const suggestions = getInterestSuggestions(activeInterest, language);
+          if (suggestions.length > 0) {
+            setRefinementProposals(suggestions);
+            setLastAction('add');
+            return;
+          }
+          alert(`No new spots found for "${activeInterest}".`);
         }
-
-        alert(`No new spots found for "${activeInterest}".`);
         return;
       }
 
@@ -844,7 +993,16 @@ function App() {
       console.log(`AddJourney: ${uniqueNew.length} unique candidates remaining after dedupe.`);
 
       if (uniqueNew.length === 0) {
-        alert('All found spots are already in your journey!');
+        if (searchMode === 'prompt') {
+          setAiChatHistory(prev => [...prev, {
+            role: 'brain',
+            text: language === 'nl'
+              ? `Het lijkt erop dat alle gevonden plekjes voor "${activeInterest}" al in je trip staan!`
+              : `It looks like all the spots I found for "${activeInterest}" are already in your trip!`
+          }]);
+        } else {
+          alert('All found spots are already in your journey!');
+        }
         return;
       }
 
@@ -892,8 +1050,11 @@ function App() {
       finalSteps = routeResult.steps;
 
       // Define Limit with tolerance
-      let targetLimitKm = constraintValue;
-      if (constraintType === 'duration') targetLimitKm = (constraintValue / 60) * 5;
+      let targetLimitKm = constraints.value;
+      if (constraints.type === 'duration') {
+        const speed = effectiveTravelMode === 'cycling' ? 15 : 5;
+        targetLimitKm = (constraints.value / 60) * speed;
+      }
       const maxLimitKm = targetLimitKm * 1.15; // 15% Tolerance
 
       const newRouteData = {
@@ -924,7 +1085,16 @@ function App() {
         // Fits! Update directly
         console.log("AddJourney: Fits within limit. Updating route directly.");
         setRouteData(newRouteData);
-        setIsSidebarOpen(false); // Close sidebar to show map
+        if (searchMode === 'prompt') {
+          setAiChatHistory(prev => [...prev, {
+            role: 'brain',
+            text: language === 'nl'
+              ? "Ik heb de nieuwe plekken toegevoegd aan je trip! Is er nog iets anders dat je wilt verbeteren of aanpassen? Ik help je graag verder."
+              : "I've added the new spots to your trip! Is there anything else you'd like to improve or adjust? I'm happy to help."
+          }]);
+        } else {
+          setIsSidebarOpen(false); // Close sidebar for standard modes
+        }
       }
 
     } catch (err) {
@@ -937,7 +1107,16 @@ function App() {
   const handleConfirmLimit = (proceed) => {
     if (proceed && limitConfirmation) {
       setRouteData(limitConfirmation.proposedRouteData);
-      setIsSidebarOpen(false);
+      if (searchMode === 'prompt') {
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: language === 'nl'
+            ? "Ik heb de nieuwe plekken toegevoegd aan je trip! Is er nog iets anders dat je wilt verbeteren of aanpassen? Ik help je graag verder."
+            : "I've added the new spots to your trip! Is there anything else you'd like to improve or adjust? I'm happy to help."
+        }]);
+      } else {
+        setIsSidebarOpen(false);
+      }
     }
     setLimitConfirmation(null);
   };
@@ -992,15 +1171,54 @@ function App() {
     }
   };
 
-  const loadMapWithCity = async (cityData, interestOverride = null) => {
+  const loadMapWithCity = async (cityData, interestOverride = null, paramsOverride = null) => {
     const { lat, lon } = cityData;
-    const cityCenter = [parseFloat(lat), parseFloat(lon)];
+    let cityCenter = [parseFloat(lat), parseFloat(lon)];
+
+    // Constraints object constructed from state OR override
+    const activeParams = paramsOverride || {};
+    const effectiveTravelMode = activeParams.travelMode || travelMode;
+    const effectiveConstraintType = activeParams.constraintType || constraintType;
+    const effectiveConstraintValue = activeParams.constraintValue || constraintValue;
+    const effectiveRoundtrip = activeParams.isRoundtrip !== undefined ? activeParams.isRoundtrip : isRoundtrip;
+    const effectiveStartPoint = activeParams.startPoint || startPoint;
+
+    // Handle Start Point (if provided by AI or user)
+    const activeStart = effectiveStartPoint;
+    const isCurrentLoc = activeStart && (activeStart.toLowerCase().includes('huidig') || activeStart.toLowerCase().includes('current') || activeStart.toLowerCase().includes('mijn locat'));
+
+    if (isCurrentLoc) {
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+        });
+        cityCenter = [pos.coords.latitude, pos.coords.longitude];
+      } catch (e) {
+        console.warn("Geolocation failed, falling back to city center", e);
+      }
+    } else if (activeStart && activeStart.trim().length > 2) {
+      try {
+        const cityName = cityData.address?.city || cityData.name;
+        const q = `${activeStart}, ${cityName}`;
+        const res = await fetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
+        const data = await res.json();
+        if (data && data[0]) {
+          cityCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        }
+      } catch (e) {
+        console.warn("Failed to geocode startPoint", e);
+      }
+    }
 
     // Ensure we use the latest interest if overridden
     const activeInterest = interestOverride || interests;
 
     // Constraints object constructed from state
-    const constraints = { type: constraintType, value: constraintValue, isRoundtrip };
+    const constraints = {
+      type: effectiveConstraintType,
+      value: effectiveConstraintValue,
+      isRoundtrip: effectiveRoundtrip
+    };
 
     // Use the city name from the data to improve the POI search
     // Prioritize specific locality names
@@ -1021,17 +1239,31 @@ function App() {
       // We will default to 15km for this mode if we want to be strict, but using the slider value is more flexible.
       // However, the prompt says "1. POIs found in a 15 km radius". Let's enforce 15km for this specific mode request to match description exactly.
       if (searchMode === 'radius') {
-        searchRadiusKm = constraintValue;
-      } else if (constraintType === 'duration') {
-        // Avg walking speed ~5km/h
-        searchRadiusKm = (constraintValue / 60) * 5;
+        searchRadiusKm = constraints.value;
+      } else if (constraints.type === 'duration') {
+        // Speed lookup: Walking ~5km/h, Cycling ~15km/h
+        const speed = effectiveTravelMode === 'cycling' ? 15 : 5;
+        searchRadiusKm = (constraints.value / 60) * speed;
       }
 
       const candidates = await getCombinedPOIs(cityData, activeInterest, cityName, searchRadiusKm, searchSources);
       setFoundPoisCount(candidates.length);
 
       if (candidates.length === 0) {
-        // Propose Refinement
+        if (searchMode === 'prompt') {
+          setIsAiViewActive(true);
+          setAiChatHistory(prev => [...prev, {
+            role: 'brain',
+            text: language === 'nl'
+              ? `Oei, ik kon helaas geen plekken vinden voor "${activeInterest}" in ${cityName}. Heb je misschien andere interesses of een andere plek in gedachten?`
+              : `Oops, I couldn't find any spots for "${activeInterest}" in ${cityName}. Do you have other interests or maybe another place in mind?`
+          }]);
+          setIsSidebarOpen(true);
+          setRouteData(null);
+          return;
+        }
+
+        // Propose Refinement (Standard Mode)
         const refinementOptions = getInterestSuggestions(activeInterest, language);
         if (refinementOptions.length > 0) {
           setRefinementProposals(refinementOptions);
@@ -1124,8 +1356,9 @@ function App() {
       const isRoundtrip = constraints.isRoundtrip; // Check if roundtrip
 
       if (constraints.type === 'duration') {
-        // Avg walking speed 5km/h => limit = (minutes / 60) * 5
-        targetLimitKm = (constraints.value / 60) * 5;
+        // Speed lookup: Walking ~5km/h, Cycling ~15km/h
+        const speed = effectiveTravelMode === 'cycling' ? 15 : 5;
+        targetLimitKm = (constraints.value / 60) * speed;
       }
 
       // User allows 15% tolerance above/below.
@@ -1266,16 +1499,73 @@ function App() {
     }
   };
 
+  const handleRemovePoi = async (poiId) => {
+    // 1. Filter out the POI
+    const updatedPois = routeData.pois.filter(p => p.id !== poiId);
+
+    // If no POIs left, just reset
+    if (updatedPois.length === 0) {
+      setRouteData(null);
+      setAiChatHistory(prev => [...prev, {
+        role: 'brain',
+        text: language === 'nl' ? "Je hebt alle punten verwijderd. Waar wil je nu heen?" : "You've removed all spots. Where to next?"
+      }]);
+      setIsAiViewActive(true);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // 2. Recalculate Route with remaining POIs
+      const cityCenter = routeData.center;
+      const routeResult = await calculateRoutePath(updatedPois, cityCenter, travelMode);
+
+      // 3. Update Route Data
+      setRouteData(prev => ({
+        ...prev,
+        pois: updatedPois,
+        routePath: routeResult.path,
+        navigationSteps: routeResult.steps,
+        stats: {
+          ...prev.stats,
+          totalDistance: routeResult.dist.toFixed(1),
+          walkDistance: (routeResult.walkDist || 0).toFixed(1)
+        }
+      }));
+
+      // 4. Update AI Chat
+      setAiChatHistory(prev => [...prev, {
+        role: 'brain',
+        text: language === 'nl'
+          ? "Route aangepast! Ik heb dat punt verwijderd en de snelste weg tussen de overgebleven plekken berekend."
+          : "Route updated! I've removed that spot and recalculated the quickest path between the remaining ones."
+      }]);
+
+    } catch (err) {
+      console.error("Failed to remove POI", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const resetSearch = () => {
     setRouteData(null);
     setDisambiguationOptions(null);
     setValidatedCityData(null);
-    // Clear form? Or keep it for convenience? 
-    // Usually cleaner to clear.
     setCity('');
     setInterests('');
     setConstraintValue(5);
-    setIsSidebarOpen(true); // Keep open
+    setStartPoint('');
+    setAiPrompt('');
+    setAiChatHistory([
+      {
+        role: 'brain', text: language === 'nl'
+          ? 'Hoi! Ik ben de Brain van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Is het een **rondtrip** (start en stop op hetzelfde punt)?'
+          : 'Hi! I am the Brain of CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. Is it a **round trip** (start and end at the same place)?'
+      }
+    ]);
+    setIsAiViewActive(true);
+    setIsSidebarOpen(true);
   };
 
   // Audio State
@@ -1323,11 +1613,37 @@ function App() {
     setIsSpeechPaused(false);
   };
 
-  const handleSpeak = (poi, force = false) => {
-    const isSame = speakingId === poi.id;
+  const handleSpeak = (poiOrText, forceOrId = false) => {
+    // Overload: Handle (text, id) call pattern from Chat
+    let isTextMode = typeof poiOrText === 'string';
+    let textToRead = '';
+    let uniqueId = '';
+    let shouldForce = false;
+
+    if (isTextMode) {
+      textToRead = poiOrText;
+      uniqueId = forceOrId; // 2nd arg is ID
+      shouldForce = true; // Always force play for chat clicks
+    } else {
+      // POI Object Mode
+      if (!poiOrText) return;
+      textToRead = poiOrText.description || '';
+      uniqueId = poiOrText.id;
+      shouldForce = forceOrId === true; // 2nd arg is force flag
+
+      // Determine text based on mode
+      const activeMode = poiOrText.active_mode || descriptionLength;
+      if (poiOrText.structured_info) {
+        if (activeMode === 'short') textToRead = poiOrText.structured_info.short_description;
+        else if (activeMode === 'medium') textToRead = poiOrText.structured_info.standard_description + (poiOrText.structured_info.one_fun_fact ? ". " + poiOrText.structured_info.one_fun_fact : "");
+        else if (activeMode === 'max') textToRead = poiOrText.structured_info.full_description;
+      }
+    }
+
+    const isSame = speakingId === uniqueId;
 
     // If not forcing (toggle), handle pause/resume
-    if (isSame && !force) {
+    if (isSame && !shouldForce) {
       if (isSpeechPaused) {
         window.speechSynthesis.resume();
         setIsSpeechPaused(false);
@@ -1342,16 +1658,8 @@ function App() {
     window.speechSynthesis.cancel();
     setSpokenCharCount(0);
 
-    if (!poi) return;
-
-    // Determine the exact text to read based on current active mode
-    const activeMode = poi.active_mode || descriptionLength;
-    let textToRead = poi.description || '';
-    if (poi.structured_info) {
-      if (activeMode === 'short') textToRead = poi.structured_info.short_description;
-      else if (activeMode === 'medium') textToRead = poi.structured_info.standard_description + (poi.structured_info.one_fun_fact ? ". " + poi.structured_info.one_fun_fact : "");
-      else if (activeMode === 'max') textToRead = poi.structured_info.full_description;
-    }
+    setSpeakingId(uniqueId);
+    if (!isTextMode) setCurrentSpeakingPoi(poiOrText); // Only track POI for auto-restart
 
     const u = new SpeechSynthesisUtterance(textToRead);
 
@@ -1411,17 +1719,17 @@ function App() {
       setSpokenCharCount(event.charIndex);
     };
 
-    setSpeakingId(poi.id);
-    setCurrentSpeakingPoi(poi);
     setIsSpeechPaused(false);
     window.speechSynthesis.speak(u);
   };
 
   // Handler for Sidebar Click
-  const handlePoiClick = (poi) => {
+  const handlePoiClick = (poi, forcedMode = null) => {
     setFocusedLocation(poi);
     if (autoAudio) {
-      handleSpeak(poi, true);
+      // Create a temporary POI object with the forced mode for speech
+      const poiToSpeak = forcedMode ? { ...poi, active_mode: forcedMode } : poi;
+      handleSpeak(poiToSpeak, true);
     }
   };
 
@@ -1503,6 +1811,7 @@ function App() {
       <div className="flex-1 relative overflow-hidden">
         <MapContainer
           routeData={routeData}
+          searchMode={searchMode}
           focusedLocation={focusedLocation}
           language={language}
           onPoiClick={handlePoiClick}
@@ -1542,6 +1851,7 @@ function App() {
       <ItinerarySidebar
         routeData={routeData}
         onPoiClick={handlePoiClick}
+        onRemovePoi={handleRemovePoi}
         onReset={resetSearch}
         language={language}
         setLanguage={setLanguage} // Add setter for sidebar toggle
@@ -1594,6 +1904,12 @@ function App() {
         onStyleChange={setTravelMode}
         onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
         onStopSpeech={stopSpeech}
+
+        aiPrompt={aiPrompt}
+        setAiPrompt={setAiPrompt}
+        aiChatHistory={aiChatHistory}
+        isAiViewActive={isAiViewActive}
+        setIsAiViewActive={setIsAiViewActive}
       />
 
       {/* Refinement Modal */}

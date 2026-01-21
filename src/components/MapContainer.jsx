@@ -228,7 +228,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled }) => {
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
 
@@ -867,7 +867,7 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                                         className: 'bg-transparent border-none',
                                         html: `<div style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: transform 0.8s;" class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
                                                  ${iconHtml ? `<div class="mb-[1px] -mt-1 scale-75">${iconHtml}</div>` : ''}
-                                                 <span class="text-[10px] font-bold leading-none">${idx + 1}</span>
+                                                 ${searchMode === 'radius' ? '' : `<span class="text-[10px] font-bold leading-none">${idx + 1}</span>`}
                                                </div>`,
                                         iconSize: [40, 40],
                                         iconAnchor: [20, 20]
@@ -1177,7 +1177,9 @@ const MapContainer = ({ routeData, focusedLocation, language, onPoiClick, onPopu
                     let hudInstruction = targetPoi.name;
                     let hudDistance = calcDistance(userLocation, targetPoi);
                     let bearingTarget = targetPoi;
-                    let hudSubline = `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
+                    let hudSubline = searchMode === 'radius'
+                        ? (language === 'nl' ? 'Beschikbare Spot' : 'Available Spot')
+                        : `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
 
                     if (isNavigating && steps && steps.length > 0) {
                         let minD = Infinity;

@@ -145,7 +145,7 @@ export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => 
 
 export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
     // Proxy call
-    // Proxy call
+    const maxRadius = Math.min(radius, 50000); // Google Places Limit is 50,000 meters
     const url = '/api/google-places';
 
     try {
@@ -157,7 +157,7 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
             body: JSON.stringify({
                 textQuery: interest,
                 center: { lat, lng },
-                radius: radius
+                radius: maxRadius
             })
         });
 

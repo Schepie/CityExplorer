@@ -185,6 +185,111 @@ Genereer de introductie voor de tocht in ${this.config.city}.
         }
     }
 
+    /**
+     * Extracts structured trip parameters from a natural language prompt.
+     * Support interactive conversation by maintaining context.
+     */
+    async parseNaturalLanguageInput(userInput, language = 'nl', history = []) {
+        const historyContext = history.map(msg => `${msg.role === 'user' ? 'Gebuiker' : 'Brain'}: ${msg.text}`).join('\n');
+
+        const prompt = `
+Je bent de "Brain" van een intelligente reisplanner app genaamd CityExplorer.
+Je taak is om een gesprek te voeren met de gebruiker om een ideale route uit te stippelen.
+
+### GESPREKSHISTORIE
+${historyContext}
+
+### NIEUWE INPUT VAN DE GEBRUIKER
+"${userInput}"
+
+### JOUW DOEL
+1. Jij bent de EXPERT gids. Ontwerp zelfstandig het ideale plan.
+2. Je gebruikt hetzelfde onderliggende algoritme als de "Trip" modus. Dit betekent dat je de volgende informatie MOET hebben of vaststellen voordat je de status op "complete" zet:
+   - **Stad/Plaats**: Welke specifieke stad of plek wil de gebruiker verkennen?
+   - **Reiswijze**: Gaan ze wandelen ("walking") of fietsen ("cycling")?
+   - **Lengte**: Hoe lang (minuten) of hoe ver (km) moet de trip zijn? (Maak een deskundige inschatting als de gebruiker vage termen gebruikt zoals "een middagje").
+   - **Rondtrip**: Is het een rondtrip? Zo ja, vraag ALTIJD naar een specifiek startpunt (bijv. een hotel, station of 'huidige locatie') als dit nog niet bekend is.
+3. Je mag zelfstandig de interesses verfijnen of uitbreiden om de beste ervaring te bieden.
+4. Indien er cruciale informatie ontbreekt, stel dan een vriendelijke vraag in je "message".
+5. Zodra je alle parameters hebt (Stad, Reiswijze, Lengte, Rondtrip status en eventueel Startpunt), stel dan voor om de route te genereren en leg uit waarom je voor deze parameters hebt gekozen. Zet dan de status op "complete".
+6. Wees interactief: praat met de gebruiker, wees enthousiast en pas het plan aan op basis van feedback.
+
+### EXTRACHEERBARE PARAMETERS
+- **city**: De stad of regio.
+- **travelMode**: "walking" of "cycling".
+- **constraintType**: "duration" of "distance".
+- **constraintValue**: Jouw DESKUNDIGE inschatting of de expliciete wens van de gebruiker (minuten voor tijd, km voor afstand).
+- **interests**: Een geoptimaliseerde lijst van zoektermen/interesses gebaseerd op het gesprek.
+- **pauses**: Wensen voor pauzes.
+- **startPoint**: Specifieke naam van de startlocatie (bijv. "Station Hasselt").
+- **isRoundtrip**: Boolean.
+
+### OUTPUT JSON STRUCTUUR
+Je MOET antwoorden met een JSON object in dit formaat:
+{
+  "status": "complete" | "interactive" | "close",
+  "message": "Jouw bericht aan de gebruiker. Wees een gids: adviseer, leg uit en vraag om feedback.",
+  "params": {
+     "city": string | null,
+     "travelMode": "walking" | "cycling",
+     "constraintType": "duration" | "distance",
+     "constraintValue": number | null,
+     "interests": string | null,
+     "pauses": string | null,
+     "startPoint": string | null,
+     "isRoundtrip": boolean
+  }
+}
+
+### REGELS
+- De status mag pas op "complete" als je Stad, TravelMode, Constraint en Roundtrip info hebt.
+- Vraag bij een rondtrip specifiek naar het startpunt als dat relevant is voor de gebruiker.
+- Indien de gebruiker vraagt om de planner te **sluiten**, te **stoppen** of de **trip te bekijken**, zet de status op "close".
+- Indien de gebruiker vraagt om iets **toe te voegen** of te **verwijderen**, pas je de \`interests\` aan en leg je uit wat je hebt gedaan.
+- Gebruik taal: ${language === 'nl' ? 'Nederlands' : 'English'}.
+`;
+
+        try {
+            const url = '/api/gemini';
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
+            });
+
+            if (!response.ok) return null;
+            const data = await response.json();
+            const text = data.text;
+            if (!text) return null;
+
+            const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            // Fix invalid backslashes (e.g. C:\Path) that are not part of valid escape sequences
+            const sanitized = cleanText.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+
+            let parsed;
+            try {
+                parsed = JSON.parse(sanitized);
+            } catch (jsonErr) {
+                // Retry without sanitization if strict parsing failed (sometimes regex over-corrects)
+                console.warn("Sanitized JSON parse failed, retrying raw:", jsonErr);
+                try {
+                    parsed = JSON.parse(cleanText);
+                } catch (e2) {
+                    console.error("Critical JSON Parse Error. Raw Text:", cleanText);
+                    throw e2;
+                }
+            }
+
+            // Add fallback for status if AI forgot it
+            if (!parsed.status) parsed.status = (parsed.city ? "complete" : "interactive");
+
+            return parsed;
+        } catch (e) {
+            console.warn("Prompt Parsing Failed:", e);
+            return null;
+        }
+    }
+
 
 
     async fetchGeminiDescription(poi, signals, lengthMode = 'medium') {
