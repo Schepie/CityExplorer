@@ -254,6 +254,7 @@ const SidebarInput = ({
                     </button>
                     <button
                         type="button"
+                        onClick={() => setSearchMode('journey')}
                         className={`py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-all flex flex-col items-center gap-1 ${searchMode === 'journey' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2 2 4-4" /><path d="M13 7h8" /><path d="m3 12 2 2 4-4" /><path d="M13 12h8" /><path d="m3 17 2 2 4-4" /><path d="M13 17h8" /></svg>
@@ -696,6 +697,9 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
     useEffect(() => {
         if (!center) return;
 
+        // Reset description to null to show loading state and prevent stale text
+        setDescription(null);
+
         // 1. Weather
         fetch(`https://api.open-meteo.com/v1/forecast?latitude=${center[0]}&longitude=${center[1]}&current_weather=true`)
             .then(r => r.json())
@@ -704,7 +708,7 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
 
         // 2. City Description via Intelligence Engine
         const actualDist = stats?.totalDistance ? `${stats.totalDistance} km` : `${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}`;
-        const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${actualDist}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+        const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (Total Length: ${actualDist}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
         const engine = new PoiIntelligence({
             city: city,
             language: language,
