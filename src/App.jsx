@@ -799,11 +799,9 @@ function App() {
       const aiResponseText = result.message;
       setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
 
-      // Auto-read if requested
-      if (shouldAutoRead) {
-        const msgId = `brain-msg-${updatedHistory.length}`; // Next index
-        handleSpeak(aiResponseText, msgId);
-      }
+      setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
+
+      // Auto-read logic removed as per user request
 
       // Extract and update state if params found
       if (result.params) {
@@ -1863,6 +1861,7 @@ function App() {
         isSpeechPaused={isSpeechPaused}
         spokenCharCount={spokenCharCount}
         onSpeak={handleSpeak}
+        onStopSpeech={stopSpeech}
         autoAudio={autoAudio}
         setAutoAudio={setAutoAudio}
         focusedLocation={focusedLocation}
@@ -1903,7 +1902,6 @@ function App() {
         travelMode={travelMode}
         onStyleChange={setTravelMode}
         onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
-        onStopSpeech={stopSpeech}
 
         aiPrompt={aiPrompt}
         setAiPrompt={setAiPrompt}

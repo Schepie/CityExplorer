@@ -1,21 +1,50 @@
-# React + Vite
+# CityExplorer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+CityExplorer is an intelligent, AI-powered travel assistant that creates personalized routes for walking and cycling in any city. Unlike traditional map apps that compel you to plan everything yourself, CityExplorer acts as a local guide: tell it what you want, and it builds a route, guides you, and tells stories about the places you visit.
 
-Currently, two official plugins are available:
+## 📚 Documentation
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+We have detailed documentation available in the `docs/` folder:
 
-## React Compiler
+*   **[User Manual (Handleiding)](docs/HANDLEIDING.md)**:
+    A guide for non-technical users explaining how to use the AI Planner, Voice controls, and Audio Guide.
+    *(Nederlandstalige handleiding voor eindgebruikers)*
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+*   **[Architecture Overview](docs/ARCHITECTURE.md)**:
+    A high-level look at how the system is built, including the "Brain" (AI), Voice processing, and Data flow.
+    *(Technical architecture document)*
 
-## Expanding the ESLint configuration
+*   **[Technical Modules](docs/MODULES.md)**:
+    Deep dive into the external libraries (Leaflet, Gemini, React) and internal services (`PoiIntelligence`, `ItinerarySidebar`).
+    *(Detailed technical reference)*
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🚀 Quick Start
 
-## Setup
+1.  **Install Dependencies**
+    ```bash
+    npm install
+    ```
 
-1. Copy `.env.example` to `.env`
-2. Add your Foursquare API key to `VITE_FOURSQUARE_KEY` in the `.env` file for enhanced POI data.
+2.  **Environment Setup**
+    Copy `.env.example` to `.env` and add your API keys (Google Gemini, etc.):
+    ```bash
+    cp .env.example .env
+    ```
+
+3.  **Run Locally**
+    Start both the frontend and the backend functions:
+    ```bash
+    npm run dev
+    ```
+
+## 🌟 Key Features
+
+*   **🗣️ Verbal Interface**: Talk to the app naturally ("I want a short walk in Ghent").
+*   **🧠 AI "Brain"**: Uses Large Language Models to interpret intent and rewrite POI descriptions.
+*   **🎧 Auto-Audio Guide**: Automatically reads stories when you approach a landmark.
+*   **🗑️ Dynamic Re-routing**: Remove a stop, and the route instantly recalculates.
+*   **🌍 Universal Coverage**: Works anywhere with OpenStreetMap data.
+
+## License
+
+Private Project.

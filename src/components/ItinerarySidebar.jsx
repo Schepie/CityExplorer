@@ -16,10 +16,10 @@ const SidebarInput = ({
     aiPrompt, setAiPrompt,
     aiChatHistory,
     isAiViewActive, setIsAiViewActive,
-    routeData,
     onSpeak, voiceSettings,
     speakingId, spokenCharCount,
-    isLoading
+    isLoading, onRemovePoi, onStopSpeech,
+    routeData
 }) => {
     const [isListening, setIsListening] = useState(false);
     const [wasVoiceInitiated, setWasVoiceInitiated] = useState(false);
@@ -95,8 +95,8 @@ const SidebarInput = ({
                         console.log("[Voice] Silence detected. Submitting:", currentText);
                         if (recognitionRef.current) recognitionRef.current.stop();
                         if (onJourneyStartRef.current) {
-                            // Pass isVoice: true to trigger auto-reading of the response
-                            onJourneyStartRef.current({ preventDefault: () => { }, isVoice: true }, null, currentText);
+                            // isVoice: true removed so auto-read is disabled
+                            onJourneyStartRef.current({ preventDefault: () => { } }, null, currentText);
                         }
                     }, waitTime);
                 }
@@ -126,6 +126,9 @@ const SidebarInput = ({
         if (isListening) {
             recognitionRef.current.stop();
         } else {
+            // Stop any ongoing speech (TTS) before listening
+            if (onStopSpeech) onStopSpeech();
+
             setIsListening(true);
             recognitionRef.current.start();
         }
@@ -233,18 +236,7 @@ const SidebarInput = ({
         }
     }, [shouldAutoFocusInterests, setShouldAutoFocusInterests]);
 
-    // Auto-read newly added AI responses if voice was used
-    useEffect(() => {
-        if (wasVoiceInitiated && aiChatHistory.length > 0) {
-            const lastIdx = aiChatHistory.length - 1;
-            const lastMsg = aiChatHistory[lastIdx];
-            if (lastMsg.role === 'brain') {
-                // Use a consistent ID that matches the one in the render loop
-                if (onSpeak) onSpeak(lastMsg.text, `brain-msg-${lastIdx}`);
-                setWasVoiceInitiated(false);
-            }
-        }
-    }, [aiChatHistory, wasVoiceInitiated, onSpeak]);
+    // Auto-read logic removed as per user request
 
     return (
         <div className="space-y-3 pt-2">
@@ -307,7 +299,7 @@ const SidebarInput = ({
                         />
                         <div className="absolute right-2 bottom-4.5 flex gap-1 z-10">
                             {/* Toggle between Voice and Send based on input type */}
-                            {(!aiPrompt.trim() || wasVoiceInitiated || isListening) ? (
+                            {(!(aiPrompt || "").trim() || wasVoiceInitiated || isListening) ? (
                                 <button
                                     type="button"
                                     onClick={toggleListening}
@@ -330,7 +322,7 @@ const SidebarInput = ({
                                         setWasVoiceInitiated(false);
                                         onJourneyStart(e);
                                     }}
-                                    disabled={!aiPrompt.trim()}
+                                    disabled={!(aiPrompt || "").trim()}
                                     className="h-8 w-8 flex items-center justify-center bg-primary text-white rounded-xl shadow-lg hover:bg-primary/80 hover:scale-105 active:scale-95 disabled:opacity-30 disabled:scale-100 transition-all"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg>
@@ -364,7 +356,7 @@ const SidebarInput = ({
                                 </div>
                             </div>
                         )}
-                        {aiChatHistory.map((msg, i) => ({ ...msg, originalIdx: i })).reverse().map((msg, idx) => {
+                        {(aiChatHistory || []).map((msg, i) => ({ ...msg, originalIdx: i })).reverse().map((msg, idx) => {
                             const originalIdx = msg.originalIdx;
                             return (
                                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-top-2 duration-500`}>
@@ -2037,6 +2029,8 @@ const ItinerarySidebar = ({
                                     onSpeak={onSpeak}
                                     voiceSettings={voiceSettings}
                                     isLoading={isLoading}
+                                    onStopSpeech={onStopSpeech}
+                                    onRemovePoi={onRemovePoi}
                                 />
                             </div>
                         )}
