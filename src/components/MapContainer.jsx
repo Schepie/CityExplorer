@@ -229,7 +229,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation }) => {
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
 
@@ -321,8 +321,8 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
     const [navigationPath, setNavigationPath] = useState(null);
 
-    const [userLocation, setUserLocation] = useState(null);
-    const setLocalUserLocation = (loc) => setUserLocation(loc); // Keep setter for interior logic
+    // Lifted state (passed as prop now)
+    const setLocalUserLocation = (loc) => setUserLocation(loc); // Keep setter alias for compatibility
 
     // Fetch user location
     // Fetch user location
@@ -1174,6 +1174,32 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                     const targetPoi = focusedLocation || pois[0];
                     const steps = routeData?.navigationSteps;
 
+                    // Progress Stats Calculation
+                    let progressStats = null;
+                    if (isNavigating && steps && steps.length > 0) {
+                        const totalDistKm = steps.reduce((acc, s) => acc + s.distance, 0) / 1000;
+                        let minD = Infinity;
+                        let closestIdx = 0;
+                        steps.forEach((s, i) => {
+                            // Re-use calcDistance available in scope
+                            const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                            if (d < minD) { minD = d; closestIdx = i; }
+                        });
+                        const targetIdx = Math.min(closestIdx + 1, steps.length - 1);
+                        const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                        let remainingStepsKm = 0;
+                        for (let i = targetIdx + 1; i < steps.length; i++) {
+                            remainingStepsKm += steps[i].distance / 1000;
+                        }
+                        const remainingKm = distToTarget + remainingStepsKm;
+                        const doneKm = Math.max(0, totalDistKm - remainingKm);
+                        progressStats = {
+                            total: totalDistKm.toFixed(1),
+                            done: doneKm.toFixed(1),
+                            left: remainingKm.toFixed(1)
+                        };
+                    }
+
                     let hudIcon = '📍';
                     let hudInstruction = targetPoi.name;
                     let hudDistance = calcDistance(userLocation, targetPoi);
@@ -1269,7 +1295,15 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                 <div className="text-xs font-semibold text-white truncate w-full text-center leading-tight">
                                     {isNavigating ? hudInstruction : (language === 'nl' ? 'Kies een bestemming' : 'Select a destination')}
                                 </div>
+                                {isNavigating && progressStats && (
+                                    <div className="mt-1.5 pt-1.5 border-t border-white/10 w-full flex justify-between items-center text-[10px] text-slate-300 font-mono">
+                                        <span>Done: <span className="text-white font-bold">{progressStats.done}</span> km</span>
+                                        <span className="opacity-30">|</span>
+                                        <span>Left: <span className="text-white font-bold">{progressStats.left}</span> km</span>
+                                    </div>
+                                )}
                             </div>
+
 
                             {/* 3. Start/Stop Navigation (Right Side, below Distance) */}
                             <div className={`absolute top-[192px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>

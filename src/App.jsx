@@ -83,6 +83,9 @@ function App() {
   // Focused Location (for "Fly To" interaction)
   const [focusedLocation, setFocusedLocation] = useState(null);
 
+  // Lifted User Location (shared between Map and NavigationOverlay)
+  const [userLocation, setUserLocation] = useState(null);
+
   // Form State (Lifted from JourneyInput)
   const [city, setCity] = useState('');
   const [validatedCityData, setValidatedCityData] = useState(null); // Store resolved city data
@@ -1809,6 +1812,8 @@ function App() {
           routeData={routeData}
           searchMode={searchMode}
           focusedLocation={focusedLocation}
+          userLocation={userLocation}
+          setUserLocation={setUserLocation}
           language={language}
           onPoiClick={handlePoiClick}
           onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
@@ -1843,6 +1848,7 @@ function App() {
         steps={routeData?.navigationSteps}
         pois={routeData?.pois}
         language={language}
+        userLocation={userLocation}
         isOpen={isNavigationOpen}
         onClose={() => setIsNavigationOpen(false)}
         onToggle={() => setIsNavigationOpen(!isNavigationOpen)}

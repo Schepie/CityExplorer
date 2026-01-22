@@ -18,6 +18,17 @@ const getManeuverIcon = (modifier, type) => {
     }
 };
 
+const calcDistance = (p1, p2) => {
+    const R = 6371; // km
+    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+    const dLon = (p2.lng - p1.lng) * Math.PI / 180;
+    const lat1 = (p1.lat) * Math.PI / 180;
+    const lat2 = (p2.lat) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
+
 // Translate Instructions (Basic)
 const translateInstruction = (step, lang) => {
     // OSRM provides English text in step.name and step.maneuver.
@@ -45,7 +56,7 @@ const translateInstruction = (step, lang) => {
     return `Ga ${m} op ${name || 'het pad'}`;
 };
 
-const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle }) => {
+const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, userLocation }) => {
     let activeSteps = steps;
     let isFallback = false;
 
@@ -62,6 +73,44 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle })
 
     const hasSteps = activeSteps && activeSteps.length > 0;
 
+    // Calculate Progress
+    let progressStats = null;
+    if (hasSteps && userLocation && !isFallback) {
+        // 1. Total Distance (Sum of all steps)
+        const totalDistKm = activeSteps.reduce((acc, s) => acc + s.distance, 0) / 1000;
+
+        // 2. Find Closest Step Start
+        let minD = Infinity;
+        let closestIdx = 0;
+        activeSteps.forEach((s, i) => {
+            const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+            if (d < minD) {
+                minD = d;
+                closestIdx = i;
+            }
+        });
+
+        // 3. Approximate Remaining
+        const targetIdx = Math.min(closestIdx + 1, activeSteps.length - 1);
+        const distToTarget = calcDistance(userLocation, { lat: activeSteps[targetIdx].maneuver.location[1], lng: activeSteps[targetIdx].maneuver.location[0] });
+
+        // Sum remaining steps
+        let remainingStepsKm = 0;
+        for (let i = targetIdx + 1; i < activeSteps.length; i++) {
+            remainingStepsKm += activeSteps[i].distance / 1000;
+        }
+
+        const remainingKm = distToTarget + remainingStepsKm;
+        const doneKm = Math.max(0, totalDistKm - remainingKm);
+
+        progressStats = {
+            total: totalDistKm.toFixed(1),
+            done: doneKm.toFixed(1),
+            left: remainingKm.toFixed(1),
+            percent: Math.min(100, Math.max(0, (doneKm / totalDistKm) * 100))
+        };
+    }
+
     return (
         <>
             {/* Overlay Panel */}
@@ -76,6 +125,11 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle })
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <span>🚶</span> {language === 'nl' ? 'Routebeschrijving' : 'Turn-by-turn Navigation'}
                             </h3>
+                            {progressStats && (
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                    {progressStats.done} / {progressStats.total} km
+                                </div>
+                            )}
                             <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
