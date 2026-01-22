@@ -1305,17 +1305,17 @@ const ItinerarySidebar = ({
                         onTouchStart={onTouchStart}
                         onTouchMove={onTouchMove}
                         onTouchEnd={() => onButtonTouchEnd('itinerary')}
-                        className="absolute bottom-4 left-0 z-[400] w-[120px] h-20 flex items-center group outline-none"
+                        className="absolute bottom-4 left-0 z-[400] w-[80px] h-12 flex items-center group outline-none"
                         title={language === 'nl' ? 'Uitklappen' : 'Expand'}
                     >
                         <div
                             style={{ backgroundColor: activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6' }}
-                            className="w-12 h-full rounded-r-2xl flex items-center justify-center shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 group-hover:opacity-100"
+                            className="w-10 h-full rounded-r-xl flex items-center justify-center shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 group-hover:opacity-100"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 md:hidden group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 md:hidden group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                             </svg>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 hidden md:block group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 hidden md:block group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                             </svg>
                         </div>

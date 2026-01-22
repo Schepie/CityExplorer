@@ -878,32 +878,33 @@ function App() {
         return null;
       }
 
-      if (result.status === 'complete' && result.params?.interests) {
-
-        // INTELLIGENT ROUTE SWITCHING
-        // Determine if we should Start New or Add based on city context
-        const newCity = result.params.city;
+      if (result.status === 'complete') {
+        const newCity = result.params?.city;
         const currentActiveCity = validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null);
-
-        // 1. Check for City Switch: If AI provides a city different from current one
-        // Note: 'city' state is updated above but 'validatedCityData' is from previous render, which is what we want to compare against.
         const isCitySwitch = newCity && currentActiveCity && newCity.toLowerCase().trim() !== currentActiveCity.toLowerCase().trim();
 
-        // 2. Decide Action
-        // Start New if: No route exists, OR it's a different city
-        if (!routeData || isCitySwitch) {
-          if (!newCity && !routeData) return null; // Safety: need city to start
+        // Fallback for interests
+        const effectiveInterests = result.params?.interests || interests;
 
-          setIsAiViewActive(true); // Ensure we stay in chat to see final confirmation
-          await handleCityValidation('submit', newCity || city, result.params.interests, result.params);
-          // setIsAiViewActive(false); // REMOVED: Keep chat open for feedback
+        // CASE A: Start New / Regenerate
+        if (searchMode === 'prompt' || !routeData || isCitySwitch) {
+          const finalCity = newCity || city;
+          if (!finalCity || !effectiveInterests) return null;
+
+          setIsAiViewActive(true);
+          await handleCityValidation('submit', finalCity, effectiveInterests, result.params);
+
+          // Switch to itinerary view after a small delay
+          setTimeout(() => setIsAiViewActive(false), 2000);
           return;
         }
 
-        // Otherwise: ADD to current journey (Same city or implicit context)
-        if (routeData) {
+        // CASE B: ADD to current journey
+        if (routeData && effectiveInterests) {
           setIsAiViewActive(true);
-          return await handleAddToJourney(null, result.params.interests, result.params);
+          await handleAddToJourney(null, effectiveInterests, result.params);
+          setTimeout(() => setIsAiViewActive(false), 2000);
+          return;
         }
       }
 
