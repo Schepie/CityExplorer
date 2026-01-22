@@ -1137,7 +1137,7 @@ const ItinerarySidebar = ({
             // 2. Get Nearby Big Cities (Overpass) -> >15k pop within 50km
             try {
                 const query = `
-                    [out:json][timeout:10];
+                    [out:json][timeout:25];
                     (
                       node["place"="city"](around:50000,${latitude},${longitude});
                       node["place"="town"](around:50000,${latitude},${longitude});
@@ -1147,7 +1147,7 @@ const ItinerarySidebar = ({
                 const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
                 // Fetch with 8s timeout
-                const res = await fetch(overpassUrl, { signal: AbortSignal.timeout(8000) });
+                const res = await fetch(overpassUrl, { signal: AbortSignal.timeout(20000) });
 
                 if (!res.ok) throw new Error(`Overpass status ${res.status}`);
                 const data = await res.json();
@@ -1305,7 +1305,7 @@ const ItinerarySidebar = ({
                         onTouchStart={onTouchStart}
                         onTouchMove={onTouchMove}
                         onTouchEnd={() => onButtonTouchEnd('itinerary')}
-                        className="absolute top-4 left-0 z-[400] w-[120px] h-20 flex items-center group outline-none"
+                        className="absolute bottom-4 left-0 z-[400] w-[120px] h-20 flex items-center group outline-none"
                         title={language === 'nl' ? 'Uitklappen' : 'Expand'}
                     >
                         <div
@@ -1317,26 +1317,6 @@ const ItinerarySidebar = ({
                             </svg>
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 hidden md:block group-hover:scale-110 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                            </svg>
-                        </div>
-                    </button>
-
-                    {/* Left Bottom Settings Toggle */}
-                    <button
-                        onClick={handleOpenSettings}
-                        onTouchStart={onTouchStart}
-                        onTouchMove={onTouchMove}
-                        onTouchEnd={() => onButtonTouchEnd('settings')}
-                        className="absolute bottom-4 left-0 z-[400] w-[120px] h-20 flex items-center group outline-none"
-                        title={language === 'nl' ? 'Instellingen' : 'Settings'}
-                    >
-                        <div
-                            style={{ backgroundColor: activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6' }}
-                            className="w-12 h-full rounded-r-2xl flex items-center justify-center shadow-[4px_0_15px_rgba(0,0,0,0.3)] border border-white/20 border-l-0 transition-all opacity-70 group-hover:opacity-100"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-hover:rotate-45 transition-transform text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
                         </div>
                     </button>
@@ -2079,7 +2059,7 @@ const ItinerarySidebar = ({
                             </div>
 
                             {areOptionsVisible && (
-                                <div className="mt-2 grid grid-cols-3 gap-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
+                                <div className="mt-2 grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
                                     <button
                                         onClick={() => {
                                             setIsAddingMode(false);
@@ -2092,13 +2072,7 @@ const ItinerarySidebar = ({
                                         <span className="text-[9px] font-bold text-slate-300 uppercase group-hover:text-white transition-colors">{text.reset}</span>
                                     </button>
 
-                                    <button
-                                        onClick={() => setIsAddingMode(true)}
-                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-slate-800/40 hover:bg-slate-800/80 border border-white/5 hover:border-primary/30 transition-all group shadow-lg"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-                                        <span className="text-[9px] font-bold text-slate-300 uppercase group-hover:text-white transition-colors">{text.add_short}</span>
-                                    </button>
+
 
                                     <button
                                         onClick={onSave}

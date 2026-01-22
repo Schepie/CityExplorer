@@ -176,7 +176,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
             const targetZoom = 16;
             const size = map.getSize();
 
-            const shiftY = size.y * 0.35;
+            const shiftY = size.y * 0.42;
             const centerPoint = map.project([focusedLocation.lat, focusedLocation.lng], targetZoom);
             const newCenterPoint = centerPoint.subtract([0, shiftY]);
             const newCenterLatLng = map.unproject(newCenterPoint, targetZoom);
@@ -229,7 +229,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0 }) => {
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
 
@@ -294,7 +294,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     const lastOpenedPopupIdRef = useRef(null);
 
     // Track active POI index for sequential navigation
-    const [activePoiIndex, setActivePoiIndex] = useState(0);
+    // Lifted to App.jsx: activePoiIndex
     const lastReachedPoiIndexRef = useRef(-1); // Separate ref to track navigation progress
 
     // Reset active index ONLY when the route's POIs change fundamentally.
@@ -895,7 +895,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                                 {/* Left: Detail Level Toggles */}
                                                 <div className="flex bg-slate-100/80 rounded-lg p-0.5 border border-slate-200">
                                                     {[
-                                                        { id: 'short', label: 'Brief', icon: <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8-8 8z" /><path d="M11 7h2v2h-2zm0 4h2v6h-2z" /></> },
+                                                        { id: 'short', label: 'Brief', icon: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" /> },
                                                         { id: 'medium', label: 'Standard', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
                                                         { id: 'max', label: 'Detailed', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
                                                     ].map(opt => (
@@ -1098,247 +1098,276 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                 </Marker>
                             );
                         })}
+
+                        {/* --- TOP HUD & CONTROLS MOVED INSIDE MAP TO RESPECT POPUP Z-INDEX --- */}
+
+                        {/* Top Navigation HUD - Instruction Only */}
+                        {
+                            userLocation && pois.length > 0 && !isInputMode && (() => {
+                                const targetPoi = focusedLocation || pois[0];
+                                const steps = routeData?.navigationSteps;
+
+                                // Progress Stats Calculation
+                                let progressStats = null;
+                                if (isNavigating && steps && steps.length > 0) {
+                                    const totalDistKm = steps.reduce((acc, s) => acc + s.distance, 0) / 1000;
+                                    let minD = Infinity;
+                                    let closestIdx = 0;
+                                    steps.forEach((s, i) => {
+                                        // Re-use calcDistance available in scope
+                                        const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                                        if (d < minD) { minD = d; closestIdx = i; }
+                                    });
+                                    const targetIdx = Math.min(closestIdx + 1, steps.length - 1);
+                                    const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                                    let remainingStepsKm = 0;
+                                    for (let i = targetIdx + 1; i < steps.length; i++) {
+                                        remainingStepsKm += steps[i].distance / 1000;
+                                    }
+                                    const remainingKm = distToTarget + remainingStepsKm;
+                                    const doneKm = Math.max(0, totalDistKm - remainingKm);
+
+                                    // Total Trip Calculation
+                                    const tripDone = (pastDistance || 0) + doneKm;
+                                    const tripTotal = parseFloat(routeData?.stats?.totalDistance || 0);
+                                    // Fallback to current leg if trip total is missing (e.g. single leg)
+                                    const finalTotal = tripTotal > 0.1 ? tripTotal : totalDistKm;
+                                    const finalLeft = Math.max(0, finalTotal - tripDone);
+
+                                    progressStats = {
+                                        leg: {
+                                            done: doneKm.toFixed(1),
+                                            left: remainingKm.toFixed(1)
+                                        },
+                                        trip: {
+                                            done: tripDone.toFixed(1),
+                                            left: finalLeft.toFixed(1),
+                                            total: finalTotal.toFixed(1)
+                                        }
+                                    };
+                                }
+
+                                let hudIcon = '📍';
+                                let hudInstruction = targetPoi.name;
+                                let hudDistance = calcDistance(userLocation, targetPoi);
+                                let bearingTarget = targetPoi;
+                                let hudSubline = searchMode === 'radius'
+                                    ? (language === 'nl' ? 'Beschikbare Spot' : 'Available Spot')
+                                    : `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
+
+                                if (isNavigating && steps && steps.length > 0) {
+                                    let minD = Infinity;
+                                    let closestIdx = 0;
+                                    steps.forEach((s, i) => {
+                                        const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                                        if (d < minD) {
+                                            minD = d;
+                                            closestIdx = i;
+                                        }
+                                    });
+
+                                    let targetIdx = closestIdx + 1;
+                                    if (targetIdx < steps.length) {
+                                        const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                                        if (distToTarget < 0.025) {
+                                            targetIdx++;
+                                        }
+                                    }
+                                    targetIdx = Math.min(targetIdx, steps.length - 1);
+
+                                    const nextStep = steps[targetIdx];
+                                    hudIcon = getManeuverIcon(nextStep.maneuver.modifier, nextStep.maneuver.type);
+                                    hudInstruction = translateHUDInstruction(nextStep, language);
+                                    hudDistance = calcDistance(userLocation, { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] });
+                                    bearingTarget = { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] };
+                                    hudSubline = (targetIdx === steps.length - 1 && hudDistance < 0.02)
+                                        ? (language === 'nl' ? 'Bestemming bereikt' : 'Arrived')
+                                        : (nextStep.name || targetPoi.name);
+                                }
+
+                                return (
+                                    <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-[1000] backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl transition-all duration-300 bg-slate-900/95 w-[90%] max-w-[320px] opacity-100 animate-in slide-in-from-top ${isPopupOpen ? 'opacity-40 scale-95' : 'opacity-100'}`}>
+                                        <div className="flex items-center p-3 gap-3">
+                                            {/* Left: Instructions & Stats */}
+                                            <div className="flex-1 flex flex-col justify-center min-w-0">
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold leading-none truncate">
+                                                        {hudSubline}
+                                                    </span>
+                                                </div>
+
+                                                <div className="text-sm font-bold text-white leading-tight mb-2 break-words max-h-[3.5em] overflow-hidden">
+                                                    {isNavigating ? hudInstruction : (language === 'nl' ? 'Kies een bestemming' : 'Select a destination')}
+                                                </div>
+
+                                                {isNavigating && progressStats && progressStats.leg && progressStats.trip && (
+                                                    <div className="mt-1 pt-1.5 border-t border-white/5 w-full flex flex-col gap-1 text-[10px] text-slate-400 font-mono">
+                                                        <div className="flex justify-start items-center gap-3">
+                                                            <span className="font-semibold text-slate-500 w-8">LEG</span>
+                                                            <div className="flex gap-1.5">
+                                                                <span className="text-white font-bold">{progressStats.leg.done}</span>
+                                                                <span className="opacity-20 text-xs">/</span>
+                                                                <span className="text-slate-300">{progressStats.leg.left}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex justify-start items-center gap-3">
+                                                            <span className="font-semibold text-primary w-8">TRIP</span>
+                                                            <div className="flex gap-1.5">
+                                                                <span className="text-white font-bold">{progressStats.trip.done}</span>
+                                                                <span className="opacity-20 text-xs">/</span>
+                                                                <span className="text-slate-300">{progressStats.trip.left}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Right: Icons Cluster */}
+                                            <div className="flex flex-col gap-2 shrink-0 items-end">
+                                                {/* Compass */}
+                                                <div className="bg-white/5 rounded-xl p-1.5 flex items-center justify-center w-10 h-10 border border-white/5">
+                                                    <div style={{ transform: `rotate(${calcBearing(userLocation, bearingTarget) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500 drop-shadow-md">
+                                                            <polygon points="12 2 22 22 12 18 2 22 12 2" />
+                                                        </svg>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-2">
+                                                    {/* Start/Stop Navigation Button */}
+                                                    <button
+                                                        onClick={() => {
+                                                            setIsNavigating(!isNavigating);
+                                                            if (!isNavigating) {
+                                                                setViewAction('USER');
+                                                            }
+                                                        }}
+                                                        className={`rounded-xl p-1.5 flex items-center justify-center w-10 h-10 border transition-all hover:scale-105 active:scale-95 ${isNavigating ? 'bg-red-500/20 text-red-500 border-red-500/30' : 'bg-green-500/20 text-green-500 border-green-500/30'}`}
+                                                        title={language === 'nl' ? (isNavigating ? 'Stop Navigatie' : 'Start Navigatie') : (isNavigating ? 'Stop Navigation' : 'Start Navigation')}
+                                                    >
+                                                        {isNavigating ? (
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                                        ) : (
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                                        )}
+                                                    </button>
+
+                                                    {/* Distance */}
+                                                    <div className="bg-white/5 rounded-xl p-1.5 flex flex-col items-center justify-center w-10 h-10 border border-white/5 leading-none">
+                                                        {(() => {
+                                                            const distKm = hudDistance;
+                                                            let displayVal, unit;
+                                                            if (distKm < 1) {
+                                                                displayVal = Math.round(distKm * 1000);
+                                                                unit = "m";
+                                                            } else {
+                                                                displayVal = distKm.toFixed(1);
+                                                                unit = "km";
+                                                            }
+                                                            return (
+                                                                <>
+                                                                    <span className="text-xs font-black text-white tracking-tighter">{displayVal}</span>
+                                                                    <span className="text-[8px] text-slate-400 uppercase font-bold mt-0.5">{unit}</span>
+                                                                </>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()
+                        }
+
+                        {/* Map Controls (Simulation) */}
+                        {
+                            !isInputMode && isSimulationEnabled && (
+                                <div className={`absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] flex flex-row items-center gap-3 bg-slate-900/60 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
+                                    {/* Speed Toggle (Only when simulating) */}
+                                    {navigationPath && isSimulating && (
+                                        <button
+                                            onClick={() => {
+                                                const nextSpeed = simulationSpeed === 1 ? 2 : (simulationSpeed === 2 ? 5 : 1);
+                                                setSimulationSpeed(nextSpeed);
+                                            }}
+                                            className="p-3 rounded-xl border border-white/10 shadow-lg bg-slate-800/90 text-slate-200 hover:bg-slate-700 transition-all font-bold text-sm min-w-[48px]"
+                                            title="Simulation Speed"
+                                        >
+                                            {simulationSpeed}x
+                                        </button>
+                                    )}
+
+                                    {/* Test Button - Always Show if Path Exists */}
+                                    {navigationPath && (
+                                        <button
+                                            onClick={() => {
+                                                if (!isSimulating) {
+                                                    playProximitySound(); // Init context on start
+                                                    setIsNavigating(true); // Ensure fetcher is active
+                                                }
+                                                setIsSimulating(!isSimulating);
+                                            }}
+                                            className={`p-3 rounded-xl border border-white/10 shadow-lg transition-all ${isSimulating ? 'bg-green-600 text-white animate-pulse' : 'bg-slate-800/90 text-slate-200'}`}
+                                            title={isSimulating ? "Pause Simulation" : "Start Simulation"}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
+                                        </button>
+                                    )}
+                                </div>
+                            )
+                        }
+
+                        {/* Bottom Right: Subtle View Controls */}
+                        {
+                            !isInputMode && (
+                                <div className={`absolute bottom-6 right-4 z-[1000] flex flex-col gap-2 transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
+                                    {/* Locate Me */}
+                                    <button
+                                        onClick={() => setViewAction('USER')}
+                                        className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
+                                        title={language === 'nl' ? 'Mijn Locatie' : 'Locate Me'}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
+                                    </button>
+
+                                    {/* Fit Route */}
+                                    <button
+                                        onClick={() => setViewAction('ROUTE')}
+                                        className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
+                                        title={language === 'nl' ? 'Toon Route' : 'Show Route'}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+                                    </button>
+                                </div>
+                            )
+                        }
+
+                        {/* Loading Indicator */}
+                        {
+                            isLoading && !isAiViewActive && (
+                                <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[1500] bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full border border-primary/30 shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-500 pointer-events-none">
+                                    <div className="relative">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary animate-pulse">
+                                            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+                                            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+                                            <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+                                            <path d="M17.59 7a2.5 2.5 0 0 0-5.18 0" />
+                                        </svg>
+                                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "Brain denkt na..." : "Brain is thinking...")}</span>
+                                        {loadingCount > 0 && <span className="text-[10px] text-primary font-medium animate-pulse">{loadingCount} {language === 'nl' ? 'spots gevonden' : 'spots found'}</span>}
+                                    </div>
+                                </div>
+                            )
+                        }
+
                     </>
                 )}
             </LMapContainer>
 
-            {/* Map Controls (Top Right) */}
-            {
-                !isInputMode && isSimulationEnabled && (
-                    <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[400] flex flex-row items-center gap-3 bg-slate-900/60 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl">
-                        {/* Speed Toggle (Only when simulating) */}
-                        {navigationPath && isSimulating && (
-                            <button
-                                onClick={() => {
-                                    const nextSpeed = simulationSpeed === 1 ? 2 : (simulationSpeed === 2 ? 5 : 1);
-                                    setSimulationSpeed(nextSpeed);
-                                }}
-                                className="p-3 rounded-xl border border-white/10 shadow-lg bg-slate-800/90 text-slate-200 hover:bg-slate-700 transition-all font-bold text-sm min-w-[48px]"
-                                title="Simulation Speed"
-                            >
-                                {simulationSpeed}x
-                            </button>
-                        )}
-
-                        {/* Test Button - Always Show if Path Exists */}
-                        {navigationPath && (
-                            <button
-                                onClick={() => {
-                                    if (!isSimulating) {
-                                        playProximitySound(); // Init context on start
-                                        setIsNavigating(true); // Ensure fetcher is active
-                                    }
-                                    setIsSimulating(!isSimulating);
-                                }}
-                                className={`p-3 rounded-xl border border-white/10 shadow-lg transition-all ${isSimulating ? 'bg-green-600 text-white animate-pulse' : 'bg-slate-800/90 text-slate-200'}`}
-                                title={isSimulating ? "Pause Simulation" : "Start Simulation"}
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
-                            </button>
-                        )}
-                    </div>
-                )
-            }
-
-            {/* Bottom Right: Subtle View Controls */}
-            {
-                !isInputMode && (
-                    <div className="absolute bottom-6 right-4 z-[400] flex flex-col gap-2">
-                        {/* Locate Me */}
-                        <button
-                            onClick={() => setViewAction('USER')}
-                            className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
-                            title={language === 'nl' ? 'Mijn Locatie' : 'Locate Me'}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
-                        </button>
-
-                        {/* Fit Route */}
-                        <button
-                            onClick={() => setViewAction('ROUTE')}
-                            className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
-                            title={language === 'nl' ? 'Toon Route' : 'Show Route'}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
-                        </button>
-                    </div>
-                )
-            }
-
-            {/* Route Stats Overlay removed */}
-
-
-            {/* Top Navigation HUD - Instruction Only */}
-            {
-                userLocation && pois.length > 0 && !isInputMode && (() => {
-                    const targetPoi = focusedLocation || pois[0];
-                    const steps = routeData?.navigationSteps;
-
-                    // Progress Stats Calculation
-                    let progressStats = null;
-                    if (isNavigating && steps && steps.length > 0) {
-                        const totalDistKm = steps.reduce((acc, s) => acc + s.distance, 0) / 1000;
-                        let minD = Infinity;
-                        let closestIdx = 0;
-                        steps.forEach((s, i) => {
-                            // Re-use calcDistance available in scope
-                            const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
-                            if (d < minD) { minD = d; closestIdx = i; }
-                        });
-                        const targetIdx = Math.min(closestIdx + 1, steps.length - 1);
-                        const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
-                        let remainingStepsKm = 0;
-                        for (let i = targetIdx + 1; i < steps.length; i++) {
-                            remainingStepsKm += steps[i].distance / 1000;
-                        }
-                        const remainingKm = distToTarget + remainingStepsKm;
-                        const doneKm = Math.max(0, totalDistKm - remainingKm);
-                        progressStats = {
-                            total: totalDistKm.toFixed(1),
-                            done: doneKm.toFixed(1),
-                            left: remainingKm.toFixed(1)
-                        };
-                    }
-
-                    let hudIcon = '📍';
-                    let hudInstruction = targetPoi.name;
-                    let hudDistance = calcDistance(userLocation, targetPoi);
-                    let bearingTarget = targetPoi;
-                    let hudSubline = searchMode === 'radius'
-                        ? (language === 'nl' ? 'Beschikbare Spot' : 'Available Spot')
-                        : `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
-
-                    if (isNavigating && steps && steps.length > 0) {
-                        let minD = Infinity;
-                        let closestIdx = 0;
-                        steps.forEach((s, i) => {
-                            const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
-                            if (d < minD) {
-                                minD = d;
-                                closestIdx = i;
-                            }
-                        });
-
-                        let targetIdx = closestIdx + 1;
-                        if (targetIdx < steps.length) {
-                            const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
-                            if (distToTarget < 0.025) {
-                                targetIdx++;
-                            }
-                        }
-                        targetIdx = Math.min(targetIdx, steps.length - 1);
-
-                        const nextStep = steps[targetIdx];
-                        hudIcon = getManeuverIcon(nextStep.maneuver.modifier, nextStep.maneuver.type);
-                        hudInstruction = translateHUDInstruction(nextStep, language);
-                        hudDistance = calcDistance(userLocation, { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] });
-                        bearingTarget = { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] };
-                        hudSubline = (targetIdx === steps.length - 1 && hudDistance < 0.02)
-                            ? (language === 'nl' ? 'Bestemming bereikt' : 'Arrived')
-                            : (nextStep.name || targetPoi.name);
-                    }
-
-                    return (
-                        <>
-
-
-                            {/* 1. Compass Icon (Right Side, below Map Controls) */}
-                            <div className={`absolute top-[80px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>
-                                <div className="bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12">
-                                    <div style={{ transform: `rotate(${calcBearing(userLocation, bearingTarget) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500 drop-shadow-md">
-                                            <polygon points="12 2 22 22 12 18 2 22 12 2" />
-                                        </svg>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 2. Distance Icon (Right Side, below Compass) */}
-                            <div className={`absolute top-[136px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>
-                                <div className="bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12">
-                                    {(() => {
-                                        const distKm = hudDistance;
-                                        let displayVal, unit;
-                                        if (distKm < 1) {
-                                            displayVal = Math.round(distKm * 1000);
-                                            unit = "m";
-                                        } else {
-                                            displayVal = distKm.toFixed(1);
-                                            unit = "km";
-                                        }
-                                        return (
-                                            <div className="flex flex-col items-center justify-center leading-none">
-                                                <span className="text-[13px] font-bold text-white tracking-tighter">{displayVal}</span>
-                                                <span className="text-[8px] text-slate-400 uppercase font-bold mt-0.5">{unit}</span>
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-
-                            {/* 2. Instruction Banner (Top Center, Narrower) */}
-                            <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 z-[400] backdrop-blur-xl rounded-xl px-4 py-2 border border-white/10 shadow-2xl flex flex-col items-center max-w-[calc(100%-160px)] transition-all duration-300 bg-slate-900/80 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-top'}`}>
-                                <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold leading-none mb-1 truncate w-full text-center">
-                                    {hudSubline}
-                                </span>
-                                <div className="text-xs font-semibold text-white truncate w-full text-center leading-tight">
-                                    {isNavigating ? hudInstruction : (language === 'nl' ? 'Kies een bestemming' : 'Select a destination')}
-                                </div>
-                                {isNavigating && progressStats && (
-                                    <div className="mt-1.5 pt-1.5 border-t border-white/10 w-full flex justify-between items-center text-[10px] text-slate-300 font-mono">
-                                        <span>Done: <span className="text-white font-bold">{progressStats.done}</span> km</span>
-                                        <span className="opacity-30">|</span>
-                                        <span>Left: <span className="text-white font-bold">{progressStats.left}</span> km</span>
-                                    </div>
-                                )}
-                            </div>
-
-
-                            {/* 3. Start/Stop Navigation (Right Side, below Distance) */}
-                            <div className={`absolute top-[192px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>
-                                <button
-                                    onClick={() => {
-                                        setIsNavigating(!isNavigating);
-                                        if (!isNavigating) {
-                                            setViewAction('USER'); // Auto-center on start
-                                        }
-                                    }}
-                                    className={`bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12 hover:bg-slate-800 transition-all group ${isNavigating ? 'text-red-500' : 'text-green-500'}`}
-                                    title={language === 'nl' ? (isNavigating ? 'Stop Navigatie' : 'Start Navigatie') : (isNavigating ? 'Stop Navigation' : 'Start Navigation')}
-                                >
-                                    {isNavigating ? (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                                    ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z" /></svg>
-                                    )}
-                                </button>
-                            </div>
-                        </>
-                    );
-                })()
-            }
-
-
-            {/* Loading Indicator (Non-intrusive Brain Pill) */}
-            {
-                isLoading && !isAiViewActive && (
-                    <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[1000] bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full border border-primary/30 shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-500 pointer-events-none">
-                        <div className="relative">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary animate-pulse">
-                                <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-                                <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-                                <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
-                                <path d="M17.59 7a2.5 2.5 0 0 0-5.18 0" />
-                            </svg>
-                            <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "Brain denkt na..." : "Brain is thinking...")}</span>
-                            {loadingCount > 0 && <span className="text-[10px] text-primary font-medium animate-pulse">{loadingCount} {language === 'nl' ? 'spots gevonden' : 'spots found'}</span>}
-                        </div>
-                    </div>
-                )
-            }
         </div >
     );
 };

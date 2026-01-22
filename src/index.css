@@ -203,6 +203,12 @@ body {
 }
 
 /* --- LEAFLET POPUP CUSTOMIZATION --- */
+.leaflet-container,
+.leaflet-map-pane,
+.leaflet-pane {
+  z-index: auto !important;
+}
+
 .leaflet-popup-pane {
   z-index: 2000 !important;
 }

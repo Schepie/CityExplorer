@@ -56,7 +56,7 @@ const translateInstruction = (step, lang) => {
     return `Ga ${m} op ${name || 'het pad'}`;
 };
 
-const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, userLocation }) => {
+const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, userLocation, pastDistance = 0, totalTripDistance }) => {
     let activeSteps = steps;
     let isFallback = false;
 
@@ -76,8 +76,8 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
     // Calculate Progress
     let progressStats = null;
     if (hasSteps && userLocation && !isFallback) {
-        // 1. Total Distance (Sum of all steps)
-        const totalDistKm = activeSteps.reduce((acc, s) => acc + s.distance, 0) / 1000;
+        // 1. Total Distance (Sum of all steps in current leg)
+        const currentLegTotal = activeSteps.reduce((acc, s) => acc + s.distance, 0) / 1000;
 
         // 2. Find Closest Step Start
         let minD = Infinity;
@@ -90,7 +90,7 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
             }
         });
 
-        // 3. Approximate Remaining
+        // 3. Approximate Remaining in Leg
         const targetIdx = Math.min(closestIdx + 1, activeSteps.length - 1);
         const distToTarget = calcDistance(userLocation, { lat: activeSteps[targetIdx].maneuver.location[1], lng: activeSteps[targetIdx].maneuver.location[0] });
 
@@ -100,16 +100,28 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
             remainingStepsKm += activeSteps[i].distance / 1000;
         }
 
-        const remainingKm = distToTarget + remainingStepsKm;
-        const doneKm = Math.max(0, totalDistKm - remainingKm);
+        const remainingInLeg = distToTarget + remainingStepsKm;
+        const doneInLeg = Math.max(0, currentLegTotal - remainingInLeg);
+
+        // Total Trip Stats
+        const tripDone = pastDistance + doneInLeg;
+        const tripTotal = totalTripDistance ? parseFloat(totalTripDistance) : currentLegTotal;
+
+        // If we are on leg 2 of 3, tripTotal should be > currentLegTotal.
+        // If not available, we fallback to current leg (which is technically wrong but handles single leg cases).
+
+        const displayTotal = tripTotal > 0.1 ? tripTotal : currentLegTotal;
+        const displayDone = tripDone;
 
         progressStats = {
-            total: totalDistKm.toFixed(1),
-            done: doneKm.toFixed(1),
-            left: remainingKm.toFixed(1),
-            percent: Math.min(100, Math.max(0, (doneKm / totalDistKm) * 100))
+            done: displayDone.toFixed(1),
+            left: Math.max(0, displayTotal - displayDone).toFixed(1),
+            total: displayTotal.toFixed(1),
+            percentage: Math.min(100, Math.max(0, (displayDone / displayTotal) * 100))
         };
     }
+
+
 
     return (
         <>

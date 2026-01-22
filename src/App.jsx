@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PoiIntelligence } from './services/PoiIntelligence';
 import MapContainer from './components/MapContainer';
 import ItinerarySidebar from './components/ItinerarySidebar';
@@ -85,6 +85,7 @@ function App() {
 
   // Lifted User Location (shared between Map and NavigationOverlay)
   const [userLocation, setUserLocation] = useState(null);
+  const [activePoiIndex, setActivePoiIndex] = useState(0);
 
   // Form State (Lifted from JourneyInput)
   const [city, setCity] = useState('');
@@ -146,6 +147,59 @@ function App() {
         });
     }
   }, [descriptionLength]); // Only trigger on length change
+
+  // Calculate Past Legs Distance (for Total Done)
+  // Sum distance of all legs BEFORE the current activePoiIndex
+  // Note: This is an estimation using straight line or pre-calculated dists from POI list.
+  // Since we don't store OSRM paths for past legs, we use haversine between POIs.
+  const pastDistance = useMemo(() => {
+    if (!routeData || !routeData.pois || activePoiIndex === 0) return 0;
+
+    let total = 0;
+    // Helper to calc dist
+    const calcD = (p1, p2) => {
+      const R = 6371;
+      const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+      const dLon = (p2.lng - p1.lng) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    // 1. Distance from Start -> POI 0 (Approximation: Use User Location if available, else omit or assume close)
+    // Actually better to start from POI 0 -> POI 1 etc.
+    // If activePoiIndex is 0, we are at start.
+    // If activePoiIndex is 1, we finished Leg 0 (Start->POI0).
+
+    // We can't easily guess Start->POI0 distance without initial user loc stored.
+    // But we can sum POI 0 -> POI 1 -> ... POI [active-1].
+
+    for (let i = 0; i < activePoiIndex; i++) {
+      // Distance from Previous (or Start) to POI[i]
+      // If i=0, it's Start -> POI0. We roughly approximate this or ignore.
+      // Let's assume the user was near the first POI or use the first leg distance if routeData has it?
+      // routeData.navigationSteps is only current.
+
+      // BETTER: Sum distance between POI[i] and POI[i+1].
+      // If we are at POI 2 (index 2), we completed POI0->POI1 + POI1->POI2? No.
+      // activePoiIndex = target index.
+      // If activePoiIndex=0, target is POI0. Done=0.
+      // If activePoiIndex=1, target is POI1. We completed Start->POI0.
+      // If activePoiIndex=2, target is POI2. We completed Start->POI0 + POI0->POI1.
+
+      if (i === 0) {
+        // Start->POI0. Hard to know. Let's assume a small value or 0 if unknown.
+        // OR: If we have routeData.pois[0].distFromCurr (calculated at search time), use that!
+        if (routeData.pois[0].distFromCurr) total += routeData.pois[0].distFromCurr;
+      } else {
+        // POI[i-1] -> POI[i]
+        const p1 = routeData.pois[i - 1];
+        const p2 = routeData.pois[i];
+        // Add 30% buffer for walking routes
+        total += calcD({ lat: p1.lat, lng: p1.lng }, { lat: p2.lat, lng: p2.lng }) * 1.3;
+      }
+    }
+    return total;
+  }, [routeData, activePoiIndex]);
 
   // Haversine Distance Helper (km)
   const getDistance = (lat1, lon1, lat2, lon2) => {
@@ -1817,6 +1871,9 @@ function App() {
           language={language}
           onPoiClick={handlePoiClick}
           onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
+          activePoiIndex={activePoiIndex}
+          setActivePoiIndex={setActivePoiIndex}
+          pastDistance={pastDistance}
           speakingId={speakingId}
           isSpeechPaused={isSpeechPaused}
           onSpeak={handleSpeak}
@@ -1852,6 +1909,8 @@ function App() {
         isOpen={isNavigationOpen}
         onClose={() => setIsNavigationOpen(false)}
         onToggle={() => setIsNavigationOpen(!isNavigationOpen)}
+        pastDistance={pastDistance}
+        totalTripDistance={routeData?.stats?.totalDistance}
       />
 
       {/* Sidebar (Always Visible) */}
