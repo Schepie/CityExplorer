@@ -1240,18 +1240,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                     return (
                         <>
-                            {/* Talk to Guide Button (Top Right) */}
-                            {!isAiViewActive && (
-                                <div className="absolute top-4 right-4 z-[2000] animate-in slide-in-from-right duration-300">
-                                    <button
-                                        onClick={onOpenAiChat}
-                                        className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full p-3 shadow-2xl flex items-center justify-center w-12 h-12 text-white hover:scale-105 active:scale-95 transition-transform border border-white/20"
-                                        title={language === 'nl' ? "Praat met de gids" : "Talk to guide"}
-                                    >
-                                        <Brain size={24} />
-                                    </button>
-                                </div>
-                            )}
+
 
                             {/* 1. Compass Icon (Right Side, below Map Controls) */}
                             <div className={`absolute top-[80px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>
