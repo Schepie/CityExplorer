@@ -189,9 +189,7 @@ body {
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
 }
 
-.leaflet-marker-icon {
-  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
+
 
 .poi-marker {
   display: flex !important;

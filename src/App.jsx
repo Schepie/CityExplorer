@@ -51,7 +51,7 @@ function App() {
   // Settings: Load from LocalStorage or Default
   const [language, setLanguage] = useState(() => localStorage.getItem('app_language') || 'nl');
   const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem('app_theme') || 'tech');
-  const [descriptionLength, setDescriptionLength] = useState('medium'); // short, medium, max
+  const [descriptionLength, setDescriptionLength] = useState('short'); // short, medium, max
 
   // Persist Settings
   useEffect(() => localStorage.setItem('app_language', language), [language]);
@@ -92,15 +92,15 @@ function App() {
   const [isRoundtrip, setIsRoundtrip] = useState(true);
   const [startPoint, setStartPoint] = useState('');
   // Default to Google only as requested
-  const [searchMode, setSearchMode] = useState('journey'); // 'radius', 'journey', or 'prompt'
+  const [searchMode, setSearchMode] = useState('prompt'); // 'radius', 'journey', or 'prompt'
   const [searchSources, setSearchSources] = useState({ osm: false, foursquare: false, google: true });
   const [travelMode, setTravelMode] = useState('walking'); // 'walking' or 'cycling'
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiChatHistory, setAiChatHistory] = useState([
     {
       role: 'brain', text: language === 'nl'
-        ? 'Hoi! Ik ben de Brain van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Is het een **rondtrip** (start en stop op hetzelfde punt)?'
-        : 'Hi! I am the Brain of CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. Is it a **round trip** (start and end at the same place)?'
+        ? 'Hoi! Ik ben de Brain van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Is het een **rondtrip** (start en stop op hetzelfde punt)?\n5. Wat zijn je **interesses** (bijv. architectuur, koffie, natuur)?'
+        : 'Hi! I am the Brain of CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. Is it a **round trip** (start and end at the same place)?\n5. What are your **interests** (e.g. architecture, coffee, nature)?'
     }
   ]);
   const [isAiViewActive, setIsAiViewActive] = useState(true);
@@ -799,7 +799,7 @@ function App() {
       const aiResponseText = result.message;
       setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
 
-      setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
+
 
       // Auto-read logic removed as per user request
 
@@ -838,16 +838,14 @@ function App() {
           if (!newCity && !routeData) return null; // Safety: need city to start
 
           setIsAiViewActive(true); // Ensure we stay in chat to see final confirmation
-          await new Promise(r => setTimeout(r, 1500));
           await handleCityValidation('submit', newCity || city, result.params.interests, result.params);
-          setIsAiViewActive(false); // Switch to itinerary view
+          // setIsAiViewActive(false); // REMOVED: Keep chat open for feedback
           return;
         }
 
         // Otherwise: ADD to current journey (Same city or implicit context)
         if (routeData) {
           setIsAiViewActive(true);
-          await new Promise(r => setTimeout(r, 1000));
           return await handleAddToJourney(null, result.params.interests, result.params);
         }
       }
@@ -1832,6 +1830,11 @@ function App() {
           isSimulationEnabled={isSimulationEnabled}
           userSelectedStyle={travelMode}
           onStyleChange={setTravelMode}
+          isAiViewActive={isAiViewActive}
+          onOpenAiChat={() => {
+            setIsAiViewActive(true);
+            setIsSidebarOpen(true);
+          }}
         />
       </div>
 
@@ -1898,6 +1901,8 @@ function App() {
         setActiveTheme={setActiveTheme}
         availableThemes={APP_THEMES}
         onSave={handleSaveRoute}
+        isAiViewActive={isAiViewActive}
+        setIsAiViewActive={setIsAiViewActive}
         onLoad={handleLoadRoute}
         travelMode={travelMode}
         onStyleChange={setTravelMode}
@@ -1906,8 +1911,6 @@ function App() {
         aiPrompt={aiPrompt}
         setAiPrompt={setAiPrompt}
         aiChatHistory={aiChatHistory}
-        isAiViewActive={isAiViewActive}
-        setIsAiViewActive={setIsAiViewActive}
       />
 
       {/* Refinement Modal */}

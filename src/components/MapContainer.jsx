@@ -3,6 +3,7 @@ import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useM
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { SmartAutoScroller } from '../utils/AutoScroller';
+import { Brain, MessageSquare } from 'lucide-react';
 
 // Fix for default Leaflet marker icons in React
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -228,7 +229,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat }) => {
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
 
@@ -865,7 +866,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                     }}
                                     icon={L.divIcon({
                                         className: 'bg-transparent border-none',
-                                        html: `<div style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: transform 0.8s;" class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
+                                        html: `<div style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: none;" class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
                                                  ${iconHtml ? `<div class="mb-[1px] -mt-1 scale-75">${iconHtml}</div>` : ''}
                                                  ${searchMode === 'radius' ? '' : `<span class="text-[10px] font-bold leading-none">${idx + 1}</span>`}
                                                </div>`,
@@ -1213,12 +1214,25 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                     return (
                         <>
+                            {/* Talk to Guide Button (Top Right) */}
+                            {!isAiViewActive && (
+                                <div className="absolute top-4 right-4 z-[2000] animate-in slide-in-from-right duration-300">
+                                    <button
+                                        onClick={onOpenAiChat}
+                                        className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full p-3 shadow-2xl flex items-center justify-center w-12 h-12 text-white hover:scale-105 active:scale-95 transition-transform border border-white/20"
+                                        title={language === 'nl' ? "Praat met de gids" : "Talk to guide"}
+                                    >
+                                        <Brain size={24} />
+                                    </button>
+                                </div>
+                            )}
+
                             {/* 1. Compass Icon (Right Side, below Map Controls) */}
                             <div className={`absolute top-[80px] right-4 z-[400] transition-all duration-300 ${isPopupOpen ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in slide-in-from-right'}`}>
                                 <div className="bg-slate-900/90 backdrop-blur-xl rounded-full p-3 border border-white/10 shadow-2xl flex items-center justify-center w-12 h-12">
                                     <div style={{ transform: `rotate(${calcBearing(userLocation, bearingTarget) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-primary drop-shadow-[0_0_2px_rgba(0,0,0,0.5)]">
-                                            <path d="M5 15l7-7 7 7" />
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500 drop-shadow-md">
+                                            <polygon points="12 2 22 22 12 18 2 22 12 2" />
                                         </svg>
                                     </div>
                                 </div>
@@ -1282,24 +1296,22 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
             }
 
 
-            {/* Loading Overlay */}
+            {/* Loading Indicator (Non-intrusive Brain Pill) */}
             {
-                isLoading && (
-                    <div className="absolute inset-0 z-[1000] bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
+                isLoading && !isAiViewActive && (
+                    <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[1000] bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full border border-primary/30 shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-500 pointer-events-none">
                         <div className="relative">
-                            <div className="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary animate-pulse">
+                                <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+                                <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+                                <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+                                <path d="M17.59 7a2.5 2.5 0 0 0-5.18 0" />
+                            </svg>
+                            <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>
                         </div>
-                        <div className="mt-4 text-center">
-                            <h3 className="text-xl font-bold text-white tracking-tight">{loadingText || "Exploring..."}</h3>
-                            {loadingCount > 0 && (
-                                <p className="text-primary font-medium mt-1 animate-pulse">Found {loadingCount} POIs</p>
-                            )}
+                        <div className="flex flex-col">
+                            <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "Brain denkt na..." : "Brain is thinking...")}</span>
+                            {loadingCount > 0 && <span className="text-[10px] text-primary font-medium animate-pulse">{loadingCount} {language === 'nl' ? 'spots gevonden' : 'spots found'}</span>}
                         </div>
                     </div>
                 )
