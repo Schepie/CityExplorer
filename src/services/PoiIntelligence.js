@@ -128,7 +128,7 @@ export class PoiIntelligence {
     async fetchCityWelcomeMessage(poiList) {
         const poiNames = poiList.slice(0, 8).map(p => p.name).join(', ');
         const prompt = `
-Je bent een ervaren, vriendelijke en enthousiaste digitale stadsgids die reizigers helpt een stad op een persoonlijke manier te ontdekken. 
+Je bent "Je Gids", een ervaren, vriendelijke en enthousiaste digitale stadsgids die reizigers helpt een stad op een persoonlijke manier te ontdekken. 
 Je taak is om een introductie te geven vóór de wandeling of fietstocht begint.
 
 ### CONTEXT
@@ -285,6 +285,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
             const text = data.text;
             if (!text) return null;
 
+            console.log("Raw AI Response Text:", text);
+
             const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
             // Fix invalid backslashes (e.g. C:\Path) that are not part of valid escape sequences
             const sanitized = cleanText.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
@@ -304,8 +306,9 @@ Je MOET antwoorden met een JSON object in dit formaat:
             }
 
             // Add fallback for status if AI forgot it
-            if (!parsed.status) parsed.status = (parsed.city ? "complete" : "interactive");
+            if (!parsed.status) parsed.status = (parsed.params && parsed.params.city ? "complete" : "interactive");
 
+            console.log("Parsed AI Object:", parsed);
             return parsed;
         } catch (e) {
             console.warn("Prompt Parsing Failed:", e);

@@ -638,110 +638,128 @@ function App() {
     setIsLoading(true);
     setLoadingText(language === 'nl' ? 'Locatie zoeken...' : 'Finding your location...');
 
-    // Helper: Process Coordinates into City Data
-    const processCoordinates = async (latitude, longitude) => {
-      let foundCity = null;
-      let displayName = null;
-      let address = null;
+    return new Promise((resolve) => {
+      // Helper: Process Coordinates into City Data
+      const processCoordinates = async (latitude, longitude) => {
+        let foundCity = null;
+        let displayName = null;
+        let address = null;
+        let resultData = null;
 
-      // 1. Try Nominatim (OSM) - High Quality
-      try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
-          headers: {
-            'Accept-Language': language === 'nl' ? 'nl' : 'en'
-          }
-        });
-        if (!res.ok) throw new Error(res.statusText);
-        const data = await res.json();
-        if (data && data.address) {
-          const addr = data.address;
-          foundCity = addr.city || addr.town || addr.village || addr.municipality;
-          displayName = foundCity;
-          if (addr.country) displayName += `, ${addr.country}`;
-          address = data.address;
-        }
-      } catch (err) {
-        console.warn("Nominatim Reverse Geocode failed, trying fallback...", err);
-      }
-
-      // 2. Fallback: BigDataCloud (Client-side friendly)
-      if (!foundCity) {
+        // 1. Try Nominatim (OSM) - High Quality
         try {
-          const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=${language === 'nl' ? 'nl' : 'en'}`);
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
+            headers: {
+              'Accept-Language': language === 'nl' ? 'nl' : 'en'
+            }
+          });
+          if (!res.ok) throw new Error(res.statusText);
           const data = await res.json();
-          if (data && (data.city || data.locality)) {
-            foundCity = data.city || data.locality;
+          if (data && data.address) {
+            const addr = data.address;
+            foundCity = addr.city || addr.town || addr.village || addr.municipality;
             displayName = foundCity;
-            if (data.countryName) displayName += `, ${data.countryName}`;
-            // Construct pseudo-address object for compatibility
-            address = { city: foundCity, country: data.countryName };
+            if (addr.country) displayName += `, ${addr.country}`;
+            address = data.address;
           }
         } catch (err) {
-          console.warn("BigDataCloud fallback failed", err);
+          console.warn("Nominatim Reverse Geocode failed, trying fallback...", err);
         }
-      }
 
-      // 3. Final Result or Coordinate Fallback
-      if (foundCity) {
-        setCity(displayName);
-        setValidatedCityData({
-          lat: latitude.toString(),
-          lon: longitude.toString(),
-          name: foundCity,
-          display_name: displayName,
-          address: address
-        });
-        setFocusedLocation({ lat: latitude, lng: longitude });
-      } else {
-        // Absolute Fallback: Coordinates
-        const name = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-        setCity(name);
-        setValidatedCityData({ lat: latitude, lon: longitude, name: name, display_name: name });
-        setFocusedLocation({ lat: latitude, lng: longitude });
-      }
+        // 2. Fallback: BigDataCloud (Client-side friendly)
+        if (!foundCity) {
+          try {
+            const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=${language === 'nl' ? 'nl' : 'en'}`);
+            const data = await res.json();
+            if (data && (data.city || data.locality)) {
+              foundCity = data.city || data.locality;
+              displayName = foundCity;
+              if (data.countryName) displayName += `, ${data.countryName}`;
+              // Construct pseudo-address object for compatibility
+              address = { city: foundCity, country: data.countryName };
+            }
+          } catch (err) {
+            console.warn("BigDataCloud fallback failed", err);
+          }
+        }
 
-      setIsLoading(false);
-      setLoadingText('Exploring...');
-    };
-
-    // Fallback: IP-based Location
-    const runIpFallback = async () => {
-      console.log("GPS failed. Attempting IP fallback...");
-      try {
-        const res = await fetch('https://ipapi.co/json/');
-        const data = await res.json();
-        if (data.latitude && data.longitude) {
-          await processCoordinates(data.latitude, data.longitude);
+        // 3. Final Result or Coordinate Fallback
+        if (foundCity) {
+          setCity(displayName);
+          resultData = {
+            lat: latitude.toString(),
+            lon: longitude.toString(),
+            name: foundCity,
+            display_name: displayName,
+            address: address
+          };
+          setValidatedCityData(resultData);
+          setFocusedLocation({ lat: latitude, lng: longitude });
         } else {
-          throw new Error("Invalid IP data");
+          // Absolute Fallback: Coordinates
+          const name = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+          setCity(name);
+          resultData = { lat: latitude, lon: longitude, name: name, display_name: name };
+          setValidatedCityData(resultData);
+          setFocusedLocation({ lat: latitude, lng: longitude });
         }
-      } catch (e) {
-        console.error("IP Fallback failed", e);
-        alert(language === 'nl'
-          ? "Kon uw locatie niet bepalen. Controleer uw instellingen."
-          : "Could not determine your location. Please check settings.");
+
         setIsLoading(false);
         setLoadingText('Exploring...');
-      }
-    };
+        resolve(resultData);
+      };
 
-    if (!navigator.geolocation) {
-      runIpFallback();
-      return;
-    }
+      // Fallback: IP-based Location
+      const runIpFallback = async () => {
+        console.log("GPS failed. Attempting IP fallback...");
+        try {
+          const res = await fetch('https://ipapi.co/json/');
+          const data = await res.json();
+          if (data.latitude && data.longitude) {
+            await processCoordinates(data.latitude, data.longitude);
+          } else {
+            throw new Error("Invalid IP data");
+          }
+        } catch (e) {
+          console.error("IP Fallback failed", e);
 
-    // Try Standard Geolocation (Low Accuracy for Speed/Reliability)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        processCoordinates(pos.coords.latitude, pos.coords.longitude);
-      },
-      (err) => {
-        console.warn("Geolocation API error:", err.code, err.message);
-        // On error (Permission denied or Timeout), try IP fallback
+          setIsLoading(false);
+          setLoadingText('Exploring...');
+
+          // User requested change: If location fails, ask user instead of deciding
+          const manualLocation = prompt(language === 'nl'
+            ? "Ik kon je locatie niet automatisch bepalen. Waar wil je vertrekken?"
+            : "I couldn't find your location. Where do you want to start?");
+
+          if (manualLocation && manualLocation.trim().length > 0) {
+            // User provided manual input -> Resolve with this "city" name
+            setCity(manualLocation);
+            // We return a mock object so flow continues. Validation will happen later.
+            resolve({ name: manualLocation, display_name: manualLocation });
+          } else {
+            resolve(null);
+          }
+        }
+      };
+
+      if (!navigator.geolocation) {
         runIpFallback();
-      },
-      { timeout: 20000, enableHighAccuracy: false, maximumAge: 60000 }
-    );
+        return;
+      }
+
+      // Try Standard Geolocation (Low Accuracy for Speed/Reliability)
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          processCoordinates(pos.coords.latitude, pos.coords.longitude);
+        },
+        (err) => {
+          console.warn("Geolocation API error:", err.code, err.message);
+          // On error (Permission denied or Timeout), try IP fallback
+          runIpFallback();
+        },
+        { timeout: 20000, enableHighAccuracy: false, maximumAge: 60000 }
+      );
+    });
   };
 
   // Helper to fetch Wikipedia summary
@@ -947,16 +965,19 @@ function App() {
     setAiPrompt(''); // Clear input
 
     setIsLoading(true);
-    setLoadingText(language === 'nl' ? 'Brain denkt na...' : 'Brain is thinking...');
+    setLoadingText(language === 'nl' ? 'Gids denkt na...' : 'Guide is thinking...');
 
     try {
       const updatedHistory = [...aiChatHistory, newUserMsg];
       const engine = new PoiIntelligence({ language });
       // Pass isRouteActive = true if routeData exists
       const isRouteActive = !!routeData;
+      console.log("Processing AI Prompt with isRouteActive:", isRouteActive);
       const result = await engine.parseNaturalLanguageInput(promptText, language, updatedHistory, isRouteActive);
 
-      if (!result) throw new Error("Brain translation failed");
+      console.log("AI Result:", result);
+
+      if (!result) throw new Error("Guide translation failed");
 
       // Update local history with AI message
       let aiResponseText = result.message;
@@ -1007,7 +1028,27 @@ function App() {
 
           // CASE A: Start New / Regenerate
           if (searchMode === 'prompt' || !routeData || isCitySwitch) {
-            const finalCity = newCity || city;
+            let finalCity = newCity || city;
+
+            // Fix: If city is null but startPoint implies current location, use current location
+            const startPoint = result.params?.startPoint || "";
+            const isCurrentLoc = startPoint && (startPoint.toLowerCase().includes('huidig') || startPoint.toLowerCase().includes('current') || startPoint.toLowerCase().includes('mijn locat'));
+
+            if (!finalCity && isCurrentLoc) {
+              console.log("AI implied current location start without city. Triggering GPS & continuing...");
+              // Trigger Use Current Location flow and wait for data
+              const cityData = await handleUseCurrentLocation();
+
+              if (cityData && cityData.name) {
+                finalCity = cityData.name;
+                // Also set the state just in case, though handleUseCurrentLocation does it
+                setCity(cityData.name);
+              } else {
+                // Failed to get location
+                return null;
+              }
+            }
+
             if (!finalCity || !effectiveInterests) return null;
 
             setIsAiViewActive(true);
@@ -1498,7 +1539,8 @@ function App() {
         stats: {
           totalDistance: finalDist.toFixed(1),
           walkDistance: (walkDist || 0).toFixed(1),
-          limitKm: targetLimitKm.toFixed(1)
+          limitKm: targetLimitKm.toFixed(1),
+          isRoundtrip: constraints.isRoundtrip
         }
       };
 
@@ -1731,7 +1773,7 @@ function App() {
     if (isCurrentLoc) {
       try {
         const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 20000, enableHighAccuracy: false });
         });
         cityCenter = [pos.coords.latitude, pos.coords.longitude];
       } catch (e) {
@@ -2020,7 +2062,8 @@ function App() {
         stats: {
           totalDistance: realDistance.toFixed(1),
           walkDistance: (finalRouteResult?.walkDist || 0).toFixed(1),
-          limitKm: targetLimitKm.toFixed(1)
+          limitKm: targetLimitKm.toFixed(1),
+          isRoundtrip: isRoundtrip
         }
       });
 

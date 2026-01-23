@@ -585,6 +585,29 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     }, [isNavigating, userLocation, focusedLocation, routeData]);
 
 
+    // Custom Icons for Start/End
+    const startIcon = L.divIcon({
+        className: 'custom-icon',
+        html: `<div style="background-color: #22c55e; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); display: flex; align-items: center; justify-content: center; color: white;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+        </div>
+        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid white;"></div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 38],
+        popupAnchor: [0, -40]
+    });
+
+    const endIcon = L.divIcon({
+        className: 'custom-icon',
+        html: `<div style="background-color: #ef4444; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); display: flex; align-items: center; justify-content: center; color: white;">
+             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+        </div>
+        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid white;"></div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 38],
+        popupAnchor: [0, -40]
+    });
+
     // Fix: Track last opened focus ID to prevent re-opening on generic re-renders
     const lastFocusedIdRef = useRef(null);
 
@@ -781,6 +804,49 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                             <div className="text-slate-900 font-bold">{text.here}</div>
                         </Popup>
                     </Marker>
+                )}
+
+                {/* --- Start & End Markers --- */}
+                {!isInputMode && routeData && (
+                    <>
+                        {/* Start Marker (Always at routeData.center) */}
+                        <Marker
+                            position={routeData.center}
+                            icon={startIcon}
+                            zIndexOffset={900}
+                        >
+                            <Popup className="glass-popup">
+                                <div className="text-slate-900 font-bold">{language === 'nl' ? 'Startpunt' : 'Start Point'}</div>
+                            </Popup>
+                        </Marker>
+
+                        {/* End Marker (At last POI or routeData.center if roundtrip) */}
+                        {(() => {
+                            const isRoundtrip = routeData.stats?.limitKm?.toString().toLowerCase().includes('radius')
+                                ? false
+                                : (routeData.stats?.isRoundtrip || false);
+
+                            const hasPath = routeData.routePath && routeData.routePath.length > 0;
+
+                            // If roundtrip, the end is the same as the start icon.
+                            // Only show end icon for one-way journeys with a calculated path.
+                            if (!isRoundtrip && hasPath && pois && pois.length > 0) {
+                                const lastPoi = pois[pois.length - 1];
+                                return (
+                                    <Marker
+                                        position={[lastPoi.lat, lastPoi.lng]}
+                                        icon={endIcon}
+                                        zIndexOffset={901}
+                                    >
+                                        <Popup className="glass-popup">
+                                            <div className="text-slate-900 font-bold">{language === 'nl' ? 'Eindpunt' : 'Finish'}</div>
+                                        </Popup>
+                                    </Marker>
+                                );
+                            }
+                            return null;
+                        })()}
+                    </>
                 )}
 
                 {/* Navigation moved to Top HUD */}
@@ -1347,14 +1413,9 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                         {
                             isLoading && !isAiViewActive && (
                                 <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[1500] bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full border border-primary/30 shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-500 pointer-events-none">
-                                    <div className="relative">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary animate-pulse">
-                                            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-                                            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-                                            <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
-                                            <path d="M17.59 7a2.5 2.5 0 0 0-5.18 0" />
-                                        </svg>
-                                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>
+                                    <div className="relative w-8 h-8 rounded-full border border-primary overflow-hidden bg-white shadow-lg">
+                                        <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-125" />
+                                        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-400 border-2 border-slate-900 rounded-full animate-ping"></div>
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "Gids denkt na..." : "Guide is thinking...")}</span>

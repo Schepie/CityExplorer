@@ -251,7 +251,7 @@ const SidebarInput = ({
                     {/* Header Title */}
                     <div className="flex items-center gap-2 px-1">
                         <div className="w-10 h-10 rounded-full border-2 border-primary shadow-lg overflow-hidden bg-white">
-                            <img src="/guide-icon.jpg" alt="Guide" className="w-full h-full object-cover" />
+                            <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-125" />
                         </div>
                         <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
                             {language === 'nl' ? 'Vraag het je Gids' : 'Ask your Guide'}
@@ -272,7 +272,7 @@ const SidebarInput = ({
                                     onJourneyStart(e);
                                 }
                             }}
-                            placeholder={isListening ? (language === 'nl' ? "Ik luister..." : "I'm listening...") : (language === 'nl' ? "Hoe kan ik je trip nog verbeteren?" : "How can I improve your trip?")}
+                            placeholder={isListening ? (language === 'nl' ? "Ik luister..." : "I'm listening...") : (language === 'nl' ? "Hoe kan ik je helpen?" : "How can I help you?")}
                             rows={5}
                             className="w-full bg-[var(--input-bg)] border border-[var(--panel-border)] rounded-2xl pl-4 pr-18 py-3.5 text-[var(--text-main)] text-sm focus:outline-none focus:ring-2 ring-primary/50 placeholder:text-[var(--text-muted)] resize-none leading-relaxed transition-all shadow-xl"
                         />
@@ -326,6 +326,9 @@ const SidebarInput = ({
                         {isLoading && (
                             <div className="flex justify-start animate-in fade-in slide-in-from-top-2 duration-500">
                                 <div className="bg-white/5 text-slate-400 px-4 py-3 rounded-2xl rounded-tl-none border border-white/5 backdrop-blur-sm shadow-md flex items-center gap-3">
+                                    <div className="w-6 h-6 rounded-full border border-primary overflow-hidden bg-white shrink-0">
+                                        <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-125" />
+                                    </div>
                                     <div className="flex gap-1">
                                         <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ backgroundColor: primaryColor }}></div>
                                         <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ animationDelay: '200ms', backgroundColor: primaryColor }}></div>
@@ -344,8 +347,8 @@ const SidebarInput = ({
                                     <div key={idx} className="flex justify-start animate-in fade-in slide-in-from-top-2 duration-500 w-full mb-4">
                                         <div className="bg-slate-800/80 border rounded-2xl rounded-tl-none p-3 max-w-[95%] shadow-lg backdrop-blur-sm" style={{ borderColor: hexToRgba(primaryColor, 0.3) }}>
                                             <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/5">
-                                                <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: hexToRgba(primaryColor, 0.2), color: primaryColor }}>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
+                                                <div className="w-5 h-5 rounded-full border border-primary/50 overflow-hidden bg-white shrink-0">
+                                                    <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-125" />
                                                 </div>
                                                 <span className="text-[10px] uppercase tracking-wider font-bold" style={{ color: hexToRgba(primaryColor, 0.9) }}>
                                                     {language === 'nl' ? `Gevonden voor "${msg.query}"` : `Found for "${msg.query}"`}

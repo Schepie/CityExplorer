@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-// Simple Icon Mapping for OSRM Maneuvers
+// Guide Icon Mapping for OSRM Maneuvers
 const getManeuverIcon = (modifier, type) => {
     if (type === 'arrive') return '🏁';
     if (type === 'depart') return '🚀';
@@ -135,7 +135,10 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
                         {/* Header */}
                         <div className="p-4 border-b border-[var(--panel-border)] bg-[var(--panel-bg)] flex items-center justify-between">
                             <h3 className="font-bold text-[var(--text-main)] flex items-center gap-2">
-                                <span>🚶</span> {language === 'nl' ? 'Routebeschrijving' : 'Turn-by-turn Navigation'}
+                                <div className="w-6 h-6 rounded-full border border-primary overflow-hidden bg-white">
+                                    <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-125" />
+                                </div>
+                                {language === 'nl' ? 'Routebeschrijving' : 'Turn-by-turn Navigation'}
                             </h3>
                             {progressStats && (
                                 <div className="text-[10px] text-[var(--text-muted)] font-mono">
