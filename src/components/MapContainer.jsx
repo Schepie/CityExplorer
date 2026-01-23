@@ -113,6 +113,20 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     const prevFocusedLocation = useRef(null);
     const isAutoFollow = useRef(true); // Default to following
 
+    // Fix: Handle map resize on window/container resize (e.g. fullscreen toggle)
+    useEffect(() => {
+        const handleResize = () => {
+            // console.log("Window resized. Invalidating map size.");
+            map.invalidateSize();
+        };
+
+        window.addEventListener('resize', handleResize);
+        // Also trigger once on mount to be safe
+        setTimeout(handleResize, 100);
+
+        return () => window.removeEventListener('resize', handleResize);
+    }, [map]);
+
     // Disable auto-follow on user interaction
     useEffect(() => {
         const onDrag = () => {
@@ -229,7 +243,7 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0 }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction }) => {
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
 
@@ -284,7 +298,6 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     // Default center (Amsterdam)
     const defaultCenter = [52.3676, 4.9041];
     // const [userSelectedStyle, setUserSelectedStyle] = useState('walking'); // Lifted to App.jsx
-    const [viewAction, setViewAction] = useState(null);
     const [isPopupOpen, setIsPopupOpen] = useState(false); // Track if any popup is open for HUD transparency
     const markerRefs = useRef({}); // Refs for markers to open programmatically
 
@@ -600,7 +613,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     const endIcon = L.divIcon({
         className: 'custom-icon',
         html: `<div style="background-color: #ef4444; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); display: flex; align-items: center; justify-content: center; color: white;">
-             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>
         </div>
         <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid white;"></div>`,
         iconSize: [32, 32],
@@ -830,11 +843,11 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                             // If roundtrip, the end is the same as the start icon.
                             // Only show end icon for one-way journeys with a calculated path.
-                            if (!isRoundtrip && hasPath && pois && pois.length > 0) {
-                                const lastPoi = pois[pois.length - 1];
+                            if (hasPath && pois && pois.length > 0) {
+                                const endPos = isRoundtrip ? routeData.center : [pois[pois.length - 1].lat, pois[pois.length - 1].lng];
                                 return (
                                     <Marker
-                                        position={[lastPoi.lat, lastPoi.lng]}
+                                        position={endPos}
                                         icon={endIcon}
                                         zIndexOffset={901}
                                     >

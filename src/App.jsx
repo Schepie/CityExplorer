@@ -5,6 +5,7 @@ import ItinerarySidebar from './components/ItinerarySidebar';
 import CitySelector from './components/CitySelector';
 import './index.css'; // Ensure styles are loaded
 import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
+import * as smartPoiUtils from './utils/smartPoiUtils';
 
 // Theme Definitions
 // Theme Definitions
@@ -134,6 +135,9 @@ function App() {
 
   // Sidebar Visibility State (Lifted)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // View Action state (Lifted from MapContainer to coordinate with Sidebar)
+  const [viewAction, setViewAction] = useState(null);
 
   // Re-enrich POIs when Description Length changes
   useEffect(() => {
@@ -379,6 +383,30 @@ function App() {
       interests: userInterests,
       routeContext: routeCtx
     });
+
+    // --- NEW: STAGE 0: ENRICH START/END ---
+    try {
+      if (signal.aborted) return;
+      const isRound = routeCtx.toLowerCase().includes('roundtrip');
+
+      // Start Info
+      const startLabel = startPoint || cityName;
+      const startInstr = await engine.fetchArrivalInstructions(startLabel, cityName, lang);
+      if (!signal.aborted && startInstr) {
+        setRouteData(prev => prev ? { ...prev, startInfo: startInstr } : prev);
+      }
+
+      // End Info (Only if not roundtrip)
+      if (!isRound && pois.length > 0) {
+        const lastPoi = pois[pois.length - 1];
+        const endInstr = await engine.fetchArrivalInstructions(lastPoi.name, cityName, lang);
+        if (!signal.aborted && endInstr) {
+          setRouteData(prev => prev ? { ...prev, endInfo: endInstr } : prev);
+        }
+      }
+    } catch (e) {
+      console.warn("Start/End Enrichment Failed:", e);
+    }
 
     // Local cache to persist short descriptions between Stage 1 and Stage 2
     const shortDescMap = new Map();
@@ -1080,7 +1108,7 @@ function App() {
     }
   };
 
-  // New Handler for AI-triggered Searches
+  // New Handler for AI-triggered Searches - Revised for Smart Algorithm
   const handleAiSearchRequest = async (rawQuery) => {
     console.log("AI Requested Search for:", rawQuery);
 
@@ -1133,7 +1161,24 @@ function App() {
             console.log(`AI Search: Calculated Midpoint at POI #${midIndex} (${midPoi.name})`);
           }
         } else {
-          const target = routeData.pois.find(p => p.name.toLowerCase().includes(locationContext.toLowerCase()));
+          // Normal Match (Name or Index)
+          let target = null;
+
+          // Check for Index Match (e.g. "POI 9", "punt 9", or just "9")
+          const indexMatch = locationContext.match(/(?:POI|punt|#)?\s*(\d+)/i);
+          if (indexMatch) {
+            const idx = parseInt(indexMatch[1]) - 1; // 1-based to 0-based
+            if (idx >= 0 && idx < routeData.pois.length) {
+              target = routeData.pois[idx];
+              console.log(`AI Search: Index Match found for "${locationContext}" -> #${idx + 1} (${target.name})`);
+            }
+          }
+
+          // Fallback to Name Match
+          if (!target) {
+            target = routeData.pois.find(p => p.name.toLowerCase().includes(locationContext.toLowerCase()));
+          }
+
           if (target) {
             center = [target.lat, target.lng];
             radius = 1.0;
@@ -1159,58 +1204,72 @@ function App() {
       const candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, searchSources);
 
       if (candidates.length > 0) {
-        // Take top 3 & Calculate Detour Impact
+        // Take top 3 & Calculate Detour Impact using the new Smart Algorithm
+        const currentRoute = routeData?.pois || [];
+        const startLoc = { lat: routeData?.center[0], lng: routeData?.center[1] };
+        const travelModeForEstimation = travelMode === 'cycling' ? 'bike' : 'walk';
+
         const suggestions = candidates.slice(0, 3).map(cand => {
-          let extraKm = 0;
-          if (routeData && routeData.pois && routeData.pois.length > 0) {
-            const currentRoute = routeData.pois;
-            const startLoc = { lat: routeData.center[0], lng: routeData.center[1] };
+          // 1. Calculate Primary Detour (After Anchor)
+          let anchorIdx = -1;
+          if (referencePoiId) {
+            anchorIdx = currentRoute.findIndex(p => p.id === referencePoiId);
+          }
 
-            // If we have a specific reference context, calculate cost ONLY at that spot
-            if (referencePoiId) {
-              const refIdx = currentRoute.findIndex(p => p.id === referencePoiId);
-              if (refIdx !== -1) {
-                const prev = currentRoute[refIdx];
-                const next = currentRoute[refIdx + 1] || null;
-                const d1 = getDistance(prev.lat, prev.lng, cand.lat, cand.lng);
-                if (next) {
-                  const d2 = getDistance(cand.lat, cand.lng, next.lat, next.lng);
-                  const base = getDistance(prev.lat, prev.lng, next.lat, next.lng);
-                  extraKm = d1 + d2 - base;
-                } else {
-                  extraKm = d1;
-                }
-              }
-            } else {
-              // Find Global Min Cost (Best Fit)
-              let minCost = Infinity;
-              for (let i = 0; i <= currentRoute.length; i++) {
-                const prev = (i === 0) ? startLoc : currentRoute[i - 1];
-                const next = (i === currentRoute.length) ? null : currentRoute[i];
-                const d1 = getDistance(prev.lat, prev.lng, cand.lat, cand.lng);
-                let cost = 0;
-                if (next) {
-                  const d2 = getDistance(cand.lat, cand.lng, next.lat, next.lng);
-                  const base = getDistance(prev.lat, prev.lng, next.lat, next.lng);
-                  cost = d1 + d2 - base;
-                } else cost = d1;
+          const primaryDetour = smartPoiUtils.added_detour_if_inserted_after(
+            { center: routeData.center, pois: currentRoute },
+            anchorIdx,
+            cand,
+            travelModeForEstimation
+          );
 
-                if (cost < minCost) minCost = cost;
-              }
-              extraKm = minCost;
+          // 2. Search for Smart Alternatives (Beter na POI k?)
+          let bestAlternative = null;
+          let minAlternativeDetour = primaryDetour.added_distance_m;
+
+          // Check if any other insertion point is much better
+          // We check all possible indices
+          for (let i = -1; i < currentRoute.length; i++) {
+            if (i === anchorIdx) continue; // Skip the primary one
+
+            const altDetour = smartPoiUtils.added_detour_if_inserted_after(
+              { center: routeData.center, pois: currentRoute },
+              i,
+              cand,
+              travelModeForEstimation
+            );
+
+            // If alternative is >100m better and distance to that POI is small
+            if (altDetour.added_distance_m < minAlternativeDetour - 100) {
+              minAlternativeDetour = altDetour.added_distance_m;
+              const refPoi = i === -1 ? { name: language === 'nl' ? 'Start' : 'Start', index: -1 } : { ...currentRoute[i], index: i };
+              bestAlternative = {
+                suggest_after_poi_index: i,
+                poi_name: refPoi.name,
+                detour: altDetour,
+                why_better: language === 'nl'
+                  ? `Slechts ${altDetour.added_distance_m}m omweg vs ${primaryDetour.added_distance_m}m.`
+                  : `Only ${altDetour.added_distance_m}m detour vs ${primaryDetour.added_distance_m}m.`
+              };
             }
           }
-          const currentTotal = parseFloat(routeData?.stats?.totalDistance || 0);
-          return { ...cand, detour_km: extraKm, projected_total_km: currentTotal + extraKm };
+
+          return {
+            ...cand,
+            detour_km: primaryDetour.added_distance_m / 1000,
+            added_duration_min: primaryDetour.added_duration_min,
+            anchorPoiIndex: anchorIdx,
+            smartAlternative: bestAlternative
+          };
         });
 
-        // Add "Suggestion Card" to chat
+        // Add "Suggestion Card" to chat with new structure
         setAiChatHistory(prev => [...prev, {
           role: 'system',
           type: 'poi_suggestions',
           data: suggestions,
           query: query,
-          context: { referencePoiId }
+          context: { referencePoiId, anchorPoiIndex: referencePoiId ? currentRoute.findIndex(p => p.id === referencePoiId) : -1 }
         }]);
       } else {
         setAiChatHistory(prev => [...prev, {
@@ -1446,8 +1505,12 @@ function App() {
 
           // Check if we have a preference reference (e.g. "After Modemuseum")
           const preferredRefId = activeParams?.referencePoiId;
+          const explicitInsertIdx = activeParams?.insertAfterIndex;
           let refInsertIdx = -1;
-          if (preferredRefId) {
+
+          if (explicitInsertIdx !== undefined) {
+            refInsertIdx = explicitInsertIdx + 1; // 0 for after start (-1 + 1), etc.
+          } else if (preferredRefId) {
             const foundIdx = currentRoute.findIndex(p => p.id === preferredRefId);
             if (foundIdx !== -1) refInsertIdx = foundIdx + 1;
           }
@@ -1721,12 +1784,25 @@ function App() {
       // Note: We use the existing POI descriptions/images, no need to re-enrich
       const routeResult = await calculateRoutePath(optimizedPois, newStartCenter, travelMode);
 
+      // 4. Fetch New Start/End Instructions
+      const cityName = validatedCityData?.address?.city || city;
+      const engine = new PoiIntelligence({ city: cityName, language });
+      const newStartInstr = await engine.fetchArrivalInstructions(newStartInput || cityName, cityName, language);
+
+      let newEndInstr = routeData.endInfo;
+      if (!routeData.stats?.isRoundtrip && optimizedPois.length > 0) {
+        const lastPoi = optimizedPois[optimizedPois.length - 1];
+        newEndInstr = await engine.fetchArrivalInstructions(lastPoi.name, cityName, language);
+      }
+
       const newRouteData = {
         ...routeData,
         center: newStartCenter, // Update center to behave as new start
         pois: optimizedPois,
         routePath: routeResult.path,
         navigationSteps: routeResult.steps,
+        startInfo: newStartInstr,
+        endInfo: newEndInstr,
         stats: {
           ...routeData.stats,
           totalDistance: routeResult.dist.toFixed(1),
@@ -2472,6 +2548,8 @@ function App() {
             setIsAiViewActive(true);
             setIsSidebarOpen(true);
           }}
+          viewAction={viewAction}
+          setViewAction={setViewAction}
         />
       </div>
 
@@ -2497,6 +2575,7 @@ function App() {
         onReset={resetSearch}
         language={language}
         setLanguage={setLanguage} // Add setter for sidebar toggle
+        setViewAction={setViewAction}
 
         voiceSettings={voiceSettings}
         setVoiceSettings={setVoiceSettings}

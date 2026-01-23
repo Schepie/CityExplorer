@@ -186,6 +186,41 @@ Genereer de introductie voor de tocht in ${this.config.city}.
     }
 
     /**
+     * Generates specific "How to reach" instructions (Transport/Parking) for a point.
+     */
+    async fetchArrivalInstructions(locationName, city, language = 'nl') {
+        const prompt = `
+Je bent een stadsgids. Geef EXTREEM KORTE instructies over hoe je de volgende locatie in ${city} kunt bereiken: "${locationName}".
+Focus UITSLUITEND op:
+1. Belangrijkste openbaar vervoer (bijv. metro/tram lijn X, halte Y).
+2. Dichtstbijzijnde parkeergarage (indien relevant).
+
+DOEL: 2 korte zinnen max. Gebruik de taal: ${language === 'nl' ? 'Nederlands' : 'Engels'}.
+
+Voorbeeld:
+"Bereikbaar met tram 1 of 4, halte Centrum. Parkeer in Parking Grote Markt om de hoek."
+
+Als je het niet zeker weet, geef dan een algemene maar veilige suggestie voor een centrale plek in ${city}.
+`;
+
+        try {
+            const url = '/api/gemini';
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
+            });
+
+            if (!response.ok) return null;
+            const data = await response.json();
+            return data.text ? data.text.trim() : null;
+        } catch (e) {
+            console.warn("Arrival Instructions Generation Failed:", e);
+            return null;
+        }
+    }
+
+    /**
      * Extracts structured trip parameters from a natural language prompt.
      * Support interactive conversation by maintaining context.
      */
@@ -207,24 +242,33 @@ Je helpt de gebruiker om een stad te verkennen met de focus op CULTUUR, HISTORIE
 **Is er al een route actief? ${isRouteActive ? 'JA' : 'NEE'}**
 
 - **INDIEN JA (Route Actief):**
-  - De gebruiker is AL onderweg. Vraag NIET om de stad, reiswijze, startpunt of rondtrip-status.
-  - Neem aan dat de gebruiker een extra tussenstop wil toevoegen aan de huidige route.
-  - Gebruik DIRECT de \`[[SEARCH: <term>]]\` tag voor verzoeken zoals "ik heb dorst", "toilet", "winkel", "museum".
-  - Voorbeeld: User zegt "Ik wil koffie". Jij zegt: "[[SEARCH: koffiebar]] Goed idee, ik zoek een koffiebar op je route."
+  - Je bent een routeplanner-assistent. De gebruiker is AL onderweg.
+  - Vraag NIET om de stad, reiswijze, startpunt of rondtrip-status.
+  - Verwerk vragen om op elk moment een extra stop/POI toe te voegen.
+  - Zoek geschikte plaatsen in de buurt van een opgegeven anker-POI (bijv. "na het museum", "bij de kerk").
+  - Gebruik DIRECT de speciale tag: \`[[SEARCH: <term> | NEAR: <referentiepunt>]]\`. Je kunt de naam OF de index van de POI gebruiken (bijv. \`NEAR: 9\` voor POI #9).
+  - Als de gebruiker iets "halverwege" of "tussenin" wil, gebruik: \`[[SEARCH: <term> | NEAR: @MIDPOINT]]\`.
+  - Rapporteer altijd dat je geschikte plaatsen zoekt en de extra reistijd zult berekenen.
+  - Toon top 3 directe suggesties en zoek naar slimme alternatieven (bv. "plan dit na POI #k i.p.v. na het huidige POI").
+  - Conversatie in natuurlijk Nederlands, kort en helder.
 
-- **INDIEN NEE (Geen Route):**
-  - Volg de standaard flow: Vraag om Stad, Reiswijze, Lengte en Startpunt als die ontbreken.
-
-4. Dit betekent dat je de volgende informatie MOET hebben of vaststellen voordat je de status op "complete" zet (ALLEEN als route NIET actief is):
+3. Dit betekent dat je de volgende informatie MOET hebben of vaststellen voordat je de status op "complete" zet (ALLEEN als route NIET actief is):
    - **Stad/Plaats**: Welke specifieke stad of plek wil de gebruiker verkennen?
    - **Reiswijze**: Gaan ze wandelen ("walking") of fietsen ("cycling")?
-   - **Lengte**: Hoe lang (minuten) of hoe ver (km) moet de trip zijn? (Maak een deskundige inschatting als de gebruiker vage termen gebruikt zoals "een middagje").
-   - **Rondtrip**: Is het een rondtrip? Zo ja, vraag ALTIJD naar een specifiek startpunt (bijv. een hotel, station of 'huidige locatie') als dit nog niet bekend is.
-5. Je mag zelfstandig de interesses verfijnen of uitbreiden om de beste ervaring te bieden.
-   - Als de gebruiker vaag is ("doe maar wat"), kies dan voor populaire categorieën zoals "historisch centrum", "highlights", of "verborgen parels".
-6. Indien er cruciale informatie ontbreekt, stel dan een vriendelijke vraag in je "message".
-7. Zodra je alle parameters hebt (Stad, Reiswijze, Lengte, Rondtrip status en eventueel Startpunt), kondig dan aan dat je de route gaat genereren en leg kort uit waarom deze keuzes goed zijn. 
-8. **BELANGRIJK**: Zet de status op "complete" ZODRA je alle parameters hebt. Wacht niet op een extra bevestiging van de gebruiker als je alles al weet.
+   - **Lengte**: Hoe lang (minuten) of hoe ver (km) moet de trip zijn?
+   - **Rondtrip**: Is het een rondtrip? Zo ja, vraag ALTIJD naar een specifiek startpunt.
+
+4. **NIEUW (Algorithm Reasoning)**:
+   - 1) Parseer de gebruikersvraag: Anker-POI + Intent (koffie, toilet, etc).
+   - 2) Gebruik [[SEARCH]] tags om de app de tools te laten aanroepen:
+      - \`find_places_near(near_lat, near_lng, categories, radius)\`
+      - \`added_detour_if_inserted_after(route, anchor_index, new_stop)\`
+   - 3) De app zal de resultaten tonen in een JSON-blok met \`direct_suggestions\` en \`smart_alternatives\`.
+
+5. **OUTPUT JSON STRUCTUUR ( params object )**:
+   - Voeg extra parameters toe indienRelevant:
+   - "anchorPoi": De naam van het referentiepunt (indien genoemd).
+   - "searchIntent": De zoekterm.
 
 ### GESPREKSHISTORIE
 ${historyContext}
@@ -235,18 +279,14 @@ ${historyContext}
 ### EXTRACHEERBARE PARAMETERS
 - **city**: De stad of regio.
 - **travelMode**: "walking" of "cycling".
-- **constraintType**: "duration" of "distance".
-- **constraintValue**: Jouw DESKUNDIGE inschatting of de expliciete wens van de gebruiker (minuten voor tijd, km voor afstand).
-- **interests**: Een geoptimaliseerde lijst van zoektermen/interesses gebaseerd op het gesprek. **Zorg dat deze termen leiden tot TOERISTISCHE resultaten (bijv. "historische monumenten" ipv "gebouwen").**
-- **pauses**: Wensen voor pauzes.
-- **startPoint**: Specifieke naam van de startlocatie (bijv. "Station Hasselt").
-- **isRoundtrip**: Boolean.
+- ...
+- **anchorPoi**: De naam van de POI waar de gebruiker "bij" of "na" wil stoppen.
 
 ### OUTPUT JSON STRUCTUUR
 Je MOET antwoorden met een JSON object in dit formaat:
 {
   "status": "complete" | "interactive" | "close",
-  "message": "Jouw bericht aan de gebruiker. Wees een gids: adviseer, leg uit en vraag om feedback.",
+  "message": "Jouw bericht aan de gebruiker. Gebruik [[SEARCH: ...]] indien nodig.",
   "params": {
      "city": string | null,
      "travelMode": "walking" | "cycling",
@@ -255,21 +295,10 @@ Je MOET antwoorden met een JSON object in dit formaat:
      "interests": string | null,
      "pauses": string | null,
      "startPoint": string | null,
-     "isRoundtrip": boolean
+     "isRoundtrip": boolean,
+     "anchorPoi": string | null
   }
 }
-
-### REGELS VOOR OUTPUT
-- De status mag pas op "complete" als je Stad, TravelMode, Constraint en Roundtrip info hebt (TENZIJ Route Actief is -> dan direct Search).
-- **Wanneer de status "complete" is, MOET je ALLE verzamelde parameters (city, travelMode, constraintValue, interests, etc.) opnemen in het params object.**
-- Indien de gebruiker vraagt om de planner te sluiten/stoppen, zet status op "close".
-- **NIEUW**: Als de gebruiker tijdens een route een **specifieke tussenstop** wil (bijv. "ik heb dorst", "zoek een cafe", "waar is een toilet?", "ik wil shoppen") OF als Route Actief is:
-  - Gebruik de speciale tag "[[SEARCH: <zoekterm>]]" aan het BEGIN van je message.
-  - **NIEUW**: Als de gebruiker een referentiepunt noemt (bijv. "bij het Modemuseum", "na de kerk"), gebruik dan: "[[SEARCH: <term> | NEAR: <referentiepunt>]]".
-  - **NIEUW**: Als de gebruiker vraagt om iets "halverwege", "in het midden", of "tussenin" te zoeken (zonder specifiek punt), gebruik dan: "[[SEARCH: <term> | NEAR: @MIDPOINT]]".
-  - Voorbeeld user: "Ik heb dorst." -> Jouw output message: "[[SEARCH: cafe]] Geen probleem! Ik zoek even naar leuke cafeetjes in de buurt."
-  - Voorbeeld user: "Zoek koffie bij het Modemuseum." -> Jouw output message: "[[SEARCH: koffie | NEAR: Modemuseum]] Ik kijk wat er rond het Modemuseum te vinden is."
-- Gebruik taal: ${language === 'nl' ? 'Nederlands' : 'English'}.
 `;
 
         try {

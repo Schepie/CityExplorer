@@ -357,36 +357,53 @@ const SidebarInput = ({
 
                                             <div className="flex flex-col gap-2">
                                                 {msg.data.map((poi, pIdx) => (
-                                                    <div key={pIdx} className="bg-slate-900/40 hover:bg-slate-900/60 p-2 rounded-xl flex items-center justify-between gap-3 group transition-all">
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="font-bold text-slate-200 text-xs truncate leading-tight">{poi.name}</div>
-                                                            <div className="text-[10px] text-slate-400 truncate leading-tight mt-0.5">{poi.description || (language === 'nl' ? 'Geen beschrijving' : 'No description')}</div>
-                                                            {poi.dist_km && (
-                                                                <div className="text-[9px] text-slate-500 mt-1 flex flex-col gap-0.5">
-                                                                    <span>{poi.dist_km.toFixed(1)} km from target</span>
-                                                                    {poi.detour_km !== undefined && (
-                                                                        <div className="flex gap-2">
-                                                                            <span className={`font-bold ${poi.detour_km > 1 ? 'text-amber-500' : 'text-green-400'}`}>
-                                                                                +{poi.detour_km.toFixed(1)} km extra
-                                                                            </span>
-                                                                            {poi.projected_total_km && (
-                                                                                <span className="text-slate-400">
-                                                                                    (Tot: {poi.projected_total_km.toFixed(1)} km)
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
+                                                    <div key={pIdx} className="bg-slate-900/40 hover:bg-slate-900/60 p-2 rounded-xl flex flex-col gap-2 group transition-all">
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="font-bold text-slate-200 text-xs truncate leading-tight">{poi.name}</div>
+                                                                <div className="text-[10px] text-slate-400 truncate leading-tight mt-0.5">{poi.description || (language === 'nl' ? 'Geen beschrijving' : 'No description')}</div>
+                                                                {poi.detour_km !== undefined && (
+                                                                    <div className="text-[9px] text-slate-500 mt-1 flex gap-2">
+                                                                        <span className={`font-bold ${poi.detour_km > 1 ? 'text-amber-500' : 'text-green-400'}`}>
+                                                                            +{poi.detour_km.toFixed(1)} km / {poi.added_duration_min} min
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <button
+                                                                onClick={() => onAddToJourney && onAddToJourney(null, msg.query, { directCandidates: [poi], referencePoiId: msg.context?.referencePoiId })}
+                                                                className="h-7 px-3 rounded-lg text-white text-[10px] font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1 hover:brightness-110 shrink-0"
+                                                                style={{ backgroundColor: primaryColor }}
+                                                            >
+                                                                <span>{language === 'nl' ? 'Toevoegen' : 'Add'}</span>
+                                                            </button>
                                                         </div>
-                                                        <button
-                                                            onClick={() => onAddToJourney && onAddToJourney(null, msg.query, { directCandidates: [poi], referencePoiId: msg.context?.referencePoiId })}
-                                                            className="h-7 px-3 rounded-lg text-white text-[10px] font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1 hover:brightness-110"
-                                                            style={{ backgroundColor: primaryColor }}
-                                                        >
-                                                            <span>{language === 'nl' ? 'Toevoegen' : 'Add'}</span>
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
-                                                        </button>
+
+                                                        {/* Smart Alternative Section */}
+                                                        {poi.smartAlternative && (
+                                                            <div className="mt-1 pt-1 border-t border-white/5 flex flex-col gap-1.5">
+                                                                <div className="flex items-center gap-1.5 text-[9px] text-amber-400/80 font-medium">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+                                                                    <span>{language === 'nl' ? 'Slim Alternatief' : 'Smart Alternative'}</span>
+                                                                </div>
+                                                                <div className="flex items-center justify-between gap-2 pl-4">
+                                                                    <div className="text-[9px] text-slate-400 italic">
+                                                                        {language === 'nl' ? 'Plan na' : 'Plan after'} <span className="text-slate-200 non-italic font-bold">{poi.smartAlternative.poi_name}</span>: {poi.smartAlternative.why_better}
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            onAddToJourney && onAddToJourney(null, msg.query, {
+                                                                                directCandidates: [poi],
+                                                                                insertAfterIndex: poi.smartAlternative.suggest_after_poi_index
+                                                                            });
+                                                                        }}
+                                                                        className="h-6 px-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/40 text-amber-400 text-[9px] font-bold border border-amber-500/30 transition-all active:scale-95"
+                                                                    >
+                                                                        {language === 'nl' ? 'Hier toevoegen' : 'Add here'}
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
@@ -968,7 +985,8 @@ const ItinerarySidebar = ({
     setIsAiViewActive,
 
     onRemovePoi,
-    onUpdateStartLocation
+    onUpdateStartLocation,
+    setViewAction
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -1674,254 +1692,295 @@ const ItinerarySidebar = ({
                         ) : showItinerary ? (
                             /* VIEW 2: Itinerary List */
                             <div className="space-y-3">
-                                {routeData.pois.map((poi, index) => {
+                                {(() => {
+                                    const items = [...routeData.pois];
+                                    const startPoint = {
+                                        id: 'sidebar-start',
+                                        name: language === 'nl' ? 'Startpunt' : 'Start Point',
+                                        isSpecial: true,
+                                        specialType: 'start',
+                                        description: routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info..."),
+                                        isFullyEnriched: !!routeData.startInfo
+                                    };
 
-                                    const isExpanded = expandedPoi === poi.id;
-                                    return (
-                                        <div
-                                            key={poi.id}
-                                            ref={el => poiRefs.current[poi.id] = el}
-                                            onClick={() => {
-                                                const newExpanded = isExpanded ? null : poi.id;
-                                                setExpandedPoi(newExpanded);
+                                    const finalItems = [startPoint, ...items];
 
-                                                if (!isExpanded) {
-                                                    // Expanding: Focus on Map and use Global Description Length (not short map mode)
-                                                    onPoiClick(poi, descriptionLength || 'medium');
-                                                } else {
-                                                    // Collapsing: Close Map Popup
-                                                    if (onPopupClose) onPopupClose();
-                                                }
-                                            }}
-                                            className={`group relative bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-[var(--input-bg)]' : 'border-[var(--panel-border)] hover:border-primary/30'}`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border transition-colors 
-                                                    ${poi.isFullyEnriched
-                                                        ? (isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white')
-                                                        : (poi.short_description
-                                                            ? 'bg-primary/40 text-blue-200 border-primary/40 animate-pulse' // Intermediate (Stage 1 Done)
-                                                            : 'bg-slate-700 text-slate-400 border-slate-600 animate-pulse' // Stage 0
-                                                        )
-                                                    }`}>
+                                    const isRound = routeData.stats?.isRoundtrip || false;
+                                    if (items.length > 0 && routeData.routePath?.length > 0) {
+                                        finalItems.push({
+                                            id: 'sidebar-end',
+                                            name: language === 'nl' ? 'Eindpunt' : 'Finish',
+                                            isSpecial: true,
+                                            specialType: 'end',
+                                            description: (isRound ? routeData.startInfo : routeData.endInfo) || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info..."),
+                                            isFullyEnriched: !!routeData.endInfo
+                                        });
+                                    }
 
-                                                    {searchMode === 'radius' ? (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
-                                                    ) : (index + 1)}
-                                                </div>
-                                                <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-[var(--text-main)] group-hover:text-primary'} pr-16`}>
-                                                    {poi.name}
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                        {getPoiCategoryIcon(poi)}
-                                                    </svg>
-                                                </h3>
-                                            </div>
+                                    return finalItems.map((poi, index) => {
+                                        const isExpanded = expandedPoi === poi.id;
+                                        // Adjust index for display numbering (skipped for special nodes)
+                                        const displayNum = poi.isSpecial ? null : (finalItems.slice(0, index).filter(i => !i.isSpecial).length + 1);
 
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setPoiToDelete(poi);
+                                        return (
+                                            <div
+                                                key={poi.id}
+                                                ref={el => poiRefs.current[poi.id] = el}
+                                                onClick={() => {
+                                                    const newExpanded = isExpanded ? null : poi.id;
+                                                    setExpandedPoi(newExpanded);
+
+                                                    if (!isExpanded) {
+                                                        // Expanding: Focus on Map
+                                                        if (poi.isSpecial) {
+                                                            // Center on Start/End
+                                                            if (poi.specialType === 'start') {
+                                                                if (typeof setViewAction === 'function') setViewAction('ROUTE');
+                                                            } else onPoiClick(items[items.length - 1], 'medium'); // Focus last poi for end
+                                                        } else {
+                                                            onPoiClick(poi, descriptionLength || 'medium');
+                                                        }
+                                                    } else {
+                                                        if (onPopupClose) onPopupClose();
+                                                    }
                                                 }}
-                                                className="absolute top-4 right-3 p-1.5 rounded-full text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-all focus:opacity-100"
-                                                title={language === 'nl' ? "Verwijder" : "Remove"}
+                                                className={`group relative bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-[var(--input-bg)]' : 'border-[var(--panel-border)] hover:border-primary/30'}`}
                                             >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                            </button>
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border transition-colors 
+                                                        ${poi.isSpecial
+                                                            ? (poi.specialType === 'start' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30')
+                                                            : (poi.isFullyEnriched
+                                                                ? (isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white')
+                                                                : (poi.short_description
+                                                                    ? 'bg-primary/40 text-blue-200 border-primary/40 animate-pulse'
+                                                                    : 'bg-slate-700 text-slate-400 border-slate-600 animate-pulse'
+                                                                ))
+                                                        }`}>
 
-                                            {/* Expandable Content */}
-                                            {
-                                                isExpanded && (
-                                                    <div className="mt-3 pl-9 animate-in slide-in-from-top-2 fade-in duration-200">
+                                                        {poi.isSpecial ? (
+                                                            poi.specialType === 'start' ? 'S' : 'F'
+                                                        ) : (
+                                                            searchMode === 'radius' ? (
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
+                                                            ) : displayNum
+                                                        )}
+                                                    </div>
+                                                    <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-[var(--text-main)] group-hover:text-primary'} pr-16`}>
+                                                        {poi.name}
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                            {getPoiCategoryIcon(poi)}
+                                                        </svg>
+                                                    </h3>
+                                                </div>
 
-                                                        <div className="space-y-4 pr-8">
-                                                            {/* POI Image */}
-                                                            {poi.image && (
-                                                                <div className="mb-2 rounded-xl overflow-hidden border border-white/10 shadow-2xl h-52 bg-slate-800/50 relative group">
-                                                                    <img
-                                                                        src={poi.image}
-                                                                        alt={poi.name}
-                                                                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                                                        onLoad={(e) => e.target.style.opacity = '1'}
-                                                                        onError={(e) => {
-                                                                            e.target.closest('.group').style.display = 'none';
-                                                                        }}
-                                                                        style={{ opacity: 0, transition: 'opacity 0.8s' }}
-                                                                    />
-                                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
-                                                                </div>
-                                                            )}
+                                                {!poi.isSpecial && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setPoiToDelete(poi);
+                                                        }}
+                                                        className="absolute top-4 right-3 p-1.5 rounded-full text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-all focus:opacity-100"
+                                                        title={language === 'nl' ? "Verwijder" : "Remove"}
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                    </button>
+                                                )}
 
-                                                            {/* High-level short description */}
-                                                            <div className="text-sm text-slate-300 font-medium leading-relaxed italic border-l-2 border-primary/30 pl-3">
-                                                                {(() => {
-                                                                    const short = poi.structured_info?.short_description || "";
-                                                                    const displayDesc = short || poi.description || (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available.");
+                                                {/* Expandable Content */}
+                                                {
+                                                    isExpanded && (
+                                                        <div className="mt-3 pl-9 animate-in slide-in-from-top-2 fade-in duration-200">
 
-                                                                    // Use global speakingId and spokenCharCount
-                                                                    if (speakingId === poi.id && spokenCharCount !== undefined) {
-                                                                        const idx = spokenCharCount;
-
-                                                                        // Only highlight if it fits in THIS block (the short part)
-                                                                        if (idx >= 0 && idx < short.length) {
-                                                                            let endIdx = short.indexOf(' ', idx);
-                                                                            if (endIdx === -1) endIdx = short.length;
-
-                                                                            const before = short.slice(0, idx);
-                                                                            const current = short.slice(idx, endIdx);
-                                                                            const after = short.slice(endIdx);
-                                                                            const pColor = activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6';
-
-                                                                            return (
-                                                                                <>
-                                                                                    <span className="text-white not-italic">{before}</span>
-                                                                                    <span
-                                                                                        ref={poiHighlightedWordRef}
-                                                                                        style={{
-                                                                                            backgroundColor: hexToRgba(pColor, 0.4),
-                                                                                            borderRadius: '2px'
-                                                                                        }}
-                                                                                        className="text-white not-italic"
-                                                                                    >
-                                                                                        {current}
-                                                                                    </span>
-                                                                                    <span className="opacity-50">{after}</span>
-                                                                                </>
-                                                                            );
-                                                                        } else if (idx >= short.length && short !== "") {
-                                                                            // Entire short block is finished, keep it fully visible but not highlighted
-                                                                            return <span className="text-white not-italic opacity-80">{short}</span>;
-                                                                        }
-                                                                    }
-                                                                    return displayDesc;
-                                                                })()}
-                                                            </div>
-
-                                                            {/* Interest Alignment */}
-                                                            {poi.structured_info?.matching_reasons && poi.structured_info.matching_reasons.length > 0 && (
-                                                                <div className="space-y-2">
-                                                                    <h4 className="text-[10px] uppercase tracking-widest text-primary font-bold">{language === 'nl' ? 'WAAROM DIT BIJ JE PAST' : 'WHY THIS MATCHES YOUR INTERESTS'}</h4>
-                                                                    <div className="grid gap-1.5">
-                                                                        {poi.structured_info.matching_reasons.map((reason, ri) => (
-                                                                            <div key={ri} className="flex items-start gap-2 text-xs text-slate-400">
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mt-0.5 text-green-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                                                                <span>{reason}</span>
-                                                                            </div>
-                                                                        ))}
+                                                            <div className="space-y-4 pr-8">
+                                                                {/* POI Image */}
+                                                                {poi.image && (
+                                                                    <div className="mb-2 rounded-xl overflow-hidden border border-white/10 shadow-2xl h-52 bg-slate-800/50 relative group">
+                                                                        <img
+                                                                            src={poi.image}
+                                                                            alt={poi.name}
+                                                                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                                                            onLoad={(e) => e.target.style.opacity = '1'}
+                                                                            onError={(e) => {
+                                                                                e.target.closest('.group').style.display = 'none';
+                                                                            }}
+                                                                            style={{ opacity: 0, transition: 'opacity 0.8s' }}
+                                                                        />
+                                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
                                                                     </div>
-                                                                </div>
-                                                            )}
+                                                                )}
 
-                                                            {/* Full Description (only if expanded or on Standard/Deep) */}
-                                                            {poi.structured_info?.full_description && (
-                                                                <div className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
+                                                                {/* High-level short description */}
+                                                                <div className="text-sm text-slate-300 font-medium leading-relaxed italic border-l-2 border-primary/30 pl-3">
                                                                     {(() => {
                                                                         const short = poi.structured_info?.short_description || "";
-                                                                        const displayDesc = poi.structured_info.full_description;
+                                                                        const displayDesc = short || poi.description || (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available.");
 
+                                                                        // Use global speakingId and spokenCharCount
                                                                         if (speakingId === poi.id && spokenCharCount !== undefined) {
-                                                                            // Offset by short_description + "\n\n" (2 chars)
-                                                                            const offset = short ? short.length + 2 : 0;
-                                                                            const idx = spokenCharCount - offset;
+                                                                            const idx = spokenCharCount;
 
-                                                                            if (idx >= 0 && idx < displayDesc.length) {
-                                                                                let endIdx = displayDesc.indexOf(' ', idx);
-                                                                                if (endIdx === -1) endIdx = displayDesc.length;
+                                                                            // Only highlight if it fits in THIS block (the short part)
+                                                                            if (idx >= 0 && idx < short.length) {
+                                                                                let endIdx = short.indexOf(' ', idx);
+                                                                                if (endIdx === -1) endIdx = short.length;
 
-                                                                                const before = displayDesc.slice(0, idx);
-                                                                                const current = displayDesc.slice(idx, endIdx);
-                                                                                const after = displayDesc.slice(endIdx);
-
+                                                                                const before = short.slice(0, idx);
+                                                                                const current = short.slice(idx, endIdx);
+                                                                                const after = short.slice(endIdx);
                                                                                 const pColor = activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6';
 
                                                                                 return (
                                                                                     <>
-                                                                                        <span className="text-slate-200">{before}</span>
+                                                                                        <span className="text-white not-italic">{before}</span>
                                                                                         <span
                                                                                             ref={poiHighlightedWordRef}
                                                                                             style={{
                                                                                                 backgroundColor: hexToRgba(pColor, 0.4),
                                                                                                 borderRadius: '2px'
                                                                                             }}
-                                                                                            className="text-white"
+                                                                                            className="text-white not-italic"
                                                                                         >
                                                                                             {current}
                                                                                         </span>
-                                                                                        <span className="text-slate-600">{after}</span>
+                                                                                        <span className="opacity-50">{after}</span>
                                                                                     </>
                                                                                 );
-                                                                            } else if (idx >= displayDesc.length) {
-                                                                                return displayDesc;
-                                                                            } else if (idx < 0) {
-                                                                                // Still reading the short description, dim this part
-                                                                                return <span className="opacity-30">{displayDesc}</span>;
+                                                                            } else if (idx >= short.length && short !== "") {
+                                                                                // Entire short block is finished, keep it fully visible but not highlighted
+                                                                                return <span className="text-white not-italic opacity-80">{short}</span>;
                                                                             }
                                                                         }
                                                                         return displayDesc;
                                                                     })()}
                                                                 </div>
-                                                            )}
 
-                                                            {/* Fun Facts */}
-                                                            {poi.structured_info?.fun_facts && poi.structured_info.fun_facts.length > 0 && (
-                                                                <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3 space-y-2">
-                                                                    <h4 className="text-[10px] uppercase tracking-widest text-blue-400 font-bold flex items-center gap-1.5">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
-                                                                        {language === 'nl' ? 'WIST JE DAT?' : 'FUN FACTS'}
-                                                                    </h4>
-                                                                    <ul className="space-y-1.5">
-                                                                        {poi.structured_info.fun_facts.map((fact, fi) => (
-                                                                            <li key={fi} className="text-xs text-slate-400 pl-4 relative before:content-['•'] before:absolute before:left-0 before:text-blue-500/50">
-                                                                                {fact}
-                                                                            </li>
-                                                                        ))}
-                                                                    </ul>
-                                                                </div>
-                                                            )}
-
-                                                            {/* 2 Minute Highlight */}
-                                                            {poi.structured_info?.two_minute_highlight && (
-                                                                <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
-                                                                    <h4 className="text-[10px] uppercase tracking-widest text-amber-400 font-bold mb-1">{language === 'nl' ? 'ALS JE MAAR 2 MINUTEN HEBT' : 'IF YOU ONLY HAVE 2 MINUTES'}</h4>
-                                                                    <div className="text-xs text-slate-400 italic">
-                                                                        "{poi.structured_info.two_minute_highlight}"
+                                                                {/* Interest Alignment */}
+                                                                {poi.structured_info?.matching_reasons && poi.structured_info.matching_reasons.length > 0 && (
+                                                                    <div className="space-y-2">
+                                                                        <h4 className="text-[10px] uppercase tracking-widest text-primary font-bold">{language === 'nl' ? 'WAAROM DIT BIJ JE PAST' : 'WHY THIS MATCHES YOUR INTERESTS'}</h4>
+                                                                        <div className="grid gap-1.5">
+                                                                            {poi.structured_info.matching_reasons.map((reason, ri) => (
+                                                                                <div key={ri} className="flex items-start gap-2 text-xs text-slate-400">
+                                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mt-0.5 text-green-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                                                                    <span>{reason}</span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
                                                                     </div>
-                                                                </div>
-                                                            )}
+                                                                )}
 
-                                                            {/* Visitor Tips */}
-                                                            {poi.structured_info?.visitor_tips && (
-                                                                <div className="flex items-start gap-2 bg-slate-900/50 p-2.5 rounded-lg border border-white/5">
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                                                                    <div className="text-[11px] text-slate-500">
-                                                                        <span className="font-bold uppercase mr-1">{language === 'nl' ? 'TIPS:' : 'TIPS:'}</span>
-                                                                        {poi.structured_info.visitor_tips}
+                                                                {/* Full Description (only if expanded or on Standard/Deep) */}
+                                                                {poi.structured_info?.full_description && (
+                                                                    <div className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
+                                                                        {(() => {
+                                                                            const short = poi.structured_info?.short_description || "";
+                                                                            const displayDesc = poi.structured_info.full_description;
+
+                                                                            if (speakingId === poi.id && spokenCharCount !== undefined) {
+                                                                                // Offset by short_description + "\n\n" (2 chars)
+                                                                                const offset = short ? short.length + 2 : 0;
+                                                                                const idx = spokenCharCount - offset;
+
+                                                                                if (idx >= 0 && idx < displayDesc.length) {
+                                                                                    let endIdx = displayDesc.indexOf(' ', idx);
+                                                                                    if (endIdx === -1) endIdx = displayDesc.length;
+
+                                                                                    const before = displayDesc.slice(0, idx);
+                                                                                    const current = displayDesc.slice(idx, endIdx);
+                                                                                    const after = displayDesc.slice(endIdx);
+
+                                                                                    const pColor = activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6';
+
+                                                                                    return (
+                                                                                        <>
+                                                                                            <span className="text-slate-200">{before}</span>
+                                                                                            <span
+                                                                                                ref={poiHighlightedWordRef}
+                                                                                                style={{
+                                                                                                    backgroundColor: hexToRgba(pColor, 0.4),
+                                                                                                    borderRadius: '2px'
+                                                                                                }}
+                                                                                                className="text-white"
+                                                                                            >
+                                                                                                {current}
+                                                                                            </span>
+                                                                                            <span className="text-slate-600">{after}</span>
+                                                                                        </>
+                                                                                    );
+                                                                                } else if (idx >= displayDesc.length) {
+                                                                                    return displayDesc;
+                                                                                } else if (idx < 0) {
+                                                                                    // Still reading the short description, dim this part
+                                                                                    return <span className="opacity-30">{displayDesc}</span>;
+                                                                                }
+                                                                            }
+                                                                            return displayDesc;
+                                                                        })()}
                                                                     </div>
-                                                                </div>
-                                                            )}
-                                                        </div>
+                                                                )}
 
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
-                                                            className={`absolute top-4 right-12 p-2 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
-                                                            title="Read Aloud"
-                                                        >
-                                                            {speakingId === poi.id ? (
-                                                                isSpeechPaused ? (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                                                {/* Fun Facts */}
+                                                                {poi.structured_info?.fun_facts && poi.structured_info.fun_facts.length > 0 && (
+                                                                    <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3 space-y-2">
+                                                                        <h4 className="text-[10px] uppercase tracking-widest text-blue-400 font-bold flex items-center gap-1.5">
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+                                                                            {language === 'nl' ? 'WIST JE DAT?' : 'FUN FACTS'}
+                                                                        </h4>
+                                                                        <ul className="space-y-1.5">
+                                                                            {poi.structured_info.fun_facts.map((fact, fi) => (
+                                                                                <li key={fi} className="text-xs text-slate-400 pl-4 relative before:content-['•'] before:absolute before:left-0 before:text-blue-500/50">
+                                                                                    {fact}
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* 2 Minute Highlight */}
+                                                                {poi.structured_info?.two_minute_highlight && (
+                                                                    <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
+                                                                        <h4 className="text-[10px] uppercase tracking-widest text-amber-400 font-bold mb-1">{language === 'nl' ? 'ALS JE MAAR 2 MINUTEN HEBT' : 'IF YOU ONLY HAVE 2 MINUTES'}</h4>
+                                                                        <div className="text-xs text-slate-400 italic">
+                                                                            "{poi.structured_info.two_minute_highlight}"
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Visitor Tips */}
+                                                                {poi.structured_info?.visitor_tips && (
+                                                                    <div className="flex items-start gap-2 bg-slate-900/50 p-2.5 rounded-lg border border-white/5">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                                                        <div className="text-[11px] text-slate-500">
+                                                                            <span className="font-bold uppercase mr-1">{language === 'nl' ? 'TIPS:' : 'TIPS:'}</span>
+                                                                            {poi.structured_info.visitor_tips}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
+                                                                className={`absolute top-4 right-12 p-2 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
+                                                                title="Read Aloud"
+                                                            >
+                                                                {speakingId === poi.id ? (
+                                                                    isSpeechPaused ? (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                                                    ) : (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                                                    )
                                                                 ) : (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                                                                )
-                                                            ) : (
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                                                            )}
-                                                        </button>
-                                                    </div>
-                                                )
-                                            }
-                                        </div>
-                                    );
-                                })
-                                }
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    )
+                                                }
+                                            </div>
+                                        );
+                                    })
+                                })()}
                             </div>
                         ) : (
                             /* VIEW 3: Input Form (Start or Add) */

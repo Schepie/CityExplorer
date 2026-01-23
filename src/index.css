@@ -228,7 +228,18 @@ body {
   padding: 0;
   overflow: hidden;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-  min-width: 300px;
+  min-width: 100px;
+}
+
+.glass-popup .leaflet-popup-content-wrapper {
+  min-width: auto !important;
+  display: inline-block !important;
+}
+
+.glass-popup .leaflet-popup-content {
+  width: auto !important;
+  padding: 10px 15px !important;
+  white-space: nowrap !important;
 }
 
 .leaflet-popup-content {
