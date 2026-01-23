@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PoiIntelligence } from './services/PoiIntelligence';
 import MapContainer from './components/MapContainer';
 import ItinerarySidebar from './components/ItinerarySidebar';
@@ -38,6 +38,7 @@ const APP_THEMES = {
 };
 
 
+
 import NavigationOverlay from './components/NavigationOverlay';
 
 function App() {
@@ -75,6 +76,15 @@ function App() {
       root.style.setProperty('--accent', c.accent);
       root.style.setProperty('--bg-gradient-start', c.bgStart);
       root.style.setProperty('--bg-gradient-end', c.bgEnd);
+
+      // Update button text color (default to white if undefined)
+      root.style.setProperty('--btn-text-color', c.btnText || 'white');
+
+      // Update global text colors (default to light values if undefined)
+      root.style.setProperty('--text-main', c.textMain || '#f8fafc');
+      root.style.setProperty('--text-muted', c.textMuted || '#94a3b8');
+
+
     }
   }, [activeTheme]);
 
@@ -345,9 +355,23 @@ function App() {
   };
 
   // Main Enrichment Logic (Moved to top level for reuse)
+  // Main Enrichment Logic (Two-Stage)
+  const enrichmentAbortController = useRef(null);
+
+  // Main Enrichment Logic (Two-Stage)
   const enrichBackground = async (pois, cityName, lang, lengthMode, userInterests = '', routeCtx = '') => {
-    // This implements the requested 7-Step "POI Intelligence" pipeline.
+
+    // 1. Abort previous unfinished runs
+    if (enrichmentAbortController.current) {
+      enrichmentAbortController.current.abort();
+    }
+    // 2. Create new controller for this run
+    const controller = new AbortController();
+    enrichmentAbortController.current = controller;
+    const signal = controller.signal;
+
     setIsBackgroundUpdating(true); // START Indicator
+
     const engine = new PoiIntelligence({
       city: cityName,
       language: lang,
@@ -356,32 +380,113 @@ function App() {
       routeContext: routeCtx
     });
 
-    for (const poi of pois) {
-      try {
-        // Step 1-7: Resolve Identity, Gather Signals, Score Trust, and Rank.
-        const enriched = await engine.evaluatePoi(poi);
+    // Local cache to persist short descriptions between Stage 1 and Stage 2
+    const shortDescMap = new Map();
 
-        // Update State Incrementally
-        setRouteData((prev) => {
-          if (!prev || !prev.pois) return prev; // Safety check if user navigated away
-          return {
-            ...prev,
-            pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false, active_mode: lengthMode } : p)
-          };
-        });
-      } catch (err) {
-        console.warn(`POI Engine Failed for ${poi.name}:`, err);
-        // On failure, remove loading state
-        setRouteData((prev) => {
-          if (!prev || !prev.pois) return prev;
-          return {
-            ...prev,
-            pois: prev.pois.map(p => p.id === poi.id ? { ...p, isLoading: false, description: "Info unavailable" } : p)
-          };
-        });
+    try {
+      // --- STAGE 1: FAST FETCH (Short Description + Signals) ---
+      // We do this for ALL POIs first so the user sees results quickly.
+      for (const poi of pois) {
+        if (signal.aborted) return; // Exit if reset
+
+        try {
+          // Step 1: Gather Signals (Triangulation)
+          const signals = await engine.gatherSignals(poi);
+
+          if (signal.aborted) return;
+
+          // Step 2: Get Short Description Only
+          const shortData = await engine.fetchGeminiShortDescription(poi, signals, signal);
+
+          if (signal.aborted) return;
+
+          // Save short description for Stage 2
+          if (shortData?.short_description) {
+            shortDescMap.set(poi.id, shortData.short_description);
+          }
+
+          // Update State with "Intermediate" Shell
+          setRouteData((prev) => {
+            if (!prev || !prev.pois) return prev;
+            return {
+              ...prev,
+              pois: prev.pois.map(p => p.id === poi.id ? {
+                ...p,
+                ...shortData,
+                _signals: signals, // Store signals for Stage 2
+                isFullyEnriched: false, // Flag for Orange Icon
+                isLoading: true // Keep spinning/loading until full details? Or show as "partial"? Let's keep it 'loading' false but use isFullyEnriched for visual
+              } : p)
+            };
+          });
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.warn(`Stage 1 Failed for ${poi.name}`, err);
+        }
+      }
+
+      // --- STAGE 2: DEEP FETCH (Full Details) ---
+      // Now iterate again to get the heavy content
+      for (const poi of pois) {
+        if (signal.aborted) return; // Exit if reset
+
+        try {
+          // Retrieve stored signals (or should we re-fetch? Stored is better)
+          // But we need to access the LATEST state to get the signals back if we didn't store them externally.
+          // Actually, we passed 'signals' into the state update, so let's try to get them if possible, 
+          // OR just rely on the engine to handle it (but engine is stateless per POI).
+          // Optimization: Let's just re-gather or pass the signals through a local map if we want to save API calls.
+          // For now, let's just re-use the engine context.
+
+          // Actually, we can't easily access the "current" state in this loop without a ref or complex logic.
+          // Let's just re-gather signals (cached by browser mostly) or better:
+          // Just assume we want to proceed. Providing signals again is best.
+          // To do this right without complex state management, let's just re-gather. It's safe.
+          const signals = await engine.gatherSignals(poi);
+
+          if (signal.aborted) return;
+
+          // Retrieve saved short description
+          const savedShortDesc = shortDescMap.get(poi.id) || null;
+
+          // Get Full Details
+          // Note: We need the short description too, to avoid re-generating it? 
+          // The prompt handles "we already have short".
+          const fullData = await engine.fetchGeminiFullDetails(poi, signals, savedShortDesc, signal);
+
+          if (signal.aborted) return;
+
+          setRouteData((prev) => {
+            if (!prev || !prev.pois) return prev;
+            return {
+              ...prev,
+              pois: prev.pois.map(p => p.id === poi.id ? {
+                ...p,
+                ...fullData,
+                isFullyEnriched: true, // Switch to Primary Icon
+                isLoading: false
+              } : p)
+            };
+          });
+
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.warn(`Stage 2 Failed for ${poi.name}`, err);
+          setRouteData((prev) => {
+            if (!prev || !prev.pois) return prev;
+            return {
+              ...prev,
+              pois: prev.pois.map(p => p.id === poi.id ? { ...p, isFullyEnriched: true, isLoading: false } : p)
+            };
+          });
+        }
+      }
+    } finally {
+      if (enrichmentAbortController.current === controller) {
+        setIsBackgroundUpdating(false); // STOP Indicator only if we are the current runner
+        enrichmentAbortController.current = null;
       }
     }
-    setIsBackgroundUpdating(false); // STOP Indicator
   };
 
   // Wrapper for city setter to invalidate validation on edit
@@ -1603,6 +1708,11 @@ function App() {
   };
 
   const resetSearch = () => {
+    // Stop any background enrichment immediately
+    if (enrichmentAbortController.current) {
+      enrichmentAbortController.current.abort();
+    }
+
     setRouteData(null);
     setDisambiguationOptions(null);
     setValidatedCityData(null);
@@ -1620,6 +1730,45 @@ function App() {
     ]);
     setIsAiViewActive(true);
     setIsSidebarOpen(true);
+  };
+
+  const handleSaveRouteAsJSON = async () => {
+    if (!routeData) {
+      alert(language === 'nl' ? 'Er is geen route om op te slaan.' : 'No route to save.');
+      return;
+    }
+
+    try {
+      const dataToSave = {
+        city: city,
+        interests: interests,
+        isRoundtrip: isRoundtrip,
+        routeData: routeData,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log("[PDF] Requesting booklet generation...");
+      const response = await fetch('/api/build-booklet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSave)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server Error ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.success && result.url) {
+        console.log("[PDF] Generation successful:", result.url);
+        // Open the PDF in a new tab (using the server's port)
+        window.open(`http://localhost:3001${result.url}`, '_blank');
+      }
+    } catch (err) {
+      console.error("[PDF] Generation error:", err);
+      alert(language === 'nl' ? 'Fout bij het genereren van de PDF.' : 'Error generating PDF.');
+    }
   };
 
   // Audio State
@@ -1967,6 +2116,7 @@ function App() {
         setActiveTheme={setActiveTheme}
         availableThemes={APP_THEMES}
         onSave={handleSaveRoute}
+        onSaveAs={handleSaveRouteAsJSON}
         isAiViewActive={isAiViewActive}
         setIsAiViewActive={setIsAiViewActive}
         onLoad={handleLoadRoute}

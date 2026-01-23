@@ -193,8 +193,24 @@ Genereer de introductie voor de tocht in ${this.config.city}.
         const historyContext = history.map(msg => `${msg.role === 'user' ? 'Gebuiker' : 'Brain'}: ${msg.text}`).join('\n');
 
         const prompt = `
-Je bent de "Brain" van een intelligente reisplanner app genaamd CityExplorer.
-Je taak is om een gesprek te voeren met de gebruiker om een ideale route uit te stippelen.
+Je bent een "City Trip Planner" gespecialiseerd in toeristische bezienswaardigheden.
+Je helpt de gebruiker om een stad te verkennen met de focus op CULTUUR, HISTORIE en BELEVING.
+
+### JOUW ROL & REGELS
+1. **Selecteer alleen POI's die relevant zijn voor toeristen.**
+   - INCLUSIEF: Attracties, monumenten, pleinen, musea, parken, kerken, iconische straten.
+   - EXCLUSIEF (VERBODEN): Parkings, kantoren, bedrijven, advocaten, architectenbureaus, woonhuizen, of technische infrastructuur.
+2. Je bent de EXPERT gids. Ontwerp zelfstandig het ideale plan.
+3. Je gebruikt hetzelfde onderliggende algoritme als de "Trip" modus. Dit betekent dat je de volgende informatie MOET hebben of vaststellen voordat je de status op "complete" zet:
+   - **Stad/Plaats**: Welke specifieke stad of plek wil de gebruiker verkennen?
+   - **Reiswijze**: Gaan ze wandelen ("walking") of fietsen ("cycling")?
+   - **Lengte**: Hoe lang (minuten) of hoe ver (km) moet de trip zijn? (Maak een deskundige inschatting als de gebruiker vage termen gebruikt zoals "een middagje").
+   - **Rondtrip**: Is het een rondtrip? Zo ja, vraag ALTIJD naar een specifiek startpunt (bijv. een hotel, station of 'huidige locatie') als dit nog niet bekend is.
+4. Je mag zelfstandig de interesses verfijnen of uitbreiden om de beste ervaring te bieden.
+   - Als de gebruiker vaag is ("doe maar wat"), kies dan voor populaire categorieën zoals "historisch centrum", "highlights", of "verborgen parels".
+5. Indien er cruciale informatie ontbreekt, stel dan een vriendelijke vraag in je "message".
+6. Zodra je alle parameters hebt (Stad, Reiswijze, Lengte, Rondtrip status en eventueel Startpunt), kondig dan aan dat je de route gaat genereren en leg kort uit waarom deze keuzes goed zijn. 
+7. **BELANGRIJK**: Zet de status op "complete" ZODRA je alle parameters hebt. Wacht niet op een extra bevestiging van de gebruiker als je alles al weet.
 
 ### GESPREKSHISTORIE
 ${historyContext}
@@ -202,25 +218,12 @@ ${historyContext}
 ### NIEUWE INPUT VAN DE GEBRUIKER
 "${userInput}"
 
-### JOUW DOEL
-1. Jij bent de EXPERT gids. Ontwerp zelfstandig het ideale plan.
-2. Je gebruikt hetzelfde onderliggende algoritme als de "Trip" modus. Dit betekent dat je de volgende informatie MOET hebben of vaststellen voordat je de status op "complete" zet:
-   - **Stad/Plaats**: Welke specifieke stad of plek wil de gebruiker verkennen?
-   - **Reiswijze**: Gaan ze wandelen ("walking") of fietsen ("cycling")?
-   - **Lengte**: Hoe lang (minuten) of hoe ver (km) moet de trip zijn? (Maak een deskundige inschatting als de gebruiker vage termen gebruikt zoals "een middagje").
-   - **Rondtrip**: Is het een rondtrip? Zo ja, vraag ALTIJD naar een specifiek startpunt (bijv. een hotel, station of 'huidige locatie') als dit nog niet bekend is.
-3. Je mag zelfstandig de interesses verfijnen of uitbreiden om de beste ervaring te bieden.
-4. Indien er cruciale informatie ontbreekt, stel dan een vriendelijke vraag in je "message".
-5. Zodra je alle parameters hebt (Stad, Reiswijze, Lengte, Rondtrip status en eventueel Startpunt), kondig dan aan dat je de route gaat genereren en leg kort uit waarom deze keuzes goed zijn. 
-6. **BELANGRIJK**: Zet de status op "complete" ZODRA je alle parameters hebt. Wacht niet op een extra bevestiging van de gebruiker als je alles al weet.
-7. Wees interactief: praat met de gebruiker, wees enthousiast en pas het plan aan op basis van feedback.
-
 ### EXTRACHEERBARE PARAMETERS
 - **city**: De stad of regio.
 - **travelMode**: "walking" of "cycling".
 - **constraintType**: "duration" of "distance".
 - **constraintValue**: Jouw DESKUNDIGE inschatting of de expliciete wens van de gebruiker (minuten voor tijd, km voor afstand).
-- **interests**: Een geoptimaliseerde lijst van zoektermen/interesses gebaseerd op het gesprek.
+- **interests**: Een geoptimaliseerde lijst van zoektermen/interesses gebaseerd op het gesprek. **Zorg dat deze termen leiden tot TOERISTISCHE resultaten (bijv. "historische monumenten" ipv "gebouwen").**
 - **pauses**: Wensen voor pauzes.
 - **startPoint**: Specifieke naam van de startlocatie (bijv. "Station Hasselt").
 - **isRoundtrip**: Boolean.
@@ -242,12 +245,10 @@ Je MOET antwoorden met een JSON object in dit formaat:
   }
 }
 
-### REGELS
+### REGELS VOOR OUTPUT
 - De status mag pas op "complete" als je Stad, TravelMode, Constraint en Roundtrip info hebt.
-- **Wanneer de status "complete" is, MOET je ALLE verzamelde parameters (city, travelMode, constraintValue, interests, etc.) opnemen in het params object, ook als ze in eerdere beurten al zijn genoemd.**
-- Vraag bij een rondtrip specifiek naar het startpunt als dat relevant is voor de gebruiker.
-- Indien de gebruiker vraagt om de planner te **sluiten**, te **stoppen** of de **trip te bekijken**, zet de status op "close".
-- Indien de gebruiker vraagt om iets **toe te voegen** of te **verwijderen**, pas je de \`interests\` aan en leg je uit wat je hebt gedaan.
+- **Wanneer de status "complete" is, MOET je ALLE verzamelde parameters (city, travelMode, constraintValue, interests, etc.) opnemen in het params object.**
+- Indien de gebruiker vraagt om de planner te sluiten/stoppen, zet status op "close".
 - Gebruik taal: ${language === 'nl' ? 'Nederlands' : 'English'}.
 `;
 
@@ -294,66 +295,80 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
 
 
-    async fetchGeminiDescription(poi, signals, lengthMode = 'medium') {
+    /**
+     * STAGE 1: Fast Fetch - Description Only
+     */
+    async fetchGeminiShortDescription(poi, signals, signal = null) {
+        const contextData = signals.length > 0
+            ? signals.map(s => `[Source: ${s.source}] ${s.content}`).join('\n\n')
+            : "No external data signals found.";
+
+        const prompt = `
+Je bent een snelle, efficiënte gids.
+Schrijf één pakkende, informatieve beschrijving van 5-7 regels voor "${poi.name}" (${this.config.city}).
+Gebruik deze context indien relevant: ${contextData}
+
+Richtlijnen:
+- Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+- Focus: Wat is het en waarom is het interessant?
+- Geen inleiding, alleen de tekst.
+
+Start Nu.
+        `;
+
+        try {
+            const url = '/api/gemini';
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt }),
+                signal
+            });
+
+            if (!response.ok) return null;
+            const data = await response.json();
+            const text = data.text ? data.text.trim() : "";
+
+            return {
+                short_description: text,
+                // Partial structure for compatibility
+                structured_info: { short_description: text }
+            };
+        } catch (e) {
+            if (e.name === 'AbortError') throw e;
+            return null;
+        }
+    }
+
+    /**
+     * STAGE 2: Deep Fetch - Full Details
+     */
+    async fetchGeminiFullDetails(poi, signals, shortDesc, signal = null) {
         const contextData = signals.length > 0
             ? signals.map(s => `[Source: ${s.source}] ${s.content} (Link: ${s.link})`).join('\n\n')
             : "No external data signals found.";
 
-        let locationInfo = poi.address || 'Unknown';
-        if (poi.address_components) {
-            const { road, house_number, city } = poi.address_components;
-            const isBuilding = poi.description && /museum|shop|store|restaurant|cafe|building|house|hotel/i.test(poi.description);
-
-            if (city) {
-                const isBlockedStreet = road && road.includes('Bruinstraat');
-                if (isBuilding && road && !isBlockedStreet) {
-                    locationInfo = house_number ? `${road} ${house_number}, ${city}` : `${road}, ${city}`;
-                } else {
-                    locationInfo = city;
-                }
-            }
-        }
-
         const prompt = `
-In het settings menu kan het informatieniveau van alle Point of Interests (POI) worden aangepast.
+Je bent een ervaren lokale gids. We hebben al een korte beschrijving van "${poi.name}".
+Nu willen we de diepte in.
 
-Er zijn drie informatieniveaus:
-
-1) Beknopte versie (kort, op de kaart)
-2) Standaard versie (voor wie meer wil weten)
-3) Uitgebreide versie (diepe context en verhalen)
-
-### INPUT
-- POI naam: ${poi.name}
-- Ruwe data over de POI: ${contextData}
-- Gebruikersinteresses: ${this.config.interests || 'Algemeen toerisme'}
+### CONText
+- POI: ${poi.name}
 - Stad: ${this.config.city}
-- Gewenste taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
-- Routecontext (bijv. type wandeling, lengte, thema): ${this.config.routeContext || 'Stadswandeling'}
+- Interesses: ${this.config.interests || 'Algemeen'}
+- Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+- Context Data: ${contextData}
 
-### DOEL
-Verbeter en herschrijf de informatie zodat die:
-1. Perfect aansluit bij de interesses van de gebruiker
-2. Geschreven is in de stijl van een ervaren lokale gids
-3. Relevante details benadrukt die interessant zijn voor bezoekers
-4. Zaken weglaat die niet relevant zijn voor toeristen
-5. Zowel feitelijk correct als vlot leesbaar is
-6. De gebruiker helpt begrijpen waarom dit POI de moeite waard is
-7. Per informatieniveau de juiste hoeveelheid info geeft
+### TAAK
+Genereer de uitgebreide details in JSON formaat.
 
-### OUTPUTSTRUCTUUR
-Geef de output in de onderstaande JSON-structuur (geen extra tekst erbuiten):
-
+### OUTPUT JSON
 {
-  "short_version": {
-    "description": "5 tot 7 regels tekst – beknopt, ideaal voor op de kaart."
-  },
   "standard_version": {
     "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
     "fun_fact": "Eén boeiend weetje of anekdote."
   },
   "extended_version": {
-    "short_description": "Max 3 zinnen.",
     "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
     "why_this_matches_your_interests": [
       "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
@@ -365,17 +380,6 @@ Geef de output in de onderstaande JSON-structuur (geen extra tekst erbuiten):
     "visitor_tips": "Praktische info indien relevant."
   }
 }
-
-### STIJLREGELS
-- Gebruik de taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
-- Duidelijke, natuurlijke en enthousiasmerende toon
-- Schrijf zoals een menselijke, ervaren lokale gids
-- Geen technische encyclopedische toon
-- Geen verzonnen feiten – enkel afleiden uit de ruwe data of algemeen bekende feiten
-- Maak elke versie uniek (niet copy/paste met kleine variaties)
-
-### START NU
-Verwerk deze POI: "${poi.name}"
 `;
 
         try {
@@ -383,50 +387,47 @@ Verwerk deze POI: "${poi.name}"
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt })
+                body: JSON.stringify({ prompt }),
+                signal
             });
 
-            if (!response.ok) {
-                console.warn(`Gemini AI unavailable (${response.status})`);
-                return null;
-            }
-
+            if (!response.ok) return null;
             const data = await response.json();
-            const text = data.text;
+            const cleanText = data.text.replace(/```json/g, '').replace(/```/g, '').trim();
+            const result = JSON.parse(cleanText);
 
-            if (!text) return null;
-
-            const cleanText = text.replace(/```json/g, '').replace(/```/g, '').replace(/\[Alt:[^\]]*\]/g, '').trim();
-
-            try {
-                const result = JSON.parse(cleanText);
-
-                // Map new structure to app compatibility structure
-                return {
-                    short_description: result.short_version?.description || "",
-                    standard_description: result.standard_version?.description || "",
-                    one_fun_fact: result.standard_version?.fun_fact || "", // Single fun fact for "normal" mode
+            return {
+                standard_description: result.standard_version?.description || "",
+                // Wrap in structured_info for sidebar compatibility
+                structured_info: {
+                    short_description: shortDesc || "", // Preserve short desc
                     full_description: result.extended_version?.full_description || result.standard_version?.description || "",
-
-                    // Map extended fields
                     matching_reasons: result.extended_version?.why_this_matches_your_interests || [],
                     fun_facts: result.extended_version?.fun_facts || [],
                     two_minute_highlight: result.extended_version?.if_you_only_have_2_minutes || "",
                     visitor_tips: result.extended_version?.visitor_tips || "",
+                    standard_description: result.standard_version?.description || "", // Duplicated for safety
+                    one_fun_fact: result.standard_version?.fun_fact || ""
+                }
+            };
 
-                    // No link in new prompt, falls back to triangulation
-                    link: null
-                };
-            } catch (e) {
-                console.warn("Gemini JSON parse error, attempting regex extraction...");
-                // Simplified Regex fallback for the new structure would be complex. 
-                // Relying on clean JSON from Gemini.
-                return null;
-            }
         } catch (e) {
-            console.warn("Gemini Proxy Fetch Error", e);
+            if (e.name === 'AbortError') throw e;
+            console.warn("Full Details Fetch Failed", e);
             return null;
         }
+    }
+
+    // Legacy Support / Fallback wrapper
+    async fetchGeminiDescription(poi, signals, lengthMode = 'medium') {
+        // If used directly, do short + long combined (old behavior, approximated)
+        const short = await this.fetchGeminiShortDescription(poi, signals);
+        const full = await this.fetchGeminiFullDetails(poi, signals, short?.short_description);
+
+        return {
+            short_description: short?.short_description || "",
+            ...full
+        };
     }
 
     // --- Signal Fetchers ---

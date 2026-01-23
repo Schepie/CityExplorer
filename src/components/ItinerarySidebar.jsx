@@ -243,12 +243,12 @@ const SidebarInput = ({
         <div className="space-y-3 pt-2">
             {/* Mode Toggle (MOVED TO TOP) */}
             <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300">
-                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{text.search_mode_label}</label>
-                <div className="grid grid-cols-3 gap-1.5 bg-slate-800/40 p-1 rounded-lg border border-white/5 shadow-inner">
+                <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-bold ml-1">{text.search_mode_label}</label>
+                <div className="grid grid-cols-3 gap-1.5 bg-[var(--panel-bg)] p-1 rounded-lg border border-[var(--panel-border)] shadow-inner">
                     <button
                         type="button"
                         onClick={() => setSearchMode('prompt')}
-                        className={`py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-all flex flex-col items-center gap-1.5 ${searchMode === 'prompt' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
+                        className={`py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-all flex flex-col items-center gap-1.5 ${searchMode === 'prompt' ? 'bg-primary text-white shadow-md' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4" /><path d="M19 17v4" /><path d="M3 5h4" /><path d="M17 19h4" /></svg>
                         {text.ai_planner}
@@ -256,7 +256,7 @@ const SidebarInput = ({
                     <button
                         type="button"
                         onClick={() => setSearchMode('journey')}
-                        className={`py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-all flex flex-col items-center gap-1 ${searchMode === 'journey' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
+                        className={`py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-all flex flex-col items-center gap-1 ${searchMode === 'journey' ? 'bg-primary text-white shadow-md' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2 2 4-4" /><path d="M13 7h8" /><path d="m3 12 2 2 4-4" /><path d="M13 12h8" /><path d="m3 17 2 2 4-4" /><path d="M13 17h8" /></svg>
                         {language === 'nl' ? 'Trip' : 'Journey'}
@@ -270,7 +270,7 @@ const SidebarInput = ({
                                 setConstraintValue(5);
                             }
                         }}
-                        className={`py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-all flex flex-col items-center gap-1 ${searchMode === 'radius' ? 'bg-primary text-white shadow-md' : 'text-slate-500 hover:text-white'}`}
+                        className={`py-1.5 rounded-md text-[9px] uppercase tracking-wider font-bold transition-all flex flex-col items-center gap-1 ${searchMode === 'radius' ? 'bg-primary text-white shadow-md' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><path d="M12 7v3" /><path d="M12 14v3" /><path d="M7 12h3" /><path d="M14 12h3" /></svg>
                         {language === 'nl' ? 'Zoekstraal' : 'Radius'}
@@ -282,7 +282,7 @@ const SidebarInput = ({
             {searchMode === 'prompt' && (
                 <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-300 min-h-[300px]">
                     {/* Input Area - Now at the Top */}
-                    <div className="relative group pb-2 border-b border-white/5">
+                    <div className="relative group pb-2 border-b border-[var(--panel-border)]">
                         <textarea
                             value={aiPrompt}
                             onChange={(e) => {
@@ -297,7 +297,7 @@ const SidebarInput = ({
                             }}
                             placeholder={isListening ? (language === 'nl' ? "Ik luister..." : "I'm listening...") : (language === 'nl' ? "Hoe kan ik je trip nog verbeteren?" : "How can I improve your trip?")}
                             rows={2}
-                            className="w-full bg-slate-800/60 border border-white/10 rounded-2xl pl-4 pr-18 py-3.5 text-white text-sm focus:outline-none focus:ring-2 ring-primary/50 placeholder:text-slate-500 resize-none leading-relaxed transition-all shadow-xl"
+                            className="w-full bg-[var(--input-bg)] border border-[var(--panel-border)] rounded-2xl pl-4 pr-18 py-3.5 text-[var(--text-main)] text-sm focus:outline-none focus:ring-2 ring-primary/50 placeholder:text-[var(--text-muted)] resize-none leading-relaxed transition-all shadow-xl"
                         />
                         <div className="absolute right-2 bottom-4.5 flex gap-1 z-10">
                             {/* Toggle between Voice and Send based on input type */}
@@ -1037,7 +1037,7 @@ const ItinerarySidebar = ({
     onPopupClose,
     travelMode, onStyleChange,
     onStopSpeech, // Callback to stop audio
-    onSave, onLoad,
+    onSave, onSaveAs, onLoad,
     descriptionLength, setDescriptionLength,
     activeTheme, setActiveTheme, availableThemes,
     isSimulating, setIsSimulating,
@@ -1500,16 +1500,18 @@ const ItinerarySidebar = ({
                                                         setLanguage(opt.id);
                                                         if (setVoiceSettings) setVoiceSettings({ variant: opt.id, gender: 'female' });
                                                     }}
-                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${language === opt.id ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${language === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                                 >
                                                     <div className="flex items-center gap-3">
                                                         {opt.icon}
-                                                        <span className={`text-sm font-medium ${language === opt.id ? 'text-white' : 'text-slate-300'}`}>{opt.label}</span>
+                                                        <span className={`text-sm font-medium ${language === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{opt.label}</span>
                                                     </div>
                                                     {language === opt.id && (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                        </svg>
+                                                        <div className="text-[var(--primary)]">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                            </svg>
+                                                        </div>
                                                     )}
                                                 </button>
                                             ))}
@@ -1527,20 +1529,22 @@ const ItinerarySidebar = ({
                                                 <button
                                                     key={opt.id}
                                                     onClick={() => setVoiceSettings && setVoiceSettings({ ...voiceSettings, gender: opt.id })}
-                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${voiceSettings?.gender === opt.id ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${voiceSettings?.gender === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                                 >
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`p-1.5 rounded-full ${voiceSettings?.gender === opt.id ? 'bg-slate-500/20 text-white' : 'bg-slate-700/50 text-slate-400'}`}>
+                                                        <div className={`p-1.5 rounded-full ${voiceSettings?.gender === opt.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                                                 <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
                                                             </svg>
                                                         </div>
-                                                        <span className={`text-sm font-medium ${voiceSettings?.gender === opt.id ? 'text-white' : 'text-slate-300'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
+                                                        <span className={`text-sm font-medium ${voiceSettings?.gender === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
                                                     </div>
                                                     {voiceSettings?.gender === opt.id && (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                        </svg>
+                                                        <div className="text-[var(--primary)]">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                            </svg>
+                                                        </div>
                                                     )}
                                                 </button>
                                             ))}
@@ -1556,20 +1560,22 @@ const ItinerarySidebar = ({
                                                     <button
                                                         key={t.id}
                                                         onClick={() => setActiveTheme(t.id)}
-                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${activeTheme === t.id ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${activeTheme === t.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                                     >
                                                         <div className="flex items-center gap-3">
                                                             <div className="w-7 h-7 rounded-full border border-white/10 shadow-sm flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${t.colors.bgStart}, ${t.colors.bgEnd})` }}>
                                                                 <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.colors.primary }} />
                                                             </div>
-                                                            <span className={`text-sm font-medium ${activeTheme === t.id ? 'text-white' : 'text-slate-300'}`}>
+                                                            <span className={`text-sm font-medium ${activeTheme === t.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>
                                                                 {language === 'nl' ? t.label.nl : t.label.en}
                                                             </span>
                                                         </div>
                                                         {activeTheme === t.id && (
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                            </svg>
+                                                            <div className="text-[var(--primary)]">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                </svg>
+                                                            </div>
                                                         )}
                                                     </button>
                                                 ))}
@@ -1588,20 +1594,22 @@ const ItinerarySidebar = ({
                                                 <button
                                                     key={mode.id}
                                                     onClick={() => onStyleChange(mode.id)}
-                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${travelMode === mode.id ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${travelMode === mode.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                                 >
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`p-1.5 rounded-full ${travelMode === mode.id ? 'bg-slate-500/20 text-white' : 'bg-slate-700/50 text-slate-400'}`}>
+                                                        <div className={`p-1.5 rounded-full ${travelMode === mode.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                 {mode.icon}
                                                             </svg>
                                                         </div>
-                                                        <span className={`text-sm font-medium ${travelMode === mode.id ? 'text-white' : 'text-slate-300'}`}>{language === 'nl' ? mode.label.nl : mode.label.en}</span>
+                                                        <span className={`text-sm font-medium ${travelMode === mode.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? mode.label.nl : mode.label.en}</span>
                                                     </div>
                                                     {travelMode === mode.id && (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                        </svg>
+                                                        <div className="text-[var(--primary)]">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                            </svg>
+                                                        </div>
                                                     )}
                                                 </button>
                                             ))}
@@ -1620,21 +1628,23 @@ const ItinerarySidebar = ({
                                                 <button
                                                     key={opt.id}
                                                     onClick={() => setDescriptionLength(opt.id)}
-                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${descriptionLength === opt.id ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${descriptionLength === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                                 >
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`p-1.5 rounded-full ${descriptionLength === opt.id ? 'bg-slate-500/20 text-white' : 'bg-slate-700/50 text-slate-400'}`}>
+                                                        <div className={`p-1.5 rounded-full ${descriptionLength === opt.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                                                                 <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" opacity="0.4" />
                                                                 {opt.icon}
                                                             </svg>
                                                         </div>
-                                                        <span className={`text-sm font-medium ${descriptionLength === opt.id ? 'text-white' : 'text-slate-300'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
+                                                        <span className={`text-sm font-medium ${descriptionLength === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
                                                     </div>
                                                     {descriptionLength === opt.id && (
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                        </svg>
+                                                        <div className="text-[var(--primary)]">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                            </svg>
+                                                        </div>
                                                     )}
                                                 </button>
                                             ))}
@@ -1650,17 +1660,21 @@ const ItinerarySidebar = ({
                                                 setIsSimulationEnabled(newVal);
                                                 if (!newVal) setIsSimulating(false);
                                             }}
-                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulationEnabled ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulationEnabled ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className={`p-1.5 rounded-full ${isSimulationEnabled ? 'bg-slate-500/20 text-white' : 'bg-slate-700/50 text-slate-400'}`}>
+                                                <div className={`p-1.5 rounded-full ${isSimulationEnabled ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
                                                 </div>
-                                                <span className={`text-sm font-medium ${isSimulationEnabled ? 'text-white' : 'text-slate-300'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
+                                                <span className={`text-sm font-medium ${isSimulationEnabled ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
                                             </div>
-                                            <div className={`w-9 h-5 rounded-full relative transition-colors ${isSimulationEnabled ? 'bg-primary' : 'bg-slate-600'}`}>
-                                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${isSimulationEnabled ? 'right-1' : 'left-1'}`} />
-                                            </div>
+                                            {isSimulationEnabled && (
+                                                <div className="text-[var(--primary)]">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                    </svg>
+                                                </div>
+                                            )}
                                         </button>
                                     </div>
 
@@ -1669,25 +1683,29 @@ const ItinerarySidebar = ({
                                         <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Auto Audio' : 'Auto Audio'}</label>
                                         <button
                                             onClick={() => setAutoAudio(!autoAudio)}
-                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${autoAudio ? 'bg-slate-700 border-white/20' : 'bg-slate-800/80 border-white/5 hover:bg-slate-700/80'}`}
+                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${autoAudio ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className={`p-1.5 rounded-full ${autoAudio ? 'bg-slate-500/20 text-white' : 'bg-slate-700/50 text-slate-400'}`}>
+                                                <div className={`p-1.5 rounded-full ${autoAudio ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
                                                 </div>
-                                                <span className={`text-sm font-medium ${autoAudio ? 'text-white' : 'text-slate-300'}`}>{language === 'nl' ? 'Automatisch Voorlezen' : 'Auto-Audio Mode'}</span>
+                                                <span className={`text-sm font-medium ${autoAudio ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Automatisch Voorlezen' : 'Auto-Audio Mode'}</span>
                                             </div>
-                                            <div className={`w-9 h-5 rounded-full relative transition-colors ${autoAudio ? 'bg-primary' : 'bg-slate-600'}`}>
-                                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${autoAudio ? 'right-1' : 'left-1'}`} />
-                                            </div>
+                                            {autoAudio && (
+                                                <div className="text-[var(--primary)]">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                    </svg>
+                                                </div>
+                                            )}
                                         </button>
                                     </div>
                                 </div>
 
                                 {/* About Section */}
-                                <div className="mt-8 pt-4 border-t border-white/10">
-                                    <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">{language === 'nl' ? 'Over' : 'About'}</h4>
-                                    <div className="bg-slate-800/60 rounded-xl p-4 border border-white/5 space-y-3">
+                                <div className="mt-8 pt-4 border-t border-[var(--panel-border)]">
+                                    <h4 className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-3">{language === 'nl' ? 'Over' : 'About'}</h4>
+                                    <div className="bg-[var(--input-bg)] rounded-xl p-4 border border-[var(--panel-border)] space-y-3">
                                         <div className="flex justify-between items-center">
                                             <span className="text-slate-400 text-sm">Version</span>
                                             <span className="text-slate-300 text-sm font-medium">v1.4.1</span>
@@ -1697,8 +1715,8 @@ const ItinerarySidebar = ({
                                             <span className="text-slate-300 text-sm font-medium">Geert Schepers</span>
                                         </div>
                                         <div className="flex justify-between items-center">
-                                            <span className="text-slate-400 text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                            <span className="text-slate-300 text-sm font-medium">20 Jan 2026</span>
+                                            <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
+                                            <span className="text-[var(--text-muted)] text-sm font-medium">20 Jan 2026</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1715,7 +1733,7 @@ const ItinerarySidebar = ({
                         {/* VIEW 1: Disambiguation */}
                         {showDisambiguation ? (
                             <div className="space-y-3">
-                                <h3 className="font-bold text-white">{text.disambig_title} {city}?</h3>
+                                <h3 className="font-bold text-[var(--text-main)]">{text.disambig_title} {city}?</h3>
                                 {disambiguationOptions.map((option, idx) => (
                                     <button
                                         key={idx}
@@ -1725,13 +1743,13 @@ const ItinerarySidebar = ({
                                                 setShouldAutoFocusInterests(true);
                                             }
                                         }}
-                                        className="w-full text-left bg-slate-800/50 hover:bg-slate-700 p-3 rounded-lg border border-white/5 text-sm"
+                                        className="w-full text-left bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-3 rounded-lg border border-[var(--panel-border)] text-sm"
                                     >
-                                        <div className="font-bold text-white">{option.name}</div>
-                                        <div className="text-xs text-slate-400">{option.display_name}</div>
+                                        <div className="font-bold text-[var(--text-main)]">{option.name}</div>
+                                        <div className="text-xs text-[var(--text-muted)]">{option.display_name}</div>
                                     </button>
                                 ))}
-                                <button onClick={onDisambiguationCancel} className="text-slate-400 text-sm w-full text-center mt-2 hover:text-white">{text.back}</button>
+                                <button onClick={onDisambiguationCancel} className="text-[var(--text-muted)] text-sm w-full text-center mt-2 hover:text-[var(--text-main)]">{text.back}</button>
                             </div>
                         ) : showItinerary ? (
                             /* VIEW 2: Itinerary List */
@@ -1755,15 +1773,23 @@ const ItinerarySidebar = ({
                                                     if (onPopupClose) onPopupClose();
                                                 }
                                             }}
-                                            className={`group relative bg-slate-800/40 hover:bg-slate-800/80 p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-slate-800/80' : 'border-white/5 hover:border-primary/30'}`}
+                                            className={`group relative bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-[var(--input-bg)]' : 'border-[var(--panel-border)] hover:border-primary/30'}`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border transition-colors ${poi.isLoading ? 'bg-slate-700 text-slate-400 border-slate-600 animate-pulse' : (isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white')}`}>
+                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border transition-colors 
+                                                    ${poi.isFullyEnriched
+                                                        ? (isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white')
+                                                        : (poi.short_description
+                                                            ? 'bg-primary/40 text-blue-200 border-primary/40 animate-pulse' // Intermediate (Stage 1 Done)
+                                                            : 'bg-slate-700 text-slate-400 border-slate-600 animate-pulse' // Stage 0
+                                                        )
+                                                    }`}>
+
                                                     {searchMode === 'radius' ? (
                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
                                                     ) : (index + 1)}
                                                 </div>
-                                                <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-slate-100 group-hover:text-primary'} pr-16`}>
+                                                <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-[var(--text-main)] group-hover:text-primary'} pr-16`}>
                                                     {poi.name}
                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                                         {getPoiCategoryIcon(poi)}
@@ -1776,7 +1802,7 @@ const ItinerarySidebar = ({
                                                     e.stopPropagation();
                                                     setPoiToDelete(poi);
                                                 }}
-                                                className="absolute top-4 right-3 p-1.5 rounded-full text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-all focus:opacity-100"
+                                                className="absolute top-4 right-3 p-1.5 rounded-full text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-all focus:opacity-100"
                                                 title={language === 'nl' ? "Verwijder" : "Remove"}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -2059,27 +2085,41 @@ const ItinerarySidebar = ({
                             </div>
 
                             {areOptionsVisible && (
-                                <div className="mt-2 grid grid-cols-2 gap-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
+                                <div className="mt-2 grid grid-cols-3 gap-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
                                     <button
                                         onClick={() => {
                                             setIsAddingMode(false);
                                             setAreOptionsVisible(false);
                                             onReset();
                                         }}
-                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-slate-800/40 hover:bg-slate-800/80 border border-white/5 hover:border-primary/30 transition-all group shadow-lg"
+                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] border border-[var(--panel-border)] hover:border-[var(--primary)]/30 transition-all group shadow-lg"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
-                                        <span className="text-[9px] font-bold text-slate-300 uppercase group-hover:text-white transition-colors">{text.reset}</span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[var(--primary)] group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
+                                        <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase group-hover:text-[var(--text-main)] transition-colors">{text.reset}</span>
                                     </button>
 
 
 
                                     <button
                                         onClick={onSave}
-                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-slate-800/40 hover:bg-slate-800/80 border border-white/5 hover:border-primary/30 transition-all group shadow-lg"
+                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] border border-[var(--panel-border)] hover:border-[var(--primary)]/30 transition-all group shadow-lg"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-                                        <span className="text-[9px] font-bold text-slate-300 uppercase group-hover:text-white transition-colors">{text.save}</span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[var(--primary)] group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                                        <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase group-hover:text-[var(--text-main)] transition-colors">{text.save}</span>
+                                    </button>
+
+                                    <button
+                                        onClick={onSaveAs}
+                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] border border-[var(--panel-border)] hover:border-[var(--primary)]/30 transition-all group shadow-lg"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[var(--primary)] group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                            <polyline points="17 21 17 13 7 13 7 21" />
+                                            <polyline points="7 3 7 8 15 8" />
+                                            <line x1="12" y1="11" x2="16" y2="15" />
+                                            <line x1="12" y1="15" x2="16" y2="15" />
+                                        </svg>
+                                        <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase group-hover:text-[var(--text-main)] transition-colors">{language === 'nl' ? 'Opslaan als' : 'Save As'}</span>
                                     </button>
                                 </div>
                             )}

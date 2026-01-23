@@ -129,20 +129,20 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
             {isOpen && (
                 <div className="absolute inset-0 z-[1100] bg-slate-900/40 backdrop-blur-sm flex justify-end">
                     <div
-                        className="w-full max-w-md h-full bg-slate-900 shadow-2xl border-l border-white/10 flex flex-col animate-in slide-in-from-right duration-300"
+                        className="w-full max-w-md h-full bg-[var(--bg-gradient-end)] shadow-2xl border-l border-[var(--panel-border)] flex flex-col animate-in slide-in-from-right duration-300"
                     >
 
                         {/* Header */}
-                        <div className="p-4 border-b border-white/10 bg-slate-800/50 flex items-center justify-between">
-                            <h3 className="font-bold text-white flex items-center gap-2">
+                        <div className="p-4 border-b border-[var(--panel-border)] bg-[var(--panel-bg)] flex items-center justify-between">
+                            <h3 className="font-bold text-[var(--text-main)] flex items-center gap-2">
                                 <span>🚶</span> {language === 'nl' ? 'Routebeschrijving' : 'Turn-by-turn Navigation'}
                             </h3>
                             {progressStats && (
-                                <div className="text-[10px] text-slate-400 font-mono">
+                                <div className="text-[10px] text-[var(--text-muted)] font-mono">
                                     {progressStats.done} / {progressStats.total} km
                                 </div>
                             )}
-                            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors">
+                            <button onClick={onClose} className="p-2 hover:bg-[var(--input-bg)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
@@ -152,17 +152,17 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
                         {/* List */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                             {!hasSteps && (
-                                <div className="p-4 text-center text-slate-400 text-sm italic">
+                                <div className="p-4 text-center text-[var(--text-muted)] text-sm italic">
                                     {language === 'nl' ? 'Geen routebeschrijving beschikbaar.' : 'No detailed steps available.'}
                                 </div>
                             )}
                             {hasSteps && activeSteps.map((step, idx) => (
-                                <div key={idx} className="flex gap-4 items-start p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors group">
+                                <div key={idx} className="flex gap-4 items-start p-3 rounded-xl bg-[var(--panel-bg)] border border-[var(--panel-border)] hover:bg-[var(--input-bg)] transition-colors group">
                                     <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center text-xl shrink-0 border border-blue-500/30 group-hover:bg-blue-600 group-hover:text-white transition-all">
                                         {getManeuverIcon(step.maneuver.modifier, step.maneuver.type)}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-slate-200 font-medium text-sm leading-snug">
+                                        <p className="text-[var(--text-main)] font-medium text-sm leading-snug">
                                             {/* Use OSRM provided text if available, or generate it */}
                                             {step.isFallback
                                                 ? (language === 'nl' ? `Ga naar ${step.name}` : `Go to ${step.name}`)
@@ -191,7 +191,7 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
                         </div>
 
                         {/* Footer Stats */}
-                        <div className="p-4 border-t border-white/10 bg-slate-800/80 text-xs text-slate-400 text-center">
+                        <div className="p-4 border-t border-[var(--panel-border)] bg-[var(--panel-bg)] text-xs text-[var(--text-muted)] text-center">
                             CityExplorer Navigation {isFallback ? '(Simplified)' : 'via OSRM'}
                         </div>
                     </div>

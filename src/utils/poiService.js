@@ -241,7 +241,50 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
         const normName = poi.name.toLowerCase().trim();
         if (seenNames.has(normName)) continue;
 
-        // 2. Strict Distance Filter
+        // 2. Strict Filter: EXCLUSIONS (Hard Filter)
+        // User Rules: NO Parking, Offices, Consulting, Technical Infra, etc.
+        const forbiddenTerms = [
+            'parking', 'parkeer', 'garage', 'p+r',
+            'architect', 'studio', 'bureau',
+            'office', 'kantoor', 'consultan', 'agency',
+            'accounting', 'lawyer', 'advocaat', 'notaris',
+            'insurance', 'verzekering',
+            'real estate', 'makelaar', 'immobili',
+            'logistics', 'transport', 'shipping',
+            'plumber', 'loodgieter', 'electrician',
+            'dentist', 'tandarts', 'doctor', 'dokter', 'clinic', 'kliniek',
+            'pharmacy', 'apotheek', // Usually not a tourist destination unless historical
+            'supermarket', 'supermarkt', 'albert heijn', 'jumbo', 'lidl', 'aldi', // Grocery stores
+            'atm', 'bancontact', 'bank',
+            'school', 'university', 'universiteit', 'college', // Unless specifically a "Museum of..."
+            'gym', 'fitness', 'sport',
+            'hair', 'kapper', 'salon',
+            'laundry', 'wasserette',
+            'driving school', 'rijschool'
+        ];
+
+        // Also check description/type if available
+        const descriptionLower = (poi.description || "").toLowerCase();
+        const typeLower = (poi.type || "").toLowerCase(); // Some sources might have type
+
+        const isForbidden = forbiddenTerms.some(term =>
+            normName.includes(term) ||
+            descriptionLower.includes(term) ||
+            typeLower.includes(term)
+        );
+
+        if (isForbidden) {
+            // Exception: specific overrides? e.g. "Old Post Office Museum"
+            // If relevant, we could whitelist: "museum", "gallery", "historic", "visit" within the name
+            const whitelist = ['museum', 'gallery', 'histor', 'visit', 'tour', 'monument', 'church', 'kerk', 'kasteel', 'castle'];
+            const isWhitelisted = whitelist.some(w => normName.includes(w) || descriptionLower.includes(w));
+
+            if (!isWhitelisted) {
+                continue; // Skip this POI
+            }
+        }
+
+        // 3. Strict Distance Filter
         const d = calcDist(centerLat, centerLon, parseFloat(poi.lat), parseFloat(poi.lng));
         if (d <= radiusKm) {
             uniquePois.push({ ...poi, distanceKm: d.toFixed(2) }); // accessible for debugging

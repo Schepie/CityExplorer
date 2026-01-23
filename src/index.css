@@ -11,6 +11,14 @@
   --glass-border: rgba(255, 255, 255, 0.2);
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
+  --btn-text-color: white;
+  /* Default button text color */
+
+  /* Semantic UI Defaults (Dark Mode) */
+  --panel-bg: rgba(30, 41, 59, 0.4);
+  --panel-border: rgba(255, 255, 255, 0.05);
+  --input-bg: rgba(30, 41, 59, 0.6);
+  --input-border: rgba(255, 255, 255, 0.1);
 
   /* Spacing */
   --spacing-xs: 0.5rem;
@@ -63,7 +71,7 @@ body {
 
 .btn-primary {
   background: var(--primary);
-  color: white;
+  color: var(--btn-text-color);
   padding: 0.75rem 1.5rem;
   border-radius: 9999px;
   border: none;
