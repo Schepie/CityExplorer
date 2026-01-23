@@ -189,8 +189,8 @@ Genereer de introductie voor de tocht in ${this.config.city}.
      * Extracts structured trip parameters from a natural language prompt.
      * Support interactive conversation by maintaining context.
      */
-    async parseNaturalLanguageInput(userInput, language = 'nl', history = []) {
-        const historyContext = history.map(msg => `${msg.role === 'user' ? 'Gebuiker' : 'Brain'}: ${msg.text}`).join('\n');
+    async parseNaturalLanguageInput(userInput, language = 'nl', history = [], isRouteActive = false) {
+        const historyContext = history.map(msg => `${msg.role === 'user' ? 'Gebuiker' : 'Gids'}: ${msg.text}`).join('\n');
 
         const prompt = `
 Je bent een "City Trip Planner" gespecialiseerd in toeristische bezienswaardigheden.
@@ -201,16 +201,30 @@ Je helpt de gebruiker om een stad te verkennen met de focus op CULTUUR, HISTORIE
    - INCLUSIEF: Attracties, monumenten, pleinen, musea, parken, kerken, iconische straten.
    - EXCLUSIEF (VERBODEN): Parkings, kantoren, bedrijven, advocaten, architectenbureaus, woonhuizen, of technische infrastructuur.
 2. Je bent de EXPERT gids. Ontwerp zelfstandig het ideale plan.
-3. Je gebruikt hetzelfde onderliggende algoritme als de "Trip" modus. Dit betekent dat je de volgende informatie MOET hebben of vaststellen voordat je de status op "complete" zet:
+3. Je gebruikt hetzelfde onderliggende algoritme als de "Trip" modus.
+
+### CONTEXTUELE LOGICA (BELANGRIJK)
+**Is er al een route actief? ${isRouteActive ? 'JA' : 'NEE'}**
+
+- **INDIEN JA (Route Actief):**
+  - De gebruiker is AL onderweg. Vraag NIET om de stad, reiswijze, startpunt of rondtrip-status.
+  - Neem aan dat de gebruiker een extra tussenstop wil toevoegen aan de huidige route.
+  - Gebruik DIRECT de \`[[SEARCH: <term>]]\` tag voor verzoeken zoals "ik heb dorst", "toilet", "winkel", "museum".
+  - Voorbeeld: User zegt "Ik wil koffie". Jij zegt: "[[SEARCH: koffiebar]] Goed idee, ik zoek een koffiebar op je route."
+
+- **INDIEN NEE (Geen Route):**
+  - Volg de standaard flow: Vraag om Stad, Reiswijze, Lengte en Startpunt als die ontbreken.
+
+4. Dit betekent dat je de volgende informatie MOET hebben of vaststellen voordat je de status op "complete" zet (ALLEEN als route NIET actief is):
    - **Stad/Plaats**: Welke specifieke stad of plek wil de gebruiker verkennen?
    - **Reiswijze**: Gaan ze wandelen ("walking") of fietsen ("cycling")?
    - **Lengte**: Hoe lang (minuten) of hoe ver (km) moet de trip zijn? (Maak een deskundige inschatting als de gebruiker vage termen gebruikt zoals "een middagje").
    - **Rondtrip**: Is het een rondtrip? Zo ja, vraag ALTIJD naar een specifiek startpunt (bijv. een hotel, station of 'huidige locatie') als dit nog niet bekend is.
-4. Je mag zelfstandig de interesses verfijnen of uitbreiden om de beste ervaring te bieden.
+5. Je mag zelfstandig de interesses verfijnen of uitbreiden om de beste ervaring te bieden.
    - Als de gebruiker vaag is ("doe maar wat"), kies dan voor populaire categorieën zoals "historisch centrum", "highlights", of "verborgen parels".
-5. Indien er cruciale informatie ontbreekt, stel dan een vriendelijke vraag in je "message".
-6. Zodra je alle parameters hebt (Stad, Reiswijze, Lengte, Rondtrip status en eventueel Startpunt), kondig dan aan dat je de route gaat genereren en leg kort uit waarom deze keuzes goed zijn. 
-7. **BELANGRIJK**: Zet de status op "complete" ZODRA je alle parameters hebt. Wacht niet op een extra bevestiging van de gebruiker als je alles al weet.
+6. Indien er cruciale informatie ontbreekt, stel dan een vriendelijke vraag in je "message".
+7. Zodra je alle parameters hebt (Stad, Reiswijze, Lengte, Rondtrip status en eventueel Startpunt), kondig dan aan dat je de route gaat genereren en leg kort uit waarom deze keuzes goed zijn. 
+8. **BELANGRIJK**: Zet de status op "complete" ZODRA je alle parameters hebt. Wacht niet op een extra bevestiging van de gebruiker als je alles al weet.
 
 ### GESPREKSHISTORIE
 ${historyContext}
@@ -246,9 +260,15 @@ Je MOET antwoorden met een JSON object in dit formaat:
 }
 
 ### REGELS VOOR OUTPUT
-- De status mag pas op "complete" als je Stad, TravelMode, Constraint en Roundtrip info hebt.
+- De status mag pas op "complete" als je Stad, TravelMode, Constraint en Roundtrip info hebt (TENZIJ Route Actief is -> dan direct Search).
 - **Wanneer de status "complete" is, MOET je ALLE verzamelde parameters (city, travelMode, constraintValue, interests, etc.) opnemen in het params object.**
 - Indien de gebruiker vraagt om de planner te sluiten/stoppen, zet status op "close".
+- **NIEUW**: Als de gebruiker tijdens een route een **specifieke tussenstop** wil (bijv. "ik heb dorst", "zoek een cafe", "waar is een toilet?", "ik wil shoppen") OF als Route Actief is:
+  - Gebruik de speciale tag "[[SEARCH: <zoekterm>]]" aan het BEGIN van je message.
+  - **NIEUW**: Als de gebruiker een referentiepunt noemt (bijv. "bij het Modemuseum", "na de kerk"), gebruik dan: "[[SEARCH: <term> | NEAR: <referentiepunt>]]".
+  - **NIEUW**: Als de gebruiker vraagt om iets "halverwege", "in het midden", of "tussenin" te zoeken (zonder specifiek punt), gebruik dan: "[[SEARCH: <term> | NEAR: @MIDPOINT]]".
+  - Voorbeeld user: "Ik heb dorst." -> Jouw output message: "[[SEARCH: cafe]] Geen probleem! Ik zoek even naar leuke cafeetjes in de buurt."
+  - Voorbeeld user: "Zoek koffie bij het Modemuseum." -> Jouw output message: "[[SEARCH: koffie | NEAR: Modemuseum]] Ik kijk wat er rond het Modemuseum te vinden is."
 - Gebruik taal: ${language === 'nl' ? 'Nederlands' : 'English'}.
 `;
 
@@ -304,17 +324,17 @@ Je MOET antwoorden met een JSON object in dit formaat:
             : "No external data signals found.";
 
         const prompt = `
-Je bent een snelle, efficiënte gids.
-Schrijf één pakkende, informatieve beschrijving van 5-7 regels voor "${poi.name}" (${this.config.city}).
-Gebruik deze context indien relevant: ${contextData}
+                Je bent een snelle, efficiënte gids.
+                Schrijf één pakkende, informatieve beschrijving van 5-7 regels voor "${poi.name}" (${this.config.city}).
+                Gebruik deze context indien relevant: ${contextData}
 
-Richtlijnen:
-- Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
-- Focus: Wat is het en waarom is het interessant?
-- Geen inleiding, alleen de tekst.
+                Richtlijnen:
+                - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+                - Focus: Wat is het en waarom is het interessant?
+                - Geen inleiding, alleen de tekst.
 
-Start Nu.
-        `;
+                Start Nu.
+                `;
 
         try {
             const url = '/api/gemini';
@@ -349,38 +369,38 @@ Start Nu.
             : "No external data signals found.";
 
         const prompt = `
-Je bent een ervaren lokale gids. We hebben al een korte beschrijving van "${poi.name}".
-Nu willen we de diepte in.
+                Je bent een ervaren lokale gids. We hebben al een korte beschrijving van "${poi.name}".
+                Nu willen we de diepte in.
 
-### CONText
-- POI: ${poi.name}
-- Stad: ${this.config.city}
-- Interesses: ${this.config.interests || 'Algemeen'}
-- Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
-- Context Data: ${contextData}
+                ### CONText
+                - POI: ${poi.name}
+                - Stad: ${this.config.city}
+                - Interesses: ${this.config.interests || 'Algemeen'}
+                - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+                - Context Data: ${contextData}
 
-### TAAK
-Genereer de uitgebreide details in JSON formaat.
+                ### TAAK
+                Genereer de uitgebreide details in JSON formaat.
 
-### OUTPUT JSON
-{
-  "standard_version": {
-    "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
-    "fun_fact": "Eén boeiend weetje of anekdote."
+                ### OUTPUT JSON
+                {
+                    "standard_version": {
+                    "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
+                "fun_fact": "Eén boeiend weetje of anekdote."
   },
-  "extended_version": {
-    "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
-    "why_this_matches_your_interests": [
-      "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
-    ],
-    "fun_facts": [
-      "2–4 leuke weetjes of anekdotes"
-    ],
-    "if_you_only_have_2_minutes": "Wat moet je écht gezien hebben?",
-    "visitor_tips": "Praktische info indien relevant."
+                "extended_version": {
+                    "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
+                "why_this_matches_your_interests": [
+                "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
+                ],
+                "fun_facts": [
+                "2–4 leuke weetjes of anekdotes"
+                ],
+                "if_you_only_have_2_minutes": "Wat moet je écht gezien hebben?",
+                "visitor_tips": "Praktische info indien relevant."
   }
 }
-`;
+                `;
 
         try {
             const url = '/api/gemini';

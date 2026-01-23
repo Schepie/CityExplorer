@@ -113,8 +113,8 @@ function App() {
   const [aiChatHistory, setAiChatHistory] = useState([
     {
       role: 'brain', text: language === 'nl'
-        ? 'Hoi! Ik ben de Brain van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Is het een **rondtrip** (start en stop op hetzelfde punt)?\n5. Wat zijn je **interesses** (bijv. architectuur, koffie, natuur)?'
-        : 'Hi! I am the Brain of CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. Is it a **round trip** (start and end at the same place)?\n5. What are your **interests** (e.g. architecture, coffee, nature)?'
+        ? 'Hoi! Ik ben je Gids van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Is het een **rondtrip** (start en stop op hetzelfde punt)?\n5. Wat zijn je **interesses** (bijv. architectuur, koffie, natuur)?'
+        : 'Hi! I am your CityExplorer Guide. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. Is it a **round trip** (start and end at the same place)?\n5. What are your **interests** (e.g. architecture, coffee, nature)?'
     }
   ]);
   const [isAiViewActive, setIsAiViewActive] = useState(true);
@@ -952,64 +952,79 @@ function App() {
     try {
       const updatedHistory = [...aiChatHistory, newUserMsg];
       const engine = new PoiIntelligence({ language });
-      const result = await engine.parseNaturalLanguageInput(promptText, language, updatedHistory);
+      // Pass isRouteActive = true if routeData exists
+      const isRouteActive = !!routeData;
+      const result = await engine.parseNaturalLanguageInput(promptText, language, updatedHistory, isRouteActive);
 
       if (!result) throw new Error("Brain translation failed");
 
       // Update local history with AI message
-      // Update local history with AI message
-      const aiResponseText = result.message;
+      let aiResponseText = result.message;
+      let searchIntent = null;
+
+      // DETECT SEARCH INTENT
+      const searchMatch = aiResponseText.match(/\[\[SEARCH:\s*(.*?)\]\]/);
+      if (searchMatch) {
+        searchIntent = searchMatch[1];
+        // Clean the message for display
+        aiResponseText = aiResponseText.replace(searchMatch[0], '').trim();
+      }
+
       setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
 
+      // EXECUTE SEARCH IF DETECTED
+      if (searchIntent) {
+        // Run in background but show loading in chat (handled by async nature or custom msg)
+        await handleAiSearchRequest(searchIntent);
+      } else {
 
-
-      // Auto-read logic removed as per user request
-
-      // Extract and update state if params found
-      if (result.params) {
-        const p = result.params;
-        if (p.city) setCity(p.city);
-        if (p.interests) setInterests(p.interests);
-        if (p.travelMode) setTravelMode(p.travelMode);
-        if (p.constraintType) setConstraintType(p.constraintType);
-        if (p.constraintValue) setConstraintValue(p.constraintValue);
-        if (p.isRoundtrip !== undefined) setIsRoundtrip(p.isRoundtrip);
-        if (p.startPoint) setStartPoint(p.startPoint);
-      }
-
-      // Action based on status
-      if (result.status === 'close') {
-        setIsAiViewActive(false);
-        return null;
-      }
-
-      if (result.status === 'complete') {
-        const newCity = result.params?.city;
-        const currentActiveCity = validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null);
-        const isCitySwitch = newCity && currentActiveCity && newCity.toLowerCase().trim() !== currentActiveCity.toLowerCase().trim();
-
-        // Fallback for interests
-        const effectiveInterests = result.params?.interests || interests;
-
-        // CASE A: Start New / Regenerate
-        if (searchMode === 'prompt' || !routeData || isCitySwitch) {
-          const finalCity = newCity || city;
-          if (!finalCity || !effectiveInterests) return null;
-
-          setIsAiViewActive(true);
-          await handleCityValidation('submit', finalCity, effectiveInterests, result.params);
-
-          // Switch to itinerary view after a small delay
-          setTimeout(() => setIsAiViewActive(false), 2000);
-          return;
+        // STANDARD LOGIC (Params extraction etc)
+        // Extract and update state if params found
+        if (result.params) {
+          const p = result.params;
+          if (p.city) setCity(p.city);
+          if (p.interests) setInterests(p.interests);
+          if (p.travelMode) setTravelMode(p.travelMode);
+          if (p.constraintType) setConstraintType(p.constraintType);
+          if (p.constraintValue) setConstraintValue(p.constraintValue);
+          if (p.isRoundtrip !== undefined) setIsRoundtrip(p.isRoundtrip);
+          if (p.startPoint) setStartPoint(p.startPoint);
         }
 
-        // CASE B: ADD to current journey
-        if (routeData && effectiveInterests) {
-          setIsAiViewActive(true);
-          await handleAddToJourney(null, effectiveInterests, result.params);
-          setTimeout(() => setIsAiViewActive(false), 2000);
-          return;
+        // Action based on status
+        if (result.status === 'close') {
+          setIsAiViewActive(false);
+          return null;
+        }
+
+        if (result.status === 'complete') {
+          const newCity = result.params?.city;
+          const currentActiveCity = validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null);
+          const isCitySwitch = newCity && currentActiveCity && newCity.toLowerCase().trim() !== currentActiveCity.toLowerCase().trim();
+
+          // Fallback for interests
+          const effectiveInterests = result.params?.interests || interests;
+
+          // CASE A: Start New / Regenerate
+          if (searchMode === 'prompt' || !routeData || isCitySwitch) {
+            const finalCity = newCity || city;
+            if (!finalCity || !effectiveInterests) return null;
+
+            setIsAiViewActive(true);
+            await handleCityValidation('submit', finalCity, effectiveInterests, result.params);
+
+            // Switch to itinerary view after a small delay
+            setTimeout(() => setIsAiViewActive(false), 2000);
+            return;
+          }
+
+          // CASE B: ADD to current journey
+          if (routeData && effectiveInterests) {
+            setIsAiViewActive(true);
+            await handleAddToJourney(null, effectiveInterests, result.params);
+            setTimeout(() => setIsAiViewActive(false), 2000);
+            return;
+          }
         }
       }
 
@@ -1019,6 +1034,153 @@ function App() {
       console.error("AI Prompt processing failed", err);
       setAiChatHistory(prev => [...prev, { role: 'brain', text: 'Oei, er liep iets mis bij het verwerken van je vraag. Probeer je het nog eens?' }]);
       return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // New Handler for AI-triggered Searches
+  const handleAiSearchRequest = async (rawQuery) => {
+    console.log("AI Requested Search for:", rawQuery);
+
+    // Parse "Item | NEAR: Location" syntax
+    let query = rawQuery;
+    let locationContext = null;
+
+    if (rawQuery.includes("NEAR:")) {
+      const parts = rawQuery.split("NEAR:");
+      query = parts[0].replace('|', '').trim();
+      locationContext = parts[1].trim();
+    }
+
+    setLoadingText(language === 'nl' ? `Zoeken naar ${query}...` : `Searching for ${query}...`);
+    setIsLoading(true);
+
+    try {
+      // 1. Determine Search Location (User Loc > Route Center)
+      let center = routeData?.center;
+      let radius = 2; // Default 2km lookaround
+
+      // Overwrite center if NEAR context is provided and found in route
+      let contextFound = false;
+      let referencePoiId = null;
+      if (locationContext && routeData && routeData.pois) {
+
+        if (locationContext.toUpperCase() === '@MIDPOINT') {
+          let totalStats = 0;
+          const dists = [0];
+          // Simple Euclidean sum for midpoint estimation
+          for (let i = 0; i < routeData.pois.length - 1; i++) {
+            const d = getDistance(routeData.pois[i].lat, routeData.pois[i].lng, routeData.pois[i + 1].lat, routeData.pois[i + 1].lng);
+            totalStats += d;
+            dists.push(totalStats);
+          }
+          const halfDist = totalStats / 2;
+          let midIndex = 0;
+          for (let i = 0; i < dists.length; i++) {
+            if (dists[i] >= halfDist) {
+              midIndex = Math.max(0, i - 1);
+              break;
+            }
+          }
+          const midPoi = routeData.pois[midIndex];
+          if (midPoi) {
+            center = [midPoi.lat, midPoi.lng];
+            radius = 1.5;
+            contextFound = true;
+            referencePoiId = midPoi.id;
+            console.log(`AI Search: Calculated Midpoint at POI #${midIndex} (${midPoi.name})`);
+          }
+        } else {
+          const target = routeData.pois.find(p => p.name.toLowerCase().includes(locationContext.toLowerCase()));
+          if (target) {
+            center = [target.lat, target.lng];
+            radius = 1.0;
+            contextFound = true;
+            referencePoiId = target.id;
+            console.log(`AI Search: Focusing on ${target.name} based on context '${locationContext}'`);
+          }
+        }
+      }
+
+      // If user is sharing location and is valid (AND no specific context used)
+      if (!contextFound && userLocation && userLocation.lat && userLocation.lng) {
+        center = [userLocation.lat, userLocation.lng];
+        radius = 1.5;
+      } else if (!contextFound && focusedLocation) {
+        center = [focusedLocation.lat, focusedLocation.lng];
+      }
+
+      // Mock City Data for getCombinedPOIs
+      const tempCityData = { lat: center[0], lon: center[1], name: "Search Area" };
+
+      // 2. Fetch Candidates
+      const candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, searchSources);
+
+      if (candidates.length > 0) {
+        // Take top 3 & Calculate Detour Impact
+        const suggestions = candidates.slice(0, 3).map(cand => {
+          let extraKm = 0;
+          if (routeData && routeData.pois && routeData.pois.length > 0) {
+            const currentRoute = routeData.pois;
+            const startLoc = { lat: routeData.center[0], lng: routeData.center[1] };
+
+            // If we have a specific reference context, calculate cost ONLY at that spot
+            if (referencePoiId) {
+              const refIdx = currentRoute.findIndex(p => p.id === referencePoiId);
+              if (refIdx !== -1) {
+                const prev = currentRoute[refIdx];
+                const next = currentRoute[refIdx + 1] || null;
+                const d1 = getDistance(prev.lat, prev.lng, cand.lat, cand.lng);
+                if (next) {
+                  const d2 = getDistance(cand.lat, cand.lng, next.lat, next.lng);
+                  const base = getDistance(prev.lat, prev.lng, next.lat, next.lng);
+                  extraKm = d1 + d2 - base;
+                } else {
+                  extraKm = d1;
+                }
+              }
+            } else {
+              // Find Global Min Cost (Best Fit)
+              let minCost = Infinity;
+              for (let i = 0; i <= currentRoute.length; i++) {
+                const prev = (i === 0) ? startLoc : currentRoute[i - 1];
+                const next = (i === currentRoute.length) ? null : currentRoute[i];
+                const d1 = getDistance(prev.lat, prev.lng, cand.lat, cand.lng);
+                let cost = 0;
+                if (next) {
+                  const d2 = getDistance(cand.lat, cand.lng, next.lat, next.lng);
+                  const base = getDistance(prev.lat, prev.lng, next.lat, next.lng);
+                  cost = d1 + d2 - base;
+                } else cost = d1;
+
+                if (cost < minCost) minCost = cost;
+              }
+              extraKm = minCost;
+            }
+          }
+          const currentTotal = parseFloat(routeData?.stats?.totalDistance || 0);
+          return { ...cand, detour_km: extraKm, projected_total_km: currentTotal + extraKm };
+        });
+
+        // Add "Suggestion Card" to chat
+        setAiChatHistory(prev => [...prev, {
+          role: 'system',
+          type: 'poi_suggestions',
+          data: suggestions,
+          query: query,
+          context: { referencePoiId }
+        }]);
+      } else {
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: language === 'nl' ? `Ik heb helaas geen "${query}" gevonden in de directe omgeving.` : `I couldn't find any "${query}" nearby.`
+        }]);
+      }
+
+    } catch (e) {
+      console.warn("AI Search Failed", e);
+      setAiChatHistory(prev => [...prev, { role: 'brain', text: "Er liep iets mis bij het zoeken." }]);
     } finally {
       setIsLoading(false);
     }
@@ -1119,11 +1281,21 @@ function App() {
         targetCityData = { lat: cityCenter[0], lon: cityCenter[1], name: city };
       }
 
-      const newCandidates = await getCombinedPOIs(targetCityData, activeInterest, city, searchRadiusKm, searchSources);
+      let newCandidates = [];
+      if (activeParams.directCandidates) {
+        // USE PROVIDED CANDIDATES (From AI Chat)
+        newCandidates = activeParams.directCandidates;
+        console.log("AddJourney: Using direct candidates", newCandidates);
+      } else {
+        // FETCH NORMAL
+        newCandidates = await getCombinedPOIs(targetCityData, activeInterest, city, searchRadiusKm, searchSources);
+      }
+
       console.log(`AddJourney: Found ${newCandidates.length} candidates for ${activeInterest}`);
       setFoundPoisCount(newCandidates.length);
 
       if (newCandidates.length === 0) {
+        // ...
         if (searchMode === 'prompt') {
           setAiChatHistory(prev => [...prev, {
             role: 'brain',
@@ -1165,31 +1337,122 @@ function App() {
         return;
       }
 
-      // 3. Proposed Route Calculation (New Logic: Try All Top 3, Don't Prune yet)
+      // 3. Smart Insertion Logic
+      // Instead of completely reshuffling, we want to insert the new POIs into the route
+      // specifically AFTER the current active POI (where the user is or heading to).
+
       const candidatePool = [...uniqueNew.slice(0, 3)];
-      const mergedList = [...currentPois, ...candidatePool];
+      let optimizedPois = [];
 
-      // 3a. Greedy NN Sort
-      const optimizedPois = [];
-      const visited = new Set();
-      let curr = { lat: cityCenter[0], lng: cityCenter[1] };
+      // If we haven't started (index 0) or simple add, treat as new set.
+      // BUT if we have an active route (activePoiIndex > 0), we must respect visited history.
 
-      while (optimizedPois.length < mergedList.length) {
-        let nearest = null;
-        let minDist = Infinity;
-        for (const p of mergedList) {
-          if (visited.has(p.id)) continue;
-          const d = getDistance(curr.lat, curr.lng, p.lat, p.lng);
-          if (d < minDist) {
-            minDist = d;
-            nearest = p;
+      const activeIdx = activePoiIndex || 0;
+
+      if (activeIdx > 0 && routeData.pois && routeData.pois.length > 0) {
+        // Strategy: Keep 0..activeIdx-1 (Visited) FIXED.
+        // Insert new candidates roughly after activeIdx.
+        // Then append the rest of the old route.
+        // Ideally, we should optimize the "Future" methods, but for now simple insertion is safer 
+        // to avoid jumping back and forth.
+
+        const visitedPois = currentPois.slice(0, activeIdx);
+        const upcomingPois = currentPois.slice(activeIdx);
+
+        // Find optimal insertion for new candidates among upcoming?
+        // Simple heuristic: Insert NEW ones right after visited (High Priority Stop), 
+        // then the rest of upcoming.
+        // Or: Insert new ones at the TOP of upcoming list. (Immediate Next Stop).
+
+        // We will do: Visited -> [New Candidates Optimized] -> Upcoming
+        // This ensures the user goes there NEXT.
+
+        // Optimize New Candidates order relative to last visited
+        let lastVisited = visitedPois[visitedPois.length - 1] || { lat: cityCenter[0], lng: cityCenter[1] };
+        let remainingCandidates = [...candidatePool];
+        let sortedNew = [];
+
+        let curr = lastVisited;
+        while (remainingCandidates.length > 0) {
+          let nearestIdx = -1;
+          let minDist = Infinity;
+          for (let i = 0; i < remainingCandidates.length; i++) {
+            const d = getDistance(curr.lat, curr.lng, remainingCandidates[i].lat, remainingCandidates[i].lng);
+            if (d < minDist) {
+              minDist = d;
+              nearestIdx = i;
+            }
+          }
+          const best = remainingCandidates.splice(nearestIdx, 1)[0];
+          sortedNew.push(best);
+          curr = best;
+        }
+
+        optimizedPois = [...visitedPois, ...sortedNew, ...upcomingPois];
+        console.log("Smart Insertion: Added", sortedNew.length, "stops after index", activeIdx);
+
+      } else {
+        // No active progress (or at start): Reshuffle everything for global optimality
+        // (Legacy Logic)
+        const mergedList = [...currentPois, ...candidatePool];
+        const visited = new Set();
+        let curr = { lat: cityCenter[0], lng: cityCenter[1] };
+
+        // NEW LOGIC: If route active/exists, use insertion. Else sort.
+        if (currentPois.length > 0) {
+          let currentRoute = [...currentPois];
+          const startLoc = { lat: cityCenter[0], lng: cityCenter[1] };
+
+          // Check if we have a preference reference (e.g. "After Modemuseum")
+          const preferredRefId = activeParams?.referencePoiId;
+          let refInsertIdx = -1;
+          if (preferredRefId) {
+            const foundIdx = currentRoute.findIndex(p => p.id === preferredRefId);
+            if (foundIdx !== -1) refInsertIdx = foundIdx + 1;
+          }
+
+          for (const cand of candidatePool) {
+            let bestIdx = -1;
+
+            if (refInsertIdx !== -1) {
+              // Strict Insertion Context found
+              bestIdx = refInsertIdx;
+              refInsertIdx++; // Shift for next candidate to maintain order
+            } else {
+              // Standard Cheapest Insertion
+              let minCost = Infinity;
+              for (let i = 0; i <= currentRoute.length; i++) {
+                const prev = (i === 0) ? startLoc : currentRoute[i - 1];
+                const next = (i === currentRoute.length) ? null : currentRoute[i];
+                const d1 = getDistance(prev.lat, prev.lng, cand.lat, cand.lng);
+                let inc = 0;
+                if (next) {
+                  const d2 = getDistance(cand.lat, cand.lng, next.lat, next.lng);
+                  const base = getDistance(prev.lat, prev.lng, next.lat, next.lng);
+                  inc = d1 + d2 - base;
+                } else inc = d1;
+                if (inc < minCost) { minCost = inc; bestIdx = i; }
+              }
+            }
+
+            if (bestIdx !== -1) currentRoute.splice(bestIdx, 0, cand);
+            else currentRoute.push(cand);
+          }
+          optimizedPois = currentRoute;
+        } else {
+          // Basic Greedy Sort (Legacy)
+          while (optimizedPois.length < mergedList.length) {
+            let nearest = null;
+            let minDist = Infinity;
+            for (const p of mergedList) {
+              if (visited.has(p.id)) continue;
+              const d = getDistance(curr.lat, curr.lng, p.lat, p.lng);
+              if (d < minDist) { minDist = d; nearest = p; }
+            }
+            if (nearest) { optimizedPois.push(nearest); visited.add(nearest.id); curr = { lat: nearest.lat, lng: nearest.lng }; }
+            else break;
           }
         }
-        if (nearest) {
-          optimizedPois.push(nearest);
-          visited.add(nearest.id);
-          curr = { lat: nearest.lat, lng: nearest.lng };
-        } else break;
       }
 
       // 4. Enrich & Get Path
@@ -1202,11 +1465,22 @@ function App() {
       let finalPath = [];
       let finalDist = 0;
       let finalSteps = [];
+      let walkDist = 0;
 
-      const routeResult = await calculateRoutePath(fullyEnriched, cityCenter, travelMode);
-      finalPath = routeResult.path;
-      finalDist = routeResult.dist;
-      finalSteps = routeResult.steps;
+      try {
+        const routeResult = await calculateRoutePath(fullyEnriched, cityCenter, travelMode);
+        finalPath = routeResult.path;
+        finalDist = routeResult.dist;
+        finalSteps = routeResult.steps;
+        walkDist = routeResult.walkDist || 0;
+      } catch (calcErr) {
+        console.error("OSRM Route Calculation Failed in AddToJourney:", calcErr);
+        finalPath = [];
+        finalDist = fullyEnriched.reduce((acc, p, i) => {
+          if (i === 0) return acc + getDistance(cityCenter[0], cityCenter[1], p.lat, p.lng);
+          return acc + getDistance(fullyEnriched[i - 1].lat, fullyEnriched[i - 1].lng, p.lat, p.lng);
+        }, 0);
+      }
 
       // Define Limit with tolerance
       let targetLimitKm = constraints.value;
@@ -1223,7 +1497,7 @@ function App() {
         navigationSteps: finalSteps,
         stats: {
           totalDistance: finalDist.toFixed(1),
-          walkDistance: (routeResult.walkDist || 0).toFixed(1),
+          walkDistance: (walkDist || 0).toFixed(1),
           limitKm: targetLimitKm.toFixed(1)
         }
       };
@@ -1319,6 +1593,114 @@ function App() {
   const handleDisambiguationCancel = () => {
     setDisambiguationOptions(null);
     setDisambiguationContext(null);
+  };
+
+  // Logic to update the start location of an existing route
+  // This re-sorts the key POIs to be optimal from the NEW start location
+  const handleUpdateStartLocation = async (newStartInput) => {
+    if (!routeData || !routeData.pois) return;
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Route herschikken...' : 'Reshuffling route...');
+
+    try {
+      let newStartCenter = routeData.center;
+
+      // 1. Resolve Location
+      const isCurrentLoc = newStartInput && (newStartInput.toLowerCase().includes('huidig') || newStartInput.toLowerCase().includes('current') || newStartInput.toLowerCase().includes('mijn locat'));
+
+      if (isCurrentLoc) {
+        try {
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          });
+          newStartCenter = [pos.coords.latitude, pos.coords.longitude];
+        } catch (e) {
+          console.warn("Geolocation failed", e);
+          alert(language === 'nl' ? "Kon locatie niet bepalen." : "Could not determine location.");
+          setIsLoading(false);
+          return;
+        }
+      } else if (newStartInput && newStartInput.trim().length > 2) {
+        try {
+          // Geocode relative to current city to avoid jumps
+          const cityName = validatedCityData?.address?.city || city;
+          const q = `${newStartInput}, ${cityName}`;
+          const res = await fetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
+          const data = await res.json();
+          if (data && data[0]) {
+            newStartCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+          } else {
+            // Try global
+            const res2 = await fetch(`/api/nominatim?q=${encodeURIComponent(newStartInput)}&format=json&limit=1`);
+            const data2 = await res2.json();
+            if (data2 && data2[0]) {
+              newStartCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
+            } else {
+              alert(language === 'nl' ? "Startpunt niet gevonden." : "Start point not found.");
+              setIsLoading(false);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to geocode startPoint", e);
+        }
+      }
+
+      // 2. Re-optimize POI Order (Nearest Neighbor from New Start)
+      // Keep existing POIs, just change order
+      const existingPois = [...routeData.pois];
+      const optimizedPois = [];
+      const visited = new Set();
+      let curr = { lat: newStartCenter[0], lng: newStartCenter[1] };
+
+      while (optimizedPois.length < existingPois.length) {
+        let nearest = null;
+        let minDist = Infinity;
+        for (const p of existingPois) {
+          if (visited.has(p.id)) continue;
+          const d = getDistance(curr.lat, curr.lng, p.lat, p.lng);
+          if (d < minDist) {
+            minDist = d;
+            nearest = p;
+          }
+        }
+        if (nearest) {
+          optimizedPois.push(nearest);
+          visited.add(nearest.id);
+          curr = { lat: nearest.lat, lng: nearest.lng };
+        } else break;
+      }
+
+      // Calculate dist back to start if roundtrip
+      const returnDesc = isRoundtrip ? (language === 'nl' ? "Terug naar start" : "Back to start") : "";
+
+      // 3. Recalculate Path (OSRM)
+      // Note: We use the existing POI descriptions/images, no need to re-enrich
+      const routeResult = await calculateRoutePath(optimizedPois, newStartCenter, travelMode);
+
+      const newRouteData = {
+        ...routeData,
+        center: newStartCenter, // Update center to behave as new start
+        pois: optimizedPois,
+        routePath: routeResult.path,
+        navigationSteps: routeResult.steps,
+        stats: {
+          ...routeData.stats,
+          totalDistance: routeResult.dist.toFixed(1),
+          walkDistance: (routeResult.walkDist || 0).toFixed(1)
+        }
+      };
+
+      setRouteData(newRouteData);
+      setStartPoint(newStartInput); // Update form state
+
+    } catch (e) {
+      console.error("Update start failed", e);
+      alert("Failed to update route.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSuggestionSelect = (suggestion) => {
@@ -2068,6 +2450,7 @@ function App() {
         routeData={routeData}
         onPoiClick={handlePoiClick}
         onRemovePoi={handleRemovePoi}
+        onUpdateStartLocation={handleUpdateStartLocation}
         onReset={resetSearch}
         language={language}
         setLanguage={setLanguage} // Add setter for sidebar toggle

@@ -796,7 +796,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                 positions={navigationPath}
                                 pathOptions={{
                                     color: '#3b82f6',
-                                    weight: 6,
+                                    weight: 9,
                                     opacity: 0.9,
                                     lineCap: 'round',
                                     lineJoin: 'round'
@@ -810,8 +810,8 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                 positions={polyline}
                                 pathOptions={{
                                     color: isNavigating ? 'var(--primary)' : 'var(--primary)',
-                                    weight: 4,
-                                    opacity: 0.5,
+                                    weight: 6,
+                                    opacity: 0.6,
                                     dashArray: '4, 12', // Distinctly dotted
                                     lineCap: 'round'
                                 }}
@@ -1357,7 +1357,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                         <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>
                                     </div>
                                     <div className="flex flex-col">
-                                        <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "Brain denkt na..." : "Brain is thinking...")}</span>
+                                        <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "Gids denkt na..." : "Guide is thinking...")}</span>
                                         {loadingCount > 0 && <span className="text-[10px] text-primary font-medium animate-pulse">{loadingCount} {language === 'nl' ? 'spots gevonden' : 'spots found'}</span>}
                                     </div>
                                 </div>

@@ -287,7 +287,7 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
         // 3. Strict Distance Filter
         const d = calcDist(centerLat, centerLon, parseFloat(poi.lat), parseFloat(poi.lng));
         if (d <= radiusKm) {
-            uniquePois.push({ ...poi, distanceKm: d.toFixed(2) }); // accessible for debugging
+            uniquePois.push({ ...poi, dist_km: parseFloat(d.toFixed(2)) });
             seenNames.add(normName);
         }
     }
