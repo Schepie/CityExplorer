@@ -194,8 +194,19 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
     const radiusKm = constrainValueKm || 5;
 
     // Separate interests by comma
-    const interests = interestLine.split(',').map(s => s.trim()).filter(s => s.length > 0);
-    if (interests.length === 0) return [];
+    let interests = [];
+    if (interestLine && interestLine.trim().length > 0) {
+        interests = interestLine.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    }
+
+    // Default interests when none specified
+    if (interests.length === 0) {
+        interests = [
+            "Bezienswaardigheden", "Must-see", "Historisch", "Monument",
+            "Musea", "Kunst & design", "Tentoonstellingen", "Erfgoed",
+            "Parken & natuur", "Uitzichtpunten", "Wandelen", "Water & strand"
+        ];
+    }
 
     // Default to true if sources not passed (legacy compatibility)
     const useOsm = sources ? sources.osm : true;
@@ -260,8 +271,23 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
             'gym', 'fitness', 'sport',
             'hair', 'kapper', 'salon',
             'laundry', 'wasserette',
-            'driving school', 'rijschool'
+            'driving school', 'rijschool',
+            // --- NEW: Restaurant / Food exclusion ---
+            'restaurant', 'cafe', 'café', 'bistro', 'eatery', 'food', 'eten', 'diner', 'lunch',
+            'snackbar', 'fastfood', 'fast food', 'pizzeria', 'grill', 'bar', 'pub', 'kroeg',
+            // --- NEW: Bookstore exclusion ---
+            'boekwinkel', 'boekhandel', 'bookstore', 'boeken'
         ];
+
+        // Check if the user EXPLICITLY asked for food/drink in the search query
+        // Check if the user EXPLICITLY asked for restricted items (food/bookstores) in the search query
+        const specialTerms = [
+            'restaurant', 'cafe', 'café', 'eten', 'food', 'drink', 'bar', 'pub', 'kroeg', 'koffie', 'coffee', 'lunch', 'diner', 'ontbijt', 'breakfast',
+            'boekwinkel', 'boekhandel', 'bookstore', 'boeken', 'books'
+        ];
+        const explicitlyRequestedSpecial = interests.some(interest =>
+            specialTerms.some(term => interest.toLowerCase().includes(term))
+        );
 
         // Also check description/type if available
         const descriptionLower = (poi.description || "").toLowerCase();
@@ -274,13 +300,23 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
         );
 
         if (isForbidden) {
-            // Exception: specific overrides? e.g. "Old Post Office Museum"
-            // If relevant, we could whitelist: "museum", "gallery", "historic", "visit" within the name
-            const whitelist = ['museum', 'gallery', 'histor', 'visit', 'tour', 'monument', 'church', 'kerk', 'kasteel', 'castle'];
-            const isWhitelisted = whitelist.some(w => normName.includes(w) || descriptionLower.includes(w));
+            // Restriction: Only bypass if explicitly requested AND it's a special term (food/books)
+            const isSpecialTerm = [
+                'restaurant', 'cafe', 'café', 'bistro', 'eatery', 'food', 'eten', 'diner', 'lunch',
+                'snackbar', 'fastfood', 'pizzeria', 'grill', 'bar', 'pub', 'kroeg',
+                'boekwinkel', 'boekhandel', 'bookstore', 'boeken'
+            ].some(t => normName.includes(t) || descriptionLower.includes(t) || typeLower.includes(t));
 
-            if (!isWhitelisted) {
-                continue; // Skip this POI
+            if (isSpecialTerm && explicitlyRequestedSpecial) {
+                // Allow
+            } else {
+                // Check other whitelists (museums, etc.)
+                const whitelist = ['museum', 'gallery', 'histor', 'visit', 'tour', 'monument', 'church', 'kerk', 'kasteel', 'castle'];
+                const isWhitelisted = whitelist.some(w => normName.includes(w) || descriptionLower.includes(w));
+
+                if (!isWhitelisted) {
+                    continue; // Skip this POI
+                }
             }
         }
 

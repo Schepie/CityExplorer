@@ -6,6 +6,7 @@ import CitySelector from './components/CitySelector';
 import './index.css'; // Ensure styles are loaded
 import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
 import * as smartPoiUtils from './utils/smartPoiUtils';
+import { rotateCycle, reverseCycle } from './utils/routeUtils';
 
 // Theme Definitions
 // Theme Definitions
@@ -36,6 +37,13 @@ const APP_THEMES = {
     label: { en: 'Warmth', nl: 'Warmte' },
     colors: { primary: '#f59e0b', hover: '#d97706', accent: '#06b6d4', bgStart: '#451a03', bgEnd: '#78350f' } // Amber + Coffee
   }
+};
+
+// Navigation Phases for strict tracking
+export const NAV_PHASES = {
+  PRE_ROUTE: 'PRE_ROUTE',   // Heading to the start point
+  IN_ROUTE: 'IN_ROUTE',     // On the generated path
+  COMPLETED: 'COMPLETED'    // Finished the loop
 };
 
 
@@ -104,7 +112,7 @@ function App() {
   const [interests, setInterests] = useState('');
   const [constraintType, setConstraintType] = useState('distance');
   const [constraintValue, setConstraintValue] = useState(5);
-  const [isRoundtrip, setIsRoundtrip] = useState(true);
+  const isRoundtrip = true;
   const [startPoint, setStartPoint] = useState('');
   // Default to Google only as requested
   const [searchMode, setSearchMode] = useState('prompt'); // 'radius', 'journey', or 'prompt'
@@ -114,8 +122,8 @@ function App() {
   const [aiChatHistory, setAiChatHistory] = useState([
     {
       role: 'brain', text: language === 'nl'
-        ? 'Hoi! Ik ben je Gids van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Is het een **rondtrip** (start en stop op hetzelfde punt)?\n5. Wat zijn je **interesses** (bijv. architectuur, koffie, natuur)?'
-        : 'Hi! I am your CityExplorer Guide. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. Is it a **round trip** (start and end at the same place)?\n5. What are your **interests** (e.g. architecture, coffee, nature)?'
+        ? 'Hoi! Ik ben je gids van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Wat zijn je **interesses**? (Indien leeg, toon ik je de belangrijkste bezienswaardigheden).'
+        : 'Hi! I am your guide from CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. What are your **interests**? (If left empty, I will show you the main tourist highlights).'
     }
   ]);
   const [isAiViewActive, setIsAiViewActive] = useState(true);
@@ -139,6 +147,9 @@ function App() {
   // View Action state (Lifted from MapContainer to coordinate with Sidebar)
   const [viewAction, setViewAction] = useState(null);
 
+  // Navigation Phase State (Strict progress tracking)
+  const [navPhase, setNavPhase] = useState(NAV_PHASES.PRE_ROUTE);
+
   // Re-enrich POIs when Description Length changes
   useEffect(() => {
     if (routeData && routeData.pois && routeData.pois.length > 0) {
@@ -153,7 +164,7 @@ function App() {
       setIsBackgroundUpdating(true);
 
       // Construct Route Context for engine
-      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, roundtrip)`;
 
       enrichBackground(routeData.pois, city, language, descriptionLength, interests, routeCtx)
         .finally(() => {
@@ -167,7 +178,7 @@ function App() {
   // Note: This is an estimation using straight line or pre-calculated dists from POI list.
   // Since we don't store OSRM paths for past legs, we use haversine between POIs.
   const pastDistance = useMemo(() => {
-    if (!routeData || !routeData.pois || activePoiIndex === 0) return 0;
+    if (!routeData || !routeData.pois || navPhase === NAV_PHASES.PRE_ROUTE || activePoiIndex === 0) return 0;
 
     let total = 0;
     // Helper to calc dist
@@ -248,15 +259,25 @@ function App() {
         const path = route.geometry.coordinates.map(c => [c[1], c[0]]);
         const dist = route.distance / 1000;
         let walkDist = 0;
+        let steps = [];
         if (route.legs && route.legs.length > 1) {
           const poiLegs = isRoundtrip ? route.legs.slice(1, -1) : route.legs.slice(1);
           walkDist = poiLegs.reduce((acc, leg) => acc + leg.distance, 0) / 1000;
         }
-        let steps = [];
         if (route.legs) {
+          route.legs.forEach(leg => {
+            if (leg.steps && leg.steps.length > 0) {
+              leg.geometry = {
+                type: 'LineString',
+                coordinates: leg.steps.flatMap((s, idx) =>
+                  idx === 0 ? s.geometry.coordinates : s.geometry.coordinates.slice(1)
+                )
+              };
+            }
+          });
           steps = route.legs.flatMap(l => l.steps);
         }
-        return { path, dist, walkDist, steps };
+        return { path, dist, walkDist, steps, legs: route.legs };
       }
     } catch (e) {
       console.warn("Route calc failed", e);
@@ -266,29 +287,48 @@ function App() {
     const pts = [center, ...pois.map(p => [p.lat, p.lng])];
     if (isRoundtrip) pts.push(center);
 
+    // Generate fallback legs
+    const fallbackLegs = pts.slice(0, -1).map((p, i) => {
+      const next = pts[i + 1];
+      return {
+        distance: getDistance(p[0], p[1], next[0], next[1]) * 1000,
+        duration: (getDistance(p[0], p[1], next[0], next[1]) / (mode === 'cycling' ? 15 : 5)) * 3600,
+        steps: [],
+        geometry: {
+          type: 'LineString',
+          coordinates: [[p[1], p[0]], [next[1], next[0]]]
+        }
+      };
+    });
+
     // Fallback steps
-    const steps = pois.map(p => ({
-      maneuver: { type: 'depart', modifier: 'straight' },
+    const fallbackSteps = pois.map(p => ({
+      maneuver: { type: 'depart', modifier: 'straight', location: [p.lng, p.lat] },
       name: language === 'nl' ? `Ga naar ${p.name}` : `Walk to ${p.name}`,
       distance: 0
     }));
-
     // Calc simple dist
     let fallbackDist = 0;
     let fallbackWalkDist = 0;
-    let prev = { lat: center[0], lng: center[1] };
+    let prevPoint = { lat: center[0], lng: center[1] };
     pois.forEach((p, idx) => {
-      const d = getDistance(prev.lat, prev.lng, p.lat, p.lng);
+      const d = getDistance(prevPoint.lat, prevPoint.lng, p.lat, p.lng);
       fallbackDist += d;
       if (idx > 0) fallbackWalkDist += d;
-      prev = p;
+      prevPoint = p;
     });
     if (isRoundtrip) {
       const last = pois[pois.length - 1];
       fallbackDist += getDistance(last.lat, last.lng, center[0], center[1]);
     }
 
-    return { path: pts, dist: fallbackDist * 1.3, walkDist: fallbackWalkDist * 1.3, steps };
+    return {
+      path: pts,
+      dist: fallbackDist * 1.3,
+      walkDist: fallbackWalkDist * 1.3,
+      steps: fallbackSteps,
+      legs: fallbackLegs
+    };
   };
 
   // Effect: Recalculate Route when Travel Mode changes
@@ -344,7 +384,7 @@ function App() {
         setInterests(data.interests || '');
         setConstraintType(data.constraintType || 'distance');
         setConstraintValue(data.constraintValue || 5);
-        setIsRoundtrip(data.isRoundtrip !== undefined ? data.isRoundtrip : true);
+        // isRoundtrip removed as it's now constant true
         setDescriptionLength(data.descriptionLength || 'medium');
         setRouteData(data.routeData);
         setFoundPoisCount(data.routeData.pois ? data.routeData.pois.length : 0);
@@ -435,16 +475,20 @@ function App() {
 
           // Update State with "Intermediate" Shell
           setRouteData((prev) => {
-            if (!prev || !prev.pois) return prev;
+            if (!prev) return prev;
+            const updatedPoi = {
+              ...poi,
+              ...shortData,
+              _signals: signals,
+              isFullyEnriched: false,
+              isLoading: true
+            };
+
+            const isStart = prev.startIsPoi && prev.startPoi?.id === poi.id;
             return {
               ...prev,
-              pois: prev.pois.map(p => p.id === poi.id ? {
-                ...p,
-                ...shortData,
-                _signals: signals, // Store signals for Stage 2
-                isFullyEnriched: false, // Flag for Orange Icon
-                isLoading: true // Keep spinning/loading until full details? Or show as "partial"? Let's keep it 'loading' false but use isFullyEnriched for visual
-              } : p)
+              startPoi: isStart ? updatedPoi : prev.startPoi,
+              pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? updatedPoi : p) : []
             };
           });
         } catch (err) {
@@ -485,15 +529,19 @@ function App() {
           if (signal.aborted) return;
 
           setRouteData((prev) => {
-            if (!prev || !prev.pois) return prev;
+            if (!prev) return prev;
+            const updatedPoi = {
+              ...poi,
+              ...fullData,
+              isFullyEnriched: true,
+              isLoading: false
+            };
+
+            const isStart = prev.startIsPoi && prev.startPoi?.id === poi.id;
             return {
               ...prev,
-              pois: prev.pois.map(p => p.id === poi.id ? {
-                ...p,
-                ...fullData,
-                isFullyEnriched: true, // Switch to Primary Icon
-                isLoading: false
-              } : p)
+              startPoi: isStart ? updatedPoi : prev.startPoi,
+              pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? updatedPoi : p) : []
             };
           });
 
@@ -501,10 +549,14 @@ function App() {
           if (err.name === 'AbortError') return;
           console.warn(`Stage 2 Failed for ${poi.name}`, err);
           setRouteData((prev) => {
-            if (!prev || !prev.pois) return prev;
+            if (!prev) return prev;
+            const isStart = prev.startIsPoi && prev.startPoi?.id === poi.id;
+            const update = (p) => p.id === poi.id ? { ...p, isFullyEnriched: true, isLoading: false } : p;
+
             return {
               ...prev,
-              pois: prev.pois.map(p => p.id === poi.id ? { ...p, isFullyEnriched: true, isLoading: false } : p)
+              startPoi: isStart ? update(prev.startPoi) : prev.startPoi,
+              pois: prev.pois ? prev.pois.map(update) : []
             };
           });
         }
@@ -993,7 +1045,7 @@ function App() {
     setAiPrompt(''); // Clear input
 
     setIsLoading(true);
-    setLoadingText(language === 'nl' ? 'Gids denkt na...' : 'Guide is thinking...');
+    setLoadingText(language === 'nl' ? 'gids denkt na...' : 'guide is thinking...');
 
     try {
       const updatedHistory = [...aiChatHistory, newUserMsg];
@@ -1036,7 +1088,7 @@ function App() {
           if (p.travelMode) setTravelMode(p.travelMode);
           if (p.constraintType) setConstraintType(p.constraintType);
           if (p.constraintValue) setConstraintValue(p.constraintValue);
-          if (p.isRoundtrip !== undefined) setIsRoundtrip(p.isRoundtrip);
+          // isRoundtrip removed as it's now constant true
           if (p.startPoint) setStartPoint(p.startPoint);
         }
 
@@ -1077,21 +1129,23 @@ function App() {
               }
             }
 
-            if (!finalCity || !effectiveInterests) return null;
+            // NEW: Interests are now optional, so we only block if finalCity is missing
+            if (!finalCity) return null;
 
             setIsAiViewActive(true);
             await handleCityValidation('submit', finalCity, effectiveInterests, result.params);
 
-            // Switch to itinerary view after a small delay
-            setTimeout(() => setIsAiViewActive(false), 2000);
+            // Switch to itinerary view after a small delay (Reduced to 1s)
+            setTimeout(() => setIsAiViewActive(false), 1000);
             return;
           }
 
           // CASE B: ADD to current journey
-          if (routeData && effectiveInterests) {
+          // CASE B: ADD to current journey
+          if (routeData) {
             setIsAiViewActive(true);
             await handleAddToJourney(null, effectiveInterests, result.params);
-            setTimeout(() => setIsAiViewActive(false), 2000);
+            setTimeout(() => setIsAiViewActive(false), 1000);
             return;
           }
         }
@@ -1283,6 +1337,7 @@ function App() {
       setAiChatHistory(prev => [...prev, { role: 'brain', text: "Er liep iets mis bij het zoeken." }]);
     } finally {
       setIsLoading(false);
+      setNavPhase(NAV_PHASES.PRE_ROUTE);
     }
   };
 
@@ -1300,7 +1355,8 @@ function App() {
 
     const activeInterest = interestOverride || interests;
 
-    if (!activeInterest.trim()) return;
+    // NOTE: Removed empty interest guard. poiService.js now handles empty interests 
+    // by defaulting to popular tourist categories.
 
     if (!city.trim()) {
       setShowCitySelector(true);
@@ -1331,6 +1387,7 @@ function App() {
       // alert("Something went wrong starting your journey: " + err.message);
     } finally {
       setIsLoading(false);
+      setNavPhase(NAV_PHASES.PRE_ROUTE);
     }
   };
 
@@ -1344,7 +1401,7 @@ function App() {
     }
 
     const activeInterest = interestOverride || interests;
-    if (!activeInterest.trim()) return;
+    // NOTE: Removed empty interest guard. poiService.js now handles empty interests.
 
     if (interestOverride) setInterests(interestOverride);
 
@@ -1595,11 +1652,14 @@ function App() {
       const maxLimitKm = targetLimitKm * 1.15; // 15% Tolerance
 
       const newRouteData = {
+        ...routeData,
         center: cityCenter,
         pois: fullyEnriched,
         routePath: finalPath,
         navigationSteps: finalSteps,
+        legs: finalRouteResult ? finalRouteResult.legs : [],
         stats: {
+          ...routeData.stats,
           totalDistance: finalDist.toFixed(1),
           walkDistance: (walkDist || 0).toFixed(1),
           limitKm: targetLimitKm.toFixed(1),
@@ -1795,12 +1855,21 @@ function App() {
         newEndInstr = await engine.fetchArrivalInstructions(lastPoi.name, cityName, language);
       }
 
+      let startDisplayName = newStartInput || (language === 'nl' ? 'Startpunt' : 'Start Point');
+      if (isCurrentLoc) {
+        startDisplayName = language === 'nl' ? 'Huidige locatie' : 'Current Location';
+      }
+
       const newRouteData = {
         ...routeData,
         center: newStartCenter, // Update center to behave as new start
+        startName: startDisplayName,
+        startIsPoi: false,
+        startPoi: null,
         pois: optimizedPois,
         routePath: routeResult.path,
         navigationSteps: routeResult.steps,
+        legs: routeResult.legs,
         startInfo: newStartInstr,
         endInfo: newEndInstr,
         stats: {
@@ -1846,7 +1915,9 @@ function App() {
     const activeStart = effectiveStartPoint;
     const isCurrentLoc = activeStart && (activeStart.toLowerCase().includes('huidig') || activeStart.toLowerCase().includes('current') || activeStart.toLowerCase().includes('mijn locat'));
 
+    let startDisplayName = activeStart || (cityData.address?.city || cityData.name);
     if (isCurrentLoc) {
+      startDisplayName = language === 'nl' ? 'Huidige locatie' : 'Current Location';
       try {
         const pos = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 20000, enableHighAccuracy: false });
@@ -1863,6 +1934,7 @@ function App() {
         const data = await res.json();
         if (data && data[0]) {
           cityCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+          // Optionally use geocoded address: startDisplayName = data[0].display_name.split(',')[0];
         }
       } catch (e) {
         console.warn("Failed to geocode startPoint", e);
@@ -1949,11 +2021,13 @@ function App() {
 
         // Switch to input screen immediately
         setRouteData(null);
+        setIsAiViewActive(true);
 
-        // Show suggestions after a brief delay to allow UI to update
-        setTimeout(() => {
-          alert(msg);
-        }, 100);
+        // Show info in AI Chat instead of alert
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: msg
+        }]);
         return;
       }
 
@@ -1961,11 +2035,14 @@ function App() {
       if (candidates.failedKeywords && candidates.failedKeywords.length > 0) {
         const failedWords = candidates.failedKeywords.join(', ');
         const msg = language === 'nl'
-          ? `We konden geen resultaten vinden voor: "${failedWords}".\nWe tonen de resultaten voor de andere zoektermen.`
-          : `We couldn't find results for: "${failedWords}".\nShowing results for the other terms.`;
+          ? `Ik heb gezocht naar alles, maar ik kon geen resultaten vinden voor: "${failedWords}". Ik heb de route samengesteld met de andere plekjes.`
+          : `I searched for everything, but I couldn't find any results for: "${failedWords}". I have built the route with the other spots.`;
 
-        // Use a timeout to allow the map to render the successful hits first/simultaneously
-        setTimeout(() => alert(msg), 500);
+        // Inform via AI Chat instead of alert
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: msg
+        }]);
       }
 
       // Small delay to let user see the "Found X POIs" if it was instant
@@ -2132,25 +2209,27 @@ function App() {
 
       setRouteData({
         center: cityCenter,
+        startName: startDisplayName,
+        startIsPoi: false,
+        startPoi: null, // Initial start from address is not a POI
         pois: initialPois,
         routePath: routeCoordinates,
         navigationSteps: navigationSteps,
+        legs: finalRouteResult ? finalRouteResult.legs : [],
         stats: {
           totalDistance: realDistance.toFixed(1),
           walkDistance: (finalRouteResult?.walkDist || 0).toFixed(1),
           limitKm: targetLimitKm.toFixed(1),
-          isRoundtrip: isRoundtrip
+          isRoundtrip: true
         }
       });
 
       // 2. Background Process: Enrich iteratively
-      // We do this WITHOUT awaiting the loop here to block UI.
-      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${realDistance.toFixed(1)} km, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${realDistance.toFixed(1)} km, roundtrip)`;
       enrichBackground(selectedPois, cityData.name, language, descriptionLength, activeInterest, routeCtx);
 
     } catch (err) {
       console.error("Error fetching POIs", err);
-      // On error, revert to input screen and RE-OPEN SIDEBAR
       setRouteData(null);
       setIsSidebarOpen(true);
       alert(language === 'nl'
@@ -2208,6 +2287,216 @@ function App() {
     }
   };
 
+  /**
+   * Cyclically rotates the entire route so that a selected POI becomes the new start point.
+   * POI-namen zijn immutable; startpunt is een rol, geen naam.
+   */
+  const handleCycleStart = async (selectedPoiId) => {
+    if (!routeData || !routeData.pois || !isRoundtrip) return;
+
+    // CASE B: Rotating from a Generic Start (GPS/Address) to a POI
+    if (!routeData.startIsPoi) {
+      const targetIdx = routeData.pois.findIndex(p => p.id === selectedPoiId);
+      if (targetIdx === -1) return;
+
+      setIsLoading(true);
+      setLoadingText(language === 'nl' ? 'Nieuw startpunt instellen...' : 'Setting new start point...');
+
+      try {
+        // 1. Immutable logic: Rotate the POI list so the target is first
+        const rotatedPois = rotateCycle(routeData.pois, targetIdx);
+        const newStartPoi = { ...rotatedPois[0], isSpecial: true };
+        const remainingPois = rotatedPois.slice(1);
+
+        // 2. Case B: Drop original generic start and recalculate OSRM path (P1 -> ... -> P1)
+        const newStartCenter = [newStartPoi.lat, newStartPoi.lng];
+        const routeResult = await calculateRoutePath(remainingPois, newStartCenter, travelMode);
+
+        setRouteData(prev => ({
+          ...prev,
+          center: newStartCenter,
+          startName: newStartPoi.name,
+          startPoiId: newStartPoi.id,
+          startPoi: newStartPoi, // Keep full POI metadata
+          startIsPoi: true,
+          pois: remainingPois,
+          routePath: routeResult.path,
+          navigationSteps: routeResult.steps,
+          legs: routeResult.legs,
+          stats: {
+            ...prev.stats,
+            totalDistance: routeResult.dist.toFixed(1),
+            walkDistance: (routeResult.walkDist || 0).toFixed(1)
+          }
+        }));
+
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: language === 'nl'
+            ? `Route aangepast! Je start nu bij **${newStartPoi.name}**.`
+            : `Route updated! You now start at **${newStartPoi.name}**.`
+        }]);
+
+      } catch (err) {
+        console.error("Failed to cycle start", err);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // CASE A: Rotating from one active POI to another active POI
+    const currentStartPoi = routeData.startPoi;
+    const allStops = [currentStartPoi, ...routeData.pois];
+    const targetIdx = allStops.findIndex(p => p.id === selectedPoiId);
+    if (targetIdx === -1) return;
+
+    // Perform cyclic rotation: O(n)
+    const rotatedStops = rotateCycle(allStops, targetIdx);
+    const newStartPoi = { ...rotatedStops[0], isSpecial: true };
+    const newCenter = [newStartPoi.lat, newStartPoi.lng];
+
+    const newPois = rotatedStops.slice(1).map(p => {
+      // Return previous start point as a regular stop (loses isSpecial but keeps all metadata)
+      if (p.id === currentStartPoi.id) {
+        return { ...p, isSpecial: false };
+      }
+      return p;
+    });
+
+    // Rotate the path and steps WITHOUT API CALLS if legs available
+    let newPath = routeData.routePath;
+    let newSteps = routeData.navigationSteps;
+    let newLegs = routeData.legs;
+
+    // Requirement: legs.length must match allStops.length for a valid rotation
+    if (routeData.legs && routeData.legs.length === allStops.length) {
+      const rotatedLegs = rotateCycle(routeData.legs, targetIdx);
+
+      // Verify all legs have geometries before transforming
+      if (rotatedLegs.every(l => l && l.geometry)) {
+        newPath = rotatedLegs.flatMap((leg, idx) => {
+          const coords = leg.geometry.coordinates.map(c => [c[1], c[0]]);
+          return idx === 0 ? coords : coords.slice(1);
+        });
+
+        newSteps = rotatedLegs.flatMap(l => l.steps || []);
+        newLegs = rotatedLegs;
+      }
+    }
+
+    // Update State
+    setRouteData(prev => ({
+      ...prev,
+      center: newCenter,
+      startName: newStartPoi.name,
+      startPoiId: newStartPoi.id,
+      startPoi: newStartPoi,
+      pois: newPois,
+      routePath: newPath,
+      navigationSteps: newSteps,
+      legs: newLegs,
+      stats: {
+        ...prev.stats,
+        walkDistance: (newLegs && newLegs.length > 2)
+          ? (newLegs.slice(1, -1).reduce((acc, leg) => acc + leg.distance, 0) / 1000).toFixed(1)
+          : prev.stats.walkDistance
+      }
+    }));
+
+    setAiChatHistory(prev => [...prev, {
+      role: 'brain',
+      text: language === 'nl'
+        ? `Startpunt verplaatst naar **${newStartPoi.name}**.`
+        : `Start point moved to **${newStartPoi.name}**.`
+    }]);
+  };
+
+  /**
+   * Reverses the direction of the current route while keeping the start point FIXED.
+   * Requirement: Pure in-memory reversal of POIs and geometry.
+   */
+  const handleReverseDirection = () => {
+    if (!routeData || !routeData.pois || !isRoundtrip) return;
+
+    // 1. Prepare full cycle and reverse it
+    const startObj = {
+      ...(routeData.startIsPoi ? routeData.startPoi : {}),
+      id: routeData.startPoiId || 'current-start-anchor',
+      lat: routeData.center[0],
+      lng: routeData.center[1],
+      name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
+      isSpecial: true,
+      // Only use accessibility info if it's NOT a POI (generic addresses)
+      // If it IS a POI, the POI description taken from startPoi (spread above) takes precedence
+      description: routeData.startIsPoi
+        ? (routeData.startPoi?.description || routeData.startInfo)
+        : routeData.startInfo
+    };
+
+    const fullCycle = [startObj, ...routeData.pois];
+    const reveredCycle = reverseCycle(fullCycle);
+
+    // 2. Extract new POIs (skipping the anchor which is still index 0)
+    const reversedPois = reveredCycle.slice(1).map(p => {
+      // Ensure we don't carry over special flags if the start shifted (though in reverseCycle the anchor stays at 0)
+      if (p.id === 'current-start-anchor') return { ...p, isSpecial: false };
+      return p;
+    });
+
+    // 3. Reverse Geometry (Legs)
+    let newPath = routeData.routePath;
+    let newSteps = routeData.navigationSteps;
+    let newLegs = routeData.legs;
+
+    if (routeData.legs && routeData.legs.length > 0) {
+      // Reversing legs: [L1, L2, L3] -> [RL3, RL2, RL1]
+      const reversedOriginalLegs = [...routeData.legs].reverse();
+
+      // Verify all legs have geometries before transforming
+      if (reversedOriginalLegs.every(l => l && l.geometry)) {
+        newLegs = reversedOriginalLegs.map(leg => ({
+          ...leg,
+          geometry: {
+            ...leg.geometry,
+            coordinates: [...leg.geometry.coordinates].reverse()
+          },
+          steps: [...leg.steps].reverse()
+        }));
+
+        // Reconstruct Path from leg geometries
+        newPath = newLegs.flatMap((leg, idx) => {
+          const coords = leg.geometry.coordinates.map(c => [c[1], c[0]]);
+          return idx === 0 ? coords : coords.slice(1);
+        });
+
+        newSteps = newLegs.flatMap(l => l.steps);
+      }
+    }
+
+    // 3. Update State
+    setRouteData(prev => ({
+      ...prev,
+      pois: reversedPois,
+      routePath: newPath,
+      navigationSteps: newSteps,
+      legs: newLegs,
+      stats: {
+        ...prev.stats,
+        walkDistance: (newLegs && newLegs.length > 2)
+          ? (newLegs.slice(1, -1).reduce((acc, leg) => acc + leg.distance, 0) / 1000).toFixed(1)
+          : prev.stats.walkDistance
+      }
+    }));
+
+    setAiChatHistory(prev => [...prev, {
+      role: 'brain',
+      text: language === 'nl'
+        ? "Looprichting omgedraaid! De route blijft hetzelfde, maar je loopt hem nu andersom."
+        : "Direction reversed! The route remains the same, but you are now walking it in the opposite direction."
+    }]);
+  };
+
   const resetSearch = () => {
     // Stop any background enrichment immediately
     if (enrichmentAbortController.current) {
@@ -2225,12 +2514,13 @@ function App() {
     setAiChatHistory([
       {
         role: 'brain', text: language === 'nl'
-          ? 'Hoi! Ik ben de Brain van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Is het een **rondtrip** (start en stop op hetzelfde punt)?'
-          : 'Hi! I am the Brain of CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. Is it a **round trip** (start and end at the same place)?'
+          ? 'Hoi! Ik ben je gids van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Wat zijn je **interesses**? (Indien leeg, toon ik je de belangrijkste bezienswaardigheden).'
+          : 'Hi! I am your guide from CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. What are your **interests**? (If left empty, I will show you the main tourist highlights).'
       }
     ]);
     setIsAiViewActive(true);
     setIsSidebarOpen(true);
+    setNavPhase(NAV_PHASES.PRE_ROUTE);
   };
 
   const handleSaveRouteAsJSON = async () => {
@@ -2455,7 +2745,7 @@ function App() {
     });
 
     const actualDist = routeData?.stats?.totalDistance ? `${routeData.stats.totalDistance} km` : `${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}`;
-    const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${actualDist}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
+    const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${actualDist}, roundtrip)`;
     const engine = new PoiIntelligence({
       city: city,
       language: language,
@@ -2550,6 +2840,9 @@ function App() {
           }}
           viewAction={viewAction}
           setViewAction={setViewAction}
+          navPhase={navPhase}
+          setNavPhase={setNavPhase}
+          routeStart={routeData?.center}
         />
       </div>
 
@@ -2564,6 +2857,8 @@ function App() {
         onToggle={() => setIsNavigationOpen(!isNavigationOpen)}
         pastDistance={pastDistance}
         totalTripDistance={routeData?.stats?.totalDistance}
+        navPhase={navPhase}
+        routeStart={routeData?.center}
       />
 
       {/* Sidebar (Always Visible) */}
@@ -2572,6 +2867,8 @@ function App() {
         onPoiClick={handlePoiClick}
         onRemovePoi={handleRemovePoi}
         onUpdateStartLocation={handleUpdateStartLocation}
+        onCycleStart={handleCycleStart}
+        onReverseDirection={handleReverseDirection}
         onReset={resetSearch}
         language={language}
         setLanguage={setLanguage} // Add setter for sidebar toggle
@@ -2599,7 +2896,7 @@ function App() {
         interests={interests} setInterests={setInterests}
         constraintType={constraintType} setConstraintType={setConstraintType}
         constraintValue={constraintValue} setConstraintValue={setConstraintValue}
-        isRoundtrip={isRoundtrip} setIsRoundtrip={setIsRoundtrip}
+        isRoundtrip={true}
         searchSources={searchSources} setSearchSources={setSearchSources}
         onJourneyStart={handleJourneyStart}
         onAddToJourney={handleAddToJourney}

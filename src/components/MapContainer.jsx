@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useMap, Tooltip, Circle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { SmartAutoScroller } from '../utils/AutoScroller';
+import { isLocationOnPath } from '../utils/geometry';
 import { Brain, MessageSquare } from 'lucide-react';
 
 // Fix for default Leaflet marker icons in React
@@ -243,13 +243,14 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     return null;
 };
 
-const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction, navPhase, setNavPhase, routeStart }) => {
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
 
     // track simulation index to allow pausing
     const simulationIndexRef = useRef(0);
     const lastFetchedIndexRef = useRef(-1); // Sync fetcher with target POI
+    const initialStartDistRef = useRef(null); // Track initial distance to start for PRE_ROUTE leg stats
     const [simulationSpeed, setSimulationSpeed] = useState(1); // 1x, 2x, 5x
     // Fix for stale closure in Leaflet listeners
     const speakingIdRef = useRef(speakingId);
@@ -319,6 +320,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
         simulationIndexRef.current = 0;
         lastFetchedIndexRef.current = -1;
         setNavigationPath(null);
+        initialStartDistRef.current = null; // Reset on new route
     }, [poiIdsString]);
 
     // Reset simulation index when target advances
@@ -453,76 +455,152 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
         const PROXIMITY_THRESHOLD_KM = 0.08; // 80 Meters (Breathing + Sound)
         const POPUP_THRESHOLD_KM = 0.025;     // 25 Meters (Auto Open Popup)
         const EXIT_THRESHOLD_KM = 0.1;       // 100 Meters (Reset)
+        const START_ARRIVAL_THRESHOLD_KM = 0.06; // 60 Meters
 
-        let hasChanges = false;
-        const nextNearby = new Set(nearbyPoiIds);
-
-        routeData.pois.forEach((poi, idx) => {
-            const distKm = calcDistance(
+        // --- PRE-ROUTE LOGIC ---
+        // If we are heading to start, check distance to start point
+        if (navPhase === 'PRE_ROUTE' && routeStart && setNavPhase) {
+            const distToStart = calcDistance(
                 { lat: userLocation.lat, lng: userLocation.lng },
-                { lat: poi.lat, lng: poi.lng }
+                { lat: routeStart[0], lng: routeStart[1] }
             );
 
-            // 1. Check for basic proximity (Entering 80m Zone)
-            if (distKm < PROXIMITY_THRESHOLD_KM) {
-                if (!nearbyPoiIds.has(poi.id)) {
-                    nextNearby.add(poi.id);
-                    hasChanges = true;
+            // Capture initial distance once for HUD "Leg Done" calculation
+            if (!initialStartDistRef.current && distToStart > START_ARRIVAL_THRESHOLD_KM) {
+                console.log("PRE_ROUTE Started. Initial Dist to Start:", distToStart);
+                initialStartDistRef.current = distToStart;
+            }
 
-                    // Trigger sound only if entering and not just repeated
-                    if (lastTriggeredPoiIdRef.current !== poi.id) {
-                        playProximitySound();
-                        lastTriggeredPoiIdRef.current = poi.id;
+            // If arrived at start, switch phase!
+            if (distToStart < START_ARRIVAL_THRESHOLD_KM) {
+                console.log("!!! ARRIVED AT START POINT !!! Switching to IN_ROUTE phase.");
+                setNavPhase('IN_ROUTE');
+                playProximitySound(); // Celebration sound
+                initialStartDistRef.current = null; // Reset
+                // Don't return, let generic logic run too (might be near POI 0 already)
+            }
+        }
+
+        // --- ROBUST POI ACTIVATION LOGIC ---
+        // Requirement: Only open if IN_ROUTE, Sequential, and On-Path
+        const checkPoiActivation = () => {
+            if (navPhase !== 'IN_ROUTE') return;
+            if (activePoiIndex >= routeData.pois.length) return;
+
+            // 1. Define Candidates: Current Target & Next Target (handling skips)
+            // We check only activePoiIndex and activePoiIndex + 1
+            const candidates = [activePoiIndex];
+            if (activePoiIndex < routeData.pois.length - 1) {
+                candidates.push(activePoiIndex + 1);
+            }
+
+            let activationFound = false;
+
+            for (const targetIdx of candidates) {
+                if (activationFound) break; // Only trigger one at a time
+
+                const targetPoi = routeData.pois[targetIdx];
+                const distKm = calcDistance(
+                    { lat: userLocation.lat, lng: userLocation.lng },
+                    { lat: targetPoi.lat, lng: targetPoi.lng }
+                );
+
+                // --- CHECK 1: Distance (Arrival Zone) ---
+                if (distKm < 0.05) { // 50 Meters for arrival
+
+                    // --- CHECK 2: Geometry (Are we actually on the path?) ---
+                    // We need the leg leading TO this POI.
+                    // Leg index usually corresponds to POI index in 1-to-1 mapping if start is index 0
+                    // routeData.legs[0] -> to POI 0? Or from Start to POI 0?
+                    // Typically: Leg i connects Waypoint i to Waypoint i+1.
+                    // Our Route: Start -> POI 0 -> POI 1 ...
+                    // So Leg 0 goes Start -> POI 0. Leg 1 goes POI 0 -> POI 1.
+                    // TargetIdx corresponds strictly to LegIdx.
+                    const relevantLeg = routeData.legs && routeData.legs[targetIdx];
+                    let onPath = true;
+
+                    // If we have geometry, enforce it
+                    if (relevantLeg && relevantLeg.geometry && relevantLeg.geometry.coordinates) {
+                        const pathCoords = relevantLeg.geometry.coordinates.map(c => [c[1], c[0]]); // GeoJSON to [lat, lng]
+                        // 35m tolerance for path adherence
+                        // Using simple distance logic for now as 'isLocationOnPath' might need more robust segment matching
+                        // But we imported isLocationOnPath, so let's use it if available
+                        onPath = isLocationOnPath(userLocation, pathCoords, 0.035);
+                    } else {
+                        // Fallback: Bearing check? Or just trust distance if legs missing?
+                        // For robust production, maybe trust distance if strictly close (<20m)
+                        if (distKm > 0.025) onPath = false; // Stricter distance if no geometry
                     }
-                }
 
-                // 2. Check for "Arrival" (Entering 25m Zone) - Open Popup
-                if (distKm < 0.06) { // Increased to 60m for failsafe detection
+                    if (!onPath) {
+                        // console.log(`Near POI ${targetIdx} (${distKm.toFixed(3)}km) but NOT ON PATH. Ignoring.`);
+                        continue;
+                    }
 
-                    // A. Navigation Advance Logic (Independent of Popup state)
-                    if (idx === activePoiIndex && activePoiIndex < (routeData.pois.length - 1)) {
-                        if (lastReachedPoiIndexRef.current !== activePoiIndex) {
-                            console.log("!!! ARRIVAL !!! Advancing navigation from index", activePoiIndex, "to", activePoiIndex + 1);
-                            lastReachedPoiIndexRef.current = activePoiIndex;
-                            setActivePoiIndex(prev => prev + 1);
+                    // --- ACTIVATION ---
+                    // If we reached here, we are close AND on path. 
+
+                    // Handle Skip: If we triggered target+1 w/o triggering target
+                    if (targetIdx > activePoiIndex) {
+                        console.log(`!!! SKIP DETECTED !!! Auto-completing skipped POI ${activePoiIndex} because we reached ${targetIdx}`);
+                        // Logic to mark previous as passed could go here
+                        setActivePoiIndex(targetIdx);
+                    }
+
+                    // A. Update Navigation State
+                    // Only advance if this is the first time reaching this specific index
+                    if (lastReachedPoiIndexRef.current < targetIdx) {
+                        console.log(`!!! ARRIVAL VALIDATED !!! Reached POI ${targetIdx} (${targetPoi.name}). Advancing.`);
+                        lastReachedPoiIndexRef.current = targetIdx;
+
+                        // Move to next target for *next* time (unless this was the last one)
+                        if (targetIdx < routeData.pois.length - 1) {
+                            setActivePoiIndex(targetIdx + 1);
+                        } else {
+                            console.log("Route Completed!");
+                            setNavPhase('COMPLETED');
                         }
                     }
 
                     // B. UI Logic: Open Popup
-                    if (lastOpenedPopupIdRef.current !== poi.id) {
-                        console.log("Arrived at POI (<60m):", poi.name, "Opening popup.");
-
-                        // Select the POI in the app state (Sidebar etc)
-                        if (onPoiClickRef.current) {
-                            onPoiClickRef.current(poi);
-                        }
-
-                        // Open the Leaflet Popup
-                        if (markerRefs.current && markerRefs.current[poi.id]) {
-                            markerRefs.current[poi.id].openPopup();
+                    if (lastOpenedPopupIdRef.current !== targetPoi.id) {
+                        console.log("Opening Popup for:", targetPoi.name);
+                        if (onPoiClickRef.current) onPoiClickRef.current(targetPoi);
+                        if (markerRefs.current && markerRefs.current[targetPoi.id]) {
+                            markerRefs.current[targetPoi.id].openPopup();
                             setIsPopupOpen(true);
-                        } else {
-                            console.warn("Marker ref not found for:", poi.id, "Keys:", Object.keys(markerRefs.current || {}));
                         }
-                        lastOpenedPopupIdRef.current = poi.id;
+                        lastOpenedPopupIdRef.current = targetPoi.id;
+                        playProximitySound();
                     }
+
+                    activationFound = true;
                 }
-            } else if (distKm > EXIT_THRESHOLD_KM) {
-                // Exiting Zone
-                if (nearbyPoiIds.has(poi.id)) {
-                    nextNearby.delete(poi.id);
-                    hasChanges = true;
-                    // Reset triggered refs so they can trigger again if we come back
-                    if (lastTriggeredPoiIdRef.current === poi.id) lastTriggeredPoiIdRef.current = null;
-                    if (lastOpenedPopupIdRef.current === poi.id) lastOpenedPopupIdRef.current = null;
-                }
+            }
+        };
+
+        // Execute checks
+        checkPoiActivation();
+
+        // 3. Update Nearby Set (Visuals/Breathing) - Keep this permissive for UI feedback
+        // Just show what's strictly close for visual flair, independent of logic
+        let hasChanges = false;
+        const nextNearby = new Set(nearbyPoiIds);
+
+        routeData.pois.forEach(poi => {
+            const d = calcDistance(userLocation, { lat: poi.lat, lng: poi.lng });
+            if (d < 0.08 && !nearbyPoiIds.has(poi.id)) {
+                nextNearby.add(poi.id);
+                hasChanges = true;
+            } else if (d > 0.1 && nearbyPoiIds.has(poi.id)) {
+                nextNearby.delete(poi.id);
+                hasChanges = true;
             }
         });
 
-        if (hasChanges) {
-            setNearbyPoiIds(nextNearby);
-        }
-    }, [userLocation, routeData, activePoiIndex]); // Removed'nearbyPoiIds' from deps to avoid cycles, rely on userLocation updates
+        if (hasChanges) setNearbyPoiIds(nextNearby);
+
+    }, [userLocation, routeData, activePoiIndex, navPhase]); // Dependencies updated
 
     const t = {
         en: {
@@ -602,18 +680,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     const startIcon = L.divIcon({
         className: 'custom-icon',
         html: `<div style="background-color: #22c55e; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); display: flex; align-items: center; justify-content: center; color: white;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
-        </div>
-        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid white;"></div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 38],
-        popupAnchor: [0, -40]
-    });
-
-    const endIcon = L.divIcon({
-        className: 'custom-icon',
-        html: `<div style="background-color: #ef4444; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); display: flex; align-items: center; justify-content: center; color: white;">
-             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
         </div>
         <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid white;"></div>`,
         iconSize: [32, 32],
@@ -832,33 +899,6 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                 <div className="text-slate-900 font-bold">{language === 'nl' ? 'Startpunt' : 'Start Point'}</div>
                             </Popup>
                         </Marker>
-
-                        {/* End Marker (At last POI or routeData.center if roundtrip) */}
-                        {(() => {
-                            const isRoundtrip = routeData.stats?.limitKm?.toString().toLowerCase().includes('radius')
-                                ? false
-                                : (routeData.stats?.isRoundtrip || false);
-
-                            const hasPath = routeData.routePath && routeData.routePath.length > 0;
-
-                            // If roundtrip, the end is the same as the start icon.
-                            // Only show end icon for one-way journeys with a calculated path.
-                            if (hasPath && pois && pois.length > 0) {
-                                const endPos = isRoundtrip ? routeData.center : [pois[pois.length - 1].lat, pois[pois.length - 1].lng];
-                                return (
-                                    <Marker
-                                        position={endPos}
-                                        icon={endIcon}
-                                        zIndexOffset={901}
-                                    >
-                                        <Popup className="glass-popup">
-                                            <div className="text-slate-900 font-bold">{language === 'nl' ? 'Eindpunt' : 'Finish'}</div>
-                                        </Popup>
-                                    </Marker>
-                                );
-                            }
-                            return null;
-                        })()}
                     </>
                 )}
 
@@ -1213,10 +1253,28 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                     const finalTotal = tripTotal > 0.1 ? tripTotal : totalDistKm;
                                     const finalLeft = Math.max(0, finalTotal - tripDone);
 
+                                    // Dynamic PRE_ROUTE Leg Stats
+                                    let legDone = doneKm.toFixed(1);
+                                    let legLeft = remainingKm.toFixed(1);
+                                    let legTotal = totalDistKm.toFixed(1);
+
+                                    if (navPhase === 'PRE_ROUTE' && routeStart) {
+                                        // Calc live distance to start
+                                        const distToStart = calcDistance(userLocation, { lat: routeStart[0], lng: routeStart[1] });
+                                        // Use captured initial distance or fallback to current + some buffer
+                                        const initialDist = initialStartDistRef.current || distToStart;
+                                        const doneTowardsStart = Math.max(0, initialDist - distToStart);
+
+                                        legLeft = distToStart.toFixed(1);
+                                        legTotal = initialDist.toFixed(1);
+                                        legDone = doneTowardsStart.toFixed(1);
+                                    }
+
                                     progressStats = {
                                         leg: {
-                                            done: doneKm.toFixed(1),
-                                            left: remainingKm.toFixed(1)
+                                            done: legDone,
+                                            left: legLeft,
+                                            total: legTotal
                                         },
                                         trip: {
                                             done: tripDone.toFixed(1),
@@ -1279,23 +1337,34 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                                     {isNavigating ? hudInstruction : (language === 'nl' ? 'Kies een bestemming' : 'Select a destination')}
                                                 </div>
 
-                                                {isNavigating && progressStats && progressStats.leg && progressStats.trip && (
-                                                    <div className="mt-1 pt-1.5 border-t border-white/5 w-full flex flex-col gap-1 text-[10px] text-slate-400 font-mono">
-                                                        <div className="flex justify-start items-center gap-3">
-                                                            <span className="font-semibold text-slate-500 w-8">LEG</span>
-                                                            <div className="flex gap-1.5">
-                                                                <span className="text-white font-bold">{progressStats.leg.done}</span>
-                                                                <span className="opacity-20 text-xs">/</span>
-                                                                <span className="text-slate-300">{progressStats.leg.left}</span>
-                                                            </div>
+                                                {isNavigating && progressStats && progressStats.trip && (
+                                                    <div className="mt-2 pt-2 border-t border-white/10 w-full flex flex-col gap-1 text-[10px] font-mono">
+                                                        {/* Header Row */}
+                                                        <div className="grid grid-cols-4 gap-2 px-1 mb-0.5 opacity-50 text-[9px] uppercase tracking-wider text-center">
+                                                            <div className="text-left bg-transparent"></div> {/* Label Col */}
+                                                            <div>{language === 'nl' ? 'Gedaan' : 'Done'}</div>
+                                                            <div>{language === 'nl' ? 'Nog' : 'Left'}</div>
+                                                            <div>{language === 'nl' ? 'Totaal' : 'Total'}</div>
                                                         </div>
-                                                        <div className="flex justify-start items-center gap-3">
-                                                            <span className="font-semibold text-primary w-8">TRIP</span>
-                                                            <div className="flex gap-1.5">
-                                                                <span className="text-white font-bold">{progressStats.trip.done}</span>
-                                                                <span className="opacity-20 text-xs">/</span>
-                                                                <span className="text-slate-300">{progressStats.trip.left}</span>
+
+                                                        {/* LEG Row */}
+                                                        <div className="grid grid-cols-4 gap-2 px-1 items-center">
+                                                            <div className="text-[9px] font-bold uppercase tracking-wider text-blue-400 text-left">Leg</div>
+                                                            <div className="text-white font-bold text-center">{progressStats.leg.done}</div>
+                                                            <div className="text-slate-300 text-center">{progressStats.leg.left}</div>
+                                                            <div className="text-slate-400 text-center">{progressStats.leg.total}</div>
+                                                        </div>
+
+                                                        {/* TRIP Row */}
+                                                        <div className="grid grid-cols-4 gap-2 px-1 items-center">
+                                                            <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 text-left">Trip</div>
+                                                            <div className="text-white font-bold text-center">{navPhase === 'PRE_ROUTE' ? "0.0" : progressStats.trip.done}</div>
+                                                            <div className="text-slate-300 text-center">
+                                                                {navPhase === 'PRE_ROUTE'
+                                                                    ? (progressStats.trip.total || "0.0")
+                                                                    : progressStats.trip.left}
                                                             </div>
+                                                            <div className="text-slate-400 text-center">{progressStats.trip.total}</div>
                                                         </div>
                                                     </div>
                                                 )}
@@ -1431,7 +1500,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                         <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-400 border-2 border-slate-900 rounded-full animate-ping"></div>
                                     </div>
                                     <div className="flex flex-col">
-                                        <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "Gids denkt na..." : "Guide is thinking...")}</span>
+                                        <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "gids denkt na..." : "guide is thinking...")}</span>
                                         {loadingCount > 0 && <span className="text-[10px] text-primary font-medium animate-pulse">{loadingCount} {language === 'nl' ? 'spots gevonden' : 'spots found'}</span>}
                                     </div>
                                 </div>

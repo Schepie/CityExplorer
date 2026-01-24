@@ -56,12 +56,24 @@ const translateInstruction = (step, lang) => {
     return `Ga ${m} op ${name || 'het pad'}`;
 };
 
-const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, userLocation, pastDistance = 0, totalTripDistance }) => {
+const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, userLocation, pastDistance = 0, totalTripDistance, navPhase, routeStart }) => {
     let activeSteps = steps;
     let isFallback = false;
+    let isPreRoute = navPhase === 'PRE_ROUTE' && routeStart;
 
     // UI-Level Fallback: If no OSRM steps but we have POIs, generate a simple list
-    if ((!activeSteps || activeSteps.length === 0) && pois && pois.length > 0) {
+    if (isPreRoute) {
+        // --- SPECIAL PHASE: PRE-ROUTE ---
+        // Show a single step: "Go to Start Point"
+        const distToStart = userLocation ? calcDistance(userLocation, { lat: routeStart[0], lng: routeStart[1] }) : 0;
+        activeSteps = [{
+            maneuver: { type: 'depart', modifier: 'straight' },
+            name: language === 'nl' ? 'Ga naar het startpunt' : 'Go to start point',
+            distance: distToStart * 1000,
+            isFallback: true
+        }];
+        isFallback = true;
+    } else if ((!activeSteps || activeSteps.length === 0) && pois && pois.length > 0) {
         activeSteps = pois.map(p => ({
             maneuver: { type: 'depart', modifier: 'straight' },
             name: p.name,
@@ -114,10 +126,10 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
         const displayDone = tripDone;
 
         progressStats = {
-            done: displayDone.toFixed(1),
-            left: Math.max(0, displayTotal - displayDone).toFixed(1),
+            done: isPreRoute ? "0.0" : displayDone.toFixed(1),
+            left: isPreRoute ? displayTotal.toFixed(1) : Math.max(0, displayTotal - displayDone).toFixed(1),
             total: displayTotal.toFixed(1),
-            percentage: Math.min(100, Math.max(0, (displayDone / displayTotal) * 100))
+            percentage: isPreRoute ? 0 : Math.min(100, Math.max(0, (displayDone / displayTotal) * 100))
         };
     }
 
@@ -141,8 +153,12 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
                                 {language === 'nl' ? 'Routebeschrijving' : 'Turn-by-turn Navigation'}
                             </h3>
                             {progressStats && (
-                                <div className="text-[10px] text-[var(--text-muted)] font-mono">
-                                    {progressStats.done} / {progressStats.total} km
+                                <div className="text-[10px] text-[var(--text-muted)] font-mono flex gap-2">
+                                    <span>🏁 {progressStats.done} km</span>
+                                    <span className="opacity-50">|</span>
+                                    <span>⏳ {progressStats.left} km</span>
+                                    <span className="opacity-50">|</span>
+                                    <span>📏 {progressStats.total} km</span>
                                 </div>
                             )}
                             <button onClick={onClose} className="p-2 hover:bg-[var(--input-bg)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">
