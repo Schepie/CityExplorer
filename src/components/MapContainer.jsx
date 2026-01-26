@@ -4,6 +4,8 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { isLocationOnPath } from '../utils/geometry';
 import { Brain, MessageSquare } from 'lucide-react';
+import { SmartAutoScroller } from '../utils/AutoScroller';
+import PoiDetailContent from './PoiDetailContent';
 
 // Fix for default Leaflet marker icons in React
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -103,6 +105,39 @@ const translateHUDInstruction = (step, lang) => {
     if (maneuver.type === 'arrive') return `Bestemming bereikt`;
     if (maneuver.type === 'depart') return `Vertrek op ${name || 'het pad'}`;
     return `Ga ${m} op ${name || 'het pad'}`.replace(/\s+/g, ' ');
+};
+
+// Zoom Controls Component
+const ZoomControls = ({ language, isPopupOpen, setUserHasInteracted }) => {
+    const map = useMap();
+
+    return (
+        <div className={`absolute bottom-6 right-4 z-[1000] flex flex-col gap-2 transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
+            {/* Zoom In */}
+            <button
+                onClick={() => {
+                    setUserHasInteracted(true);
+                    map.zoomIn();
+                }}
+                className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
+                title={language === 'nl' ? 'Inzoomen' : 'Zoom In'}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            </button>
+
+            {/* Zoom Out */}
+            <button
+                onClick={() => {
+                    setUserHasInteracted(true);
+                    map.zoomOut();
+                }}
+                className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
+                title={language === 'nl' ? 'Uitzoomen' : 'Zoom Out'}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            </button>
+        </div>
+    );
 };
 
 // Helper to control map view
@@ -250,6 +285,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     // track simulation index to allow pausing
     const simulationIndexRef = useRef(0);
     const lastFetchedIndexRef = useRef(-1); // Sync fetcher with target POI
+    const lastFetchedPhaseRef = useRef(null); // Sync fetcher with nav phase
     const initialStartDistRef = useRef(null); // Track initial distance to start for PRE_ROUTE leg stats
     const [simulationSpeed, setSimulationSpeed] = useState(1); // 1x, 2x, 5x
     // Fix for stale closure in Leaflet listeners
@@ -300,6 +336,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     const defaultCenter = [52.3676, 4.9041];
     // const [userSelectedStyle, setUserSelectedStyle] = useState('walking'); // Lifted to App.jsx
     const [isPopupOpen, setIsPopupOpen] = useState(false); // Track if any popup is open for HUD transparency
+    const [userHasInteracted, setUserHasInteracted] = useState(false); // Track user interaction for geolocation privacy
     const markerRefs = useRef({}); // Refs for markers to open programmatically
 
     // Proximity State
@@ -384,7 +421,8 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
             return () => clearInterval(interval);
         }
 
-        if (navigator.geolocation && !isSimulating) {
+        // Only request geolocation after user interaction (browser privacy requirement)
+        if (navigator.geolocation && !isSimulating && userHasInteracted) {
             watchId = navigator.geolocation.watchPosition(
                 (position) => {
                     // Only update if not in test mode
@@ -408,7 +446,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
         return () => {
             if (watchId) navigator.geolocation.clearWatch(watchId);
         };
-    }, [isSimulating, navigationPath, activePoiIndex, routeData, simulationSpeed]); // Re-run when toggle changes
+    }, [isSimulating, navigationPath, activePoiIndex, routeData, simulationSpeed, userHasInteracted]); // Re-run when toggle changes
 
     // Audio Trigger
     // Audio Trigger
@@ -712,8 +750,6 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                     if (idx !== -1 && markerRefs.current[idx]) {
                         // This path shouldn't be needed if refs are set correctly by ID now
                         markerRefs.current[idx].openPopup();
-                        setIsPopupOpen(true);
-                        lastFocusedIdRef.current = focusedLocation.id;
                     }
                 }
             }
@@ -735,13 +771,25 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     useEffect(() => {
         // console.log("Nav check:", { user: !!userLocation, focus: !!focusedLocation, nav: isNavigating, style: userSelectedStyle });
         // TEST MODE GUARD: Do not re-fetch route if we are simulating AND we already have the path for the current target
-        if (isSimulating && navigationPath && navigationPath.length > 0 && lastFetchedIndexRef.current === activePoiIndex) {
+        if (isSimulating && navigationPath && navigationPath.length > 0 &&
+            lastFetchedIndexRef.current === activePoiIndex &&
+            lastFetchedPhaseRef.current === navPhase) {
             return;
         }
         lastFetchedIndexRef.current = activePoiIndex;
+        lastFetchedPhaseRef.current = navPhase;
 
         // Target is determined by the sequential index
-        const navTarget = (pois && pois.length > activePoiIndex) ? pois[activePoiIndex] : (focusedLocation || (pois && pois[0]));
+        let navTarget = (pois && pois.length > activePoiIndex) ? pois[activePoiIndex] : (focusedLocation || (pois && pois[0]));
+
+        if (navPhase === 'PRE_ROUTE' && routeData?.center) {
+            navTarget = {
+                lat: routeData.center[0],
+                lng: routeData.center[1],
+                name: language === 'nl' ? 'Startpunt' : 'Start Point',
+                isStart: true
+            };
+        }
 
         if (!userLocation || !navTarget || !isNavigating) {
             setNavigationPath(null);
@@ -750,8 +798,26 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
         const fetchPath = async () => {
             try {
-                const uLng = Number(userLocation.lng);
-                const uLat = Number(userLocation.lat);
+                // CRITICAL FIX: Use current user location if available to ensure accurate navigation from device location.
+                // Fallback to center/start point only if user location is missing or for initial preview.
+                let originLat, originLng;
+
+                if (userLocation) {
+                    // Always route from current user location if available
+                    originLat = Number(userLocation.lat);
+                    originLng = Number(userLocation.lng);
+                    console.log(`🚀 Routing from DEVICE to ${navTarget.name} (${navPhase})`);
+                } else if (activePoiIndex === 0 && center) {
+                    // Fallback: First POI from START point if no user location
+                    originLat = center[0];
+                    originLng = center[1];
+                    console.log("🚀 Routing from START (Fallback) to POI1:", { start: center, poi1: navTarget });
+                } else {
+                    // Should not happen if userLocation is required, but safe fallback
+                    originLat = center[0];
+                    originLng = center[1];
+                }
+
                 const fLng = Number(navTarget.lng);
                 const fLat = Number(navTarget.lat);
 
@@ -770,7 +836,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                     baseUrl = 'https://routing.openstreetmap.de/routed-bike/route/v1/driving';
                 }
 
-                const url = `${baseUrl}/${uLng},${uLat};${fLng},${fLat}?overview=full&geometries=geojson&steps=true`;
+                const url = `${baseUrl}/${originLng},${originLat};${fLng},${fLat}?overview=full&geometries=geojson&steps=true`;
                 console.log(`Fetching Navigation Path (${baseUrl}):`, url);
                 const res = await fetch(url);
                 const data = await res.json();
@@ -797,7 +863,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
         };
 
         fetchPath();
-    }, [userLocation, focusedLocation, isNavigating, userSelectedStyle, pois, activePoiIndex]);
+    }, [userLocation, focusedLocation, isNavigating, userSelectedStyle, pois, activePoiIndex, center]);
 
     // Determine effective style
     // If no route data (input mode), use Dark. Otherwise use user selection.
@@ -896,7 +962,14 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                             zIndexOffset={900}
                         >
                             <Popup className="glass-popup">
-                                <div className="text-slate-900 font-bold">{language === 'nl' ? 'Startpunt' : 'Start Point'}</div>
+                                <div className="text-slate-900 font-bold">
+                                    {routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point')}
+                                </div>
+                                {routeData.startInfo && (
+                                    <p className="text-xs text-slate-600 mt-2 min-w-[240px] max-w-[320px] leading-relaxed whitespace-pre-wrap">
+                                        {routeData.startInfo}
+                                    </p>
+                                )}
                             </Popup>
                         </Marker>
                     </>
@@ -989,10 +1062,14 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                                  ${iconHtml ? `<div class="mb-[1px] -mt-1 scale-75">${iconHtml}</div>` : ''}
                                                  ${searchMode === 'radius' ? '' : `<span class="text-[10px] font-bold leading-none">${idx + 1}</span>`}
                                                </div>`,
-                                        iconSize: [40, 40],
                                         iconAnchor: [20, 20]
                                     })}
                                 >
+                                    {poi.structured_info?.short_description && (
+                                        <Tooltip direction="top" offset={[0, -45]} className="font-sans text-xs font-medium text-slate-700 shadow-sm" opacity={0.95}>
+                                            {poi.structured_info.short_description}
+                                        </Tooltip>
+                                    )}
                                     <Popup
                                         autoPan={false}
                                         className="custom-poi-popup"
@@ -1008,58 +1085,14 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                         }}
                                     >
                                         <div className="text-slate-900 w-full p-4">
-                                            <h3 className="font-bold text-lg m-0 leading-tight mb-2">{poi.name}</h3>
-
-                                            <div className="flex justify-between items-center mb-2">
-                                                {/* Left: Detail Level Toggles */}
-                                                <div className="flex bg-slate-100/80 rounded-lg p-0.5 border border-slate-200">
-                                                    {[
-                                                        { id: 'short', label: 'Brief', icon: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" /> },
-                                                        { id: 'medium', label: 'Standard', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /></> },
-                                                        { id: 'max', label: 'Detailed', icon: <><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" /><path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /></> }
-                                                    ].map(opt => (
-                                                        <button
-                                                            key={opt.id}
-                                                            onClick={(e) => { e.stopPropagation(); onUpdatePoiDescription(poi, opt.id); }}
-                                                            className={`p-1.5 rounded-md transition-all duration-300 flex items-center justify-center gap-1.5 min-w-[70px] ${(poi.active_mode || 'medium') === opt.id
-                                                                ? 'bg-primary text-white shadow-[0_2px_8px_rgba(0,0,0,0.2)] scale-105 z-10'
-                                                                : 'text-slate-400 hover:text-primary hover:bg-white/50'}`}
-                                                            title={opt.label}
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                                                                {opt.icon}
-                                                            </svg>
-                                                            <span className="text-[10px] font-bold uppercase tracking-tighter">
-                                                                {opt.id === 'short' ? (language === 'nl' ? 'Kort' : 'Brief') :
-                                                                    opt.id === 'medium' ? (language === 'nl' ? 'Norm 1' : 'Std') :
-                                                                        (language === 'nl' ? 'Lang' : 'Full')}
-                                                            </span>
-                                                        </button>
-                                                    ))}
-                                                </div>
+                                            <div className="flex justify-between items-start gap-4 mb-3">
+                                                <h3 className="font-bold text-lg m-0 leading-tight">{poi.name}</h3>
 
                                                 {/* Right: Actions */}
-                                                <div className="flex items-center gap-1">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            isNavigatingRef.current = true; // Signal intent immediately
-                                                            setIsNavigating(true);
-                                                            onPoiClickRef.current && onPoiClickRef.current(poi);
-                                                            const popup = e.target.closest('.leaflet-popup');
-                                                            if (popup) {
-                                                                const closeBtn = popup.querySelector('.leaflet-popup-close-button');
-                                                                if (closeBtn) closeBtn.click();
-                                                            }
-                                                        }}
-                                                        className="p-1.5 rounded-full text-slate-400 hover:text-blue-500 hover:bg-black/5 transition-all"
-                                                        title={text.nav}
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                    </button>
+                                                <div className="flex items-center gap-1 shrink-0 -mt-1">
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
-                                                        className={`p-1.5 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white' : 'text-slate-400 hover:text-primary hover:bg-black/5'}`}
+                                                        className={`p-1.5 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white shadow-md' : 'text-slate-400 hover:text-primary hover:bg-black/5'}`}
                                                         title="Read Aloud"
                                                     >
                                                         {speakingId === poi.id ? (
@@ -1077,94 +1110,15 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                                             {/* Scrollable Scroll Area */}
                                             <div className="max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
-                                                {/* Image for MAX mode - Positioned at top of scroll area */}
-                                                {(() => {
-                                                    const activeMode = poi.active_mode || 'medium';
-                                                    if (activeMode === 'max' && poi.image) {
-                                                        return (
-                                                            <div className="mb-3 rounded-xl overflow-hidden border border-slate-100 shadow-sm h-40 bg-slate-50 relative group">
-                                                                <img
-                                                                    src={poi.image}
-                                                                    alt={poi.name}
-                                                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                                                    onLoad={(e) => e.target.style.opacity = '1'}
-                                                                    onError={(e) => {
-                                                                        console.warn("Popup image failed to load:", poi.image);
-                                                                        e.target.closest('.group').style.display = 'none';
-                                                                    }}
-                                                                    style={{ opacity: 0, transition: 'opacity 0.5s' }}
-                                                                />
-                                                                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
-                                                            </div>
-                                                        );
-                                                    }
-                                                    return null;
-                                                })()}
-
-                                                {/* UI FILTER: Block generic city descriptions */}
-                                                {(() => {
-                                                    const activeMode = poi.active_mode || 'medium';
-                                                    let d = poi.description || "";
-
-                                                    // Map structured info if available
-                                                    if (poi.structured_info) {
-                                                        if (activeMode === 'short') d = poi.structured_info.short_description || d;
-                                                        else if (activeMode === 'medium') d = poi.structured_info.standard_description || d;
-                                                        else if (activeMode === 'max') d = poi.structured_info.full_description || d;
-                                                    }
-
-                                                    const dLow = d.toLowerCase();
-                                                    const isBad = dLow.includes("hasselt is de hoofdstad") || (dLow.includes("hoofdstad") && dLow.includes("provincie"));
-                                                    const displayDesc = isBad ? "Geen beschrijving beschikbaar." : d;
-
-                                                    if (speakingId === poi.id && spokenCharCount !== undefined) {
-                                                        const idx = spokenCharCount;
-                                                        // Simple word finding heuristic
-                                                        let endIdx = displayDesc.indexOf(' ', idx);
-                                                        if (endIdx === -1) endIdx = displayDesc.length;
-
-                                                        // Ensure valid indices
-                                                        if (idx >= 0 && idx < displayDesc.length) {
-                                                            const before = displayDesc.slice(0, idx);
-                                                            const current = displayDesc.slice(idx, endIdx);
-                                                            const after = displayDesc.slice(endIdx);
-
-                                                            return (
-                                                                <p className="m-0 text-sm text-slate-600 mb-2 leading-relaxed">
-                                                                    <span className="text-slate-800">{before}</span>
-                                                                    <span
-                                                                        ref={popupHighlightedWordRef}
-                                                                        style={{
-                                                                            backgroundColor: 'rgba(99, 102, 241, 0.2)'
-                                                                        }}
-                                                                        className="text-primary not-italic"
-                                                                    >
-                                                                        {current}
-                                                                    </span>
-                                                                    <span className="text-slate-500">{after}</span>
-                                                                </p>
-                                                            );
-                                                        }
-                                                    }
-                                                    return <p className="m-0 text-sm text-slate-600 mb-2 leading-relaxed whitespace-pre-wrap">{displayDesc}</p>;
-                                                })()}
-
-                                                {/* Fun Fact for MEDIUM mode */}
-                                                {(() => {
-                                                    const activeMode = poi.active_mode || 'medium';
-                                                    if (activeMode === 'medium' && poi.structured_info?.one_fun_fact) {
-                                                        return (
-                                                            <div className="mt-3 p-3 bg-blue-50/80 border border-blue-100 rounded-lg text-xs text-blue-800 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                                                                <div className="flex items-center gap-1.5 mb-1">
-                                                                    <span role="img" aria-label="light bulb">💡</span>
-                                                                    <span className="font-bold uppercase tracking-wider text-[10px]">Wist je dat?</span>
-                                                                </div>
-                                                                <p className="m-0 italic leading-relaxed">{poi.structured_info.one_fun_fact}</p>
-                                                            </div>
-                                                        );
-                                                    }
-                                                    return null;
-                                                })()}
+                                                <PoiDetailContent
+                                                    poi={poi}
+                                                    language={language}
+                                                    speakingId={speakingId}
+                                                    spokenCharCount={spokenCharCount}
+                                                    highlightRef={popupHighlightedWordRef}
+                                                    isDark={false}
+                                                    primaryColor="#6366f1"
+                                                />
 
                                                 {/* External Link (with Generic Fallback) */}
                                                 {(() => {
@@ -1178,7 +1132,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                                     }
 
                                                     return (
-                                                        <div className="mb-2">
+                                                        <div className="mt-4 mb-2">
                                                             <a
                                                                 href={link}
                                                                 target="_blank"
@@ -1193,25 +1147,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                                 })()}
                                             </div>
 
-                                            <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        isNavigatingRef.current = true; // Signal intent immediately
-                                                        setIsNavigating(true);
-                                                        onPoiClickRef.current && onPoiClickRef.current(poi);
-                                                        const popup = e.target.closest('.leaflet-popup');
-                                                        if (popup) {
-                                                            const closeBtn = popup.querySelector('.leaflet-popup-close-button');
-                                                            if (closeBtn) closeBtn.click();
-                                                        }
-                                                    }}
-                                                    className="text-primary text-xs font-bold hover:underline bg-transparent border-none cursor-pointer"
-                                                >
-                                                    {text.nav}
-                                                </button>
 
-                                            </div>
                                         </div>
                                     </Popup>
                                 </Marker>
@@ -1222,7 +1158,10 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                         {/* Top Navigation HUD - Instruction Only */}
                         {
-                            userLocation && pois.length > 0 && !isInputMode && (() => {
+                            pois.length > 0 && !isInputMode && (() => {
+                                const effectiveLocation = userLocation || (center ? { lat: center[0], lng: center[1] } : null);
+                                if (!effectiveLocation) return null;
+
                                 const targetPoi = focusedLocation || pois[0];
                                 const steps = routeData?.navigationSteps;
 
@@ -1234,11 +1173,11 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                     let closestIdx = 0;
                                     steps.forEach((s, i) => {
                                         // Re-use calcDistance available in scope
-                                        const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                                        const d = calcDistance(effectiveLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
                                         if (d < minD) { minD = d; closestIdx = i; }
                                     });
                                     const targetIdx = Math.min(closestIdx + 1, steps.length - 1);
-                                    const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                                    const distToTarget = calcDistance(effectiveLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
                                     let remainingStepsKm = 0;
                                     for (let i = targetIdx + 1; i < steps.length; i++) {
                                         remainingStepsKm += steps[i].distance / 1000;
@@ -1260,7 +1199,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                                     if (navPhase === 'PRE_ROUTE' && routeStart) {
                                         // Calc live distance to start
-                                        const distToStart = calcDistance(userLocation, { lat: routeStart[0], lng: routeStart[1] });
+                                        const distToStart = calcDistance(effectiveLocation, { lat: routeStart[0], lng: routeStart[1] });
                                         // Use captured initial distance or fallback to current + some buffer
                                         const initialDist = initialStartDistRef.current || distToStart;
                                         const doneTowardsStart = Math.max(0, initialDist - distToStart);
@@ -1286,7 +1225,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                                 let hudIcon = '📍';
                                 let hudInstruction = targetPoi.name;
-                                let hudDistance = calcDistance(userLocation, targetPoi);
+                                let hudDistance = calcDistance(effectiveLocation, targetPoi);
                                 let bearingTarget = targetPoi;
                                 let hudSubline = searchMode === 'radius'
                                     ? (language === 'nl' ? 'Beschikbare Spot' : 'Available Spot')
@@ -1296,7 +1235,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                     let minD = Infinity;
                                     let closestIdx = 0;
                                     steps.forEach((s, i) => {
-                                        const d = calcDistance(userLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                                        const d = calcDistance(effectiveLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
                                         if (d < minD) {
                                             minD = d;
                                             closestIdx = i;
@@ -1305,7 +1244,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                                     let targetIdx = closestIdx + 1;
                                     if (targetIdx < steps.length) {
-                                        const distToTarget = calcDistance(userLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                                        const distToTarget = calcDistance(effectiveLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
                                         if (distToTarget < 0.025) {
                                             targetIdx++;
                                         }
@@ -1315,7 +1254,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                     const nextStep = steps[targetIdx];
                                     hudIcon = getManeuverIcon(nextStep.maneuver.modifier, nextStep.maneuver.type);
                                     hudInstruction = translateHUDInstruction(nextStep, language);
-                                    hudDistance = calcDistance(userLocation, { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] });
+                                    hudDistance = calcDistance(effectiveLocation, { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] });
                                     bearingTarget = { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] };
                                     hudSubline = (targetIdx === steps.length - 1 && hudDistance < 0.02)
                                         ? (language === 'nl' ? 'Bestemming bereikt' : 'Arrived')
@@ -1374,7 +1313,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                             <div className="flex flex-col gap-2 shrink-0 items-end">
                                                 {/* Compass */}
                                                 <div className="bg-white/5 rounded-xl p-1.5 flex items-center justify-center w-10 h-10 border border-white/5">
-                                                    <div style={{ transform: `rotate(${calcBearing(userLocation, bearingTarget) - (userLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
+                                                    <div style={{ transform: `rotate(${calcBearing(effectiveLocation, bearingTarget) - (effectiveLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500 drop-shadow-md">
                                                             <polygon points="12 2 22 22 12 18 2 22 12 2" />
                                                         </svg>
@@ -1385,6 +1324,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                                     {/* Start/Stop Navigation Button */}
                                                     <button
                                                         onClick={() => {
+                                                            setUserHasInteracted(true);
                                                             setIsNavigating(!isNavigating);
                                                             if (!isNavigating) {
                                                                 setViewAction('USER');
@@ -1466,28 +1406,44 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                             )
                         }
 
-                        {/* Bottom Right: Subtle View Controls */}
+                        {/* Bottom Right: View Controls with Zoom */}
                         {
                             !isInputMode && (
-                                <div className={`absolute bottom-6 right-4 z-[1000] flex flex-col gap-2 transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
-                                    {/* Locate Me */}
-                                    <button
-                                        onClick={() => setViewAction('USER')}
-                                        className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
-                                        title={language === 'nl' ? 'Mijn Locatie' : 'Locate Me'}
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
-                                    </button>
+                                <>
+                                    {/* Zoom Controls */}
+                                    <ZoomControls
+                                        language={language}
+                                        isPopupOpen={isPopupOpen}
+                                        setUserHasInteracted={setUserHasInteracted}
+                                    />
 
-                                    {/* Fit Route */}
-                                    <button
-                                        onClick={() => setViewAction('ROUTE')}
-                                        className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
-                                        title={language === 'nl' ? 'Toon Route' : 'Show Route'}
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
-                                    </button>
-                                </div>
+                                    {/* Other View Controls */}
+                                    <div className={`absolute bottom-[140px] right-4 z-[1000] flex flex-col gap-2 transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
+                                        {/* Locate Me */}
+                                        <button
+                                            onClick={() => {
+                                                setUserHasInteracted(true);
+                                                setViewAction('USER');
+                                            }}
+                                            className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
+                                            title={language === 'nl' ? 'Mijn Locatie' : 'Locate Me'}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
+                                        </button>
+
+                                        {/* Fit Route */}
+                                        <button
+                                            onClick={() => {
+                                                setUserHasInteracted(true);
+                                                setViewAction('ROUTE');
+                                            }}
+                                            className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
+                                            title={language === 'nl' ? 'Toon Route' : 'Show Route'}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+                                        </button>
+                                    </div>
+                                </>
                             )
                         }
 

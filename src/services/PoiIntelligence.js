@@ -190,17 +190,19 @@ Genereer de introductie voor de tocht in ${this.config.city}.
      */
     async fetchArrivalInstructions(locationName, city, language = 'nl') {
         const prompt = `
-Je bent een stadsgids. Geef EXTREEM KORTE instructies over hoe je de volgende locatie in ${city} kunt bereiken: "${locationName}".
-Focus UITSLUITEND op:
-1. Belangrijkste openbaar vervoer (bijv. metro/tram lijn X, halte Y).
-2. Dichtstbijzijnde parkeergarage (indien relevant).
+Je bent een lokale gids in ${city}. De gebruiker start zijn route aan: "${locationName}".
+GEEF SPECIFIEKE parkeer/reis instructies voor DEZE EXACTE locatie.
 
-DOEL: 2 korte zinnen max. Gebruik de taal: ${language === 'nl' ? 'Nederlands' : 'Engels'}.
+CRITICAl RULES:
+1. Is "${locationName}" een specifieke plek (bv. "UZ Leuven", "Kanaalkom", "Abdij", "Campus")?
+   - Geef dan de parkeer/bus info die DAAR vlakbij is.
+   - VERBODEN om generieke stadscentrum info te geven (zoals "Grote Markt" of "Centraal Station") als de plek daar niet is.
+   - Voorbeeld: Voor "UZ Leuven" -> Zeg "Parkeer in Parking West of Oost op de campus. Bussen komen aan bij halte UZ Gasthuisberg."
 
-Voorbeeld:
-"Bereikbaar met tram 1 of 4, halte Centrum. Parkeer in Parking Grote Markt om de hoek."
+2. Is "${locationName}" generiek (alleen de stadsnaam)?
+   - Geef dan pas een algemene suggestie voor het centrum.
 
-Als je het niet zeker weet, geef dan een algemene maar veilige suggestie voor een centrale plek in ${city}.
+DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'Engels'}.
 `;
 
         try {

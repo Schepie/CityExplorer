@@ -211,14 +211,15 @@ body {
 }
 
 /* --- LEAFLET POPUP CUSTOMIZATION --- */
-.leaflet-container,
-.leaflet-map-pane,
-.leaflet-pane {
-  z-index: auto !important;
-}
+/* Remove forced auto z-index which breaks layering */
+/* .leaflet-pane { z-index: auto !important; } */
 
 .leaflet-popup-pane {
   z-index: 2000 !important;
+}
+
+.leaflet-marker-pane {
+  z-index: 600 !important;
 }
 
 .leaflet-popup-content-wrapper {
@@ -255,19 +256,30 @@ body {
   /* Scrollable if text is very long */
 }
 
-/* Custom Scrollbar for Popups */
+/* Custom Scrollbar for Sidebar (Windows-style) */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+  width: 12px;
+  height: 12px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  margin: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(var(--primary-rgb), 0.6);
+  /* Using primary color with transparency */
+  border-radius: 6px;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  /* Creates a subtle border effect */
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--primary);
-  /* Using primary color */
-  border-radius: 2px;
+  /* Solid primary color on hover */
+  border-color: rgba(0, 0, 0, 0.2);
 }
 
 /* Standard scroll containers for TTS */

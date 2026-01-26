@@ -372,32 +372,7 @@ function App() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
-    // Sync auto-save ref to avoid duplicate saving if manual save was done for the same state
-    if (routeData && routeData.pois) {
-      const currentKey = `${city}_${routeData.pois.length}_${routeData.pois.map(p => p.id).join('_')}`;
-      lastAutoSavedKeyRef.current = currentKey;
-    }
   };
-
-  // Auto-Save Effect: Triggers when all POIs are fully enriched
-  const lastAutoSavedKeyRef = useRef('');
-  useEffect(() => {
-    if (!routeData || !routeData.pois || routeData.pois.length === 0) return;
-
-    // Check if all POIs are fully enriched (have full descriptions from Gemini/Stage 2)
-    const isAllEnriched = routeData.pois.every(p => p.isFullyEnriched);
-    if (!isAllEnriched) return;
-
-    // Create a unique key to prevent multiple auto-saves for the same finished route
-    const currentKey = `${city}_${routeData.pois.length}_${routeData.pois.map(p => p.id).join('_')}`;
-
-    if (lastAutoSavedKeyRef.current !== currentKey) {
-      console.log("[AutoSave] All POIs enriched. Saving route in background...");
-      handleSaveRoute();
-      lastAutoSavedKeyRef.current = currentKey;
-    }
-  }, [routeData, city]); // Re-run when data or city changes
 
   // Load Route
   const handleLoadRoute = async (file) => {
@@ -457,13 +432,8 @@ function App() {
       // Start Info
       const startLabel = startPoint || cityName;
       const startInstr = await engine.fetchArrivalInstructions(startLabel, cityName, lang);
-      if (!signal.aborted) {
-        setRouteData(prev => prev ? {
-          ...prev,
-          startInfo: startInstr,
-          // Store specific name if user provided one
-          startName: startPoint
-        } : prev);
+      if (!signal.aborted && startInstr) {
+        setRouteData(prev => prev ? { ...prev, startInfo: startInstr } : prev);
       }
 
       // End Info (Only if not roundtrip)
@@ -1964,25 +1934,7 @@ function App() {
         const data = await res.json();
         if (data && data[0]) {
           cityCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-        } else {
-          // Fallback 1: Try space instead of comma ( Nominatim sometimes prefers "Place City" over "Place, City" )
-          const q2 = `${activeStart} ${cityName}`;
-          const res2 = await fetch(`/api/nominatim?q=${encodeURIComponent(q2)}&format=json&limit=1`);
-          const data2 = await res2.json();
-
-          if (data2 && data2[0]) {
-            cityCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
-          } else {
-            // Fallback 2: Try searching for the start point globally (maybe it contains the city name itself or is unique)
-            console.log("Start point context search failed. Retrying global search:", activeStart);
-            const res3 = await fetch(`/api/nominatim?q=${encodeURIComponent(activeStart)}&format=json&limit=1`);
-            const data3 = await res3.json();
-            if (data3 && data3[0]) {
-              cityCenter = [parseFloat(data3[0].lat), parseFloat(data3[0].lon)];
-            } else {
-              console.warn("Start point geocoding failed entirely. Defaulting to city center.");
-            }
-          }
+          // Optionally use geocoded address: startDisplayName = data[0].display_name.split(',')[0];
         }
       } catch (e) {
         console.warn("Failed to geocode startPoint", e);
@@ -2673,44 +2625,12 @@ function App() {
       uniqueId = poiOrText.id;
       shouldForce = forceOrId === true; // 2nd arg is force flag
 
-      // Determine text based on mode - NEW: Read EVERYTHING until the end
+      // Determine text based on mode
+      const activeMode = poiOrText.active_mode || descriptionLength;
       if (poiOrText.structured_info) {
-        const info = poiOrText.structured_info;
-        const parts = [];
-
-        // 1. Short Description
-        if (info.short_description) parts.push(info.short_description);
-
-        // 2. Full Description
-        if (info.full_description) parts.push(info.full_description);
-
-        // 3. Reasons (Interest Alignment)
-        if (info.matching_reasons && info.matching_reasons.length > 0) {
-          const prefix = language === 'nl' ? "Waarom dit bij je past: " : "Why this matches your interests: ";
-          parts.push(prefix + info.matching_reasons.join(". "));
-        }
-
-        // 4. Fun Facts
-        if (info.fun_facts && info.fun_facts.length > 0) {
-          const prefix = language === 'nl' ? "Wist je dat? " : "Did you know? ";
-          parts.push(prefix + info.fun_facts.join(". "));
-        }
-
-        // 5. 2 Minute Highlight
-        if (info.two_minute_highlight) {
-          const prefix = language === 'nl' ? "Als je maar twee minuten hebt: " : "If you only have two minutes: ";
-          parts.push(prefix + info.two_minute_highlight);
-        }
-
-        // 6. Visitor Tips
-        if (info.visitor_tips) {
-          const prefix = language === 'nl' ? "Tips: " : "Tips: ";
-          parts.push(prefix + info.visitor_tips);
-        }
-
-        textToRead = parts.join("\n\n");
-      } else {
-        textToRead = poiOrText.description || '';
+        if (activeMode === 'short') textToRead = poiOrText.structured_info.short_description;
+        else if (activeMode === 'medium') textToRead = poiOrText.structured_info.standard_description + (poiOrText.structured_info.one_fun_fact ? ". " + poiOrText.structured_info.one_fun_fact : "");
+        else if (activeMode === 'max') textToRead = poiOrText.structured_info.full_description;
       }
     }
 

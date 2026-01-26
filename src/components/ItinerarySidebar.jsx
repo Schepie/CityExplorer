@@ -511,6 +511,8 @@ const SidebarInput = ({
 
 
 
+import PoiDetailContent from './PoiDetailContent';
+
 const hexToRgba = (hex, alpha) => {
     if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return `rgba(0,0,0,${alpha})`;
     const r = parseInt(hex.slice(1, 3), 16);
@@ -989,6 +991,7 @@ const ItinerarySidebar = ({
     const [nearbyCities, setNearbyCities] = useState([]);
     const [isAddingMode, setIsAddingMode] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [showChangelog, setShowChangelog] = useState(false);
     const [settingsOpenedFromMap, setSettingsOpenedFromMap] = useState(false);
     const [areOptionsVisible, setAreOptionsVisible] = useState(false); // New Toggle for Footer Options
     const [shouldAutoFocusInterests, setShouldAutoFocusInterests] = useState(false);
@@ -1036,80 +1039,11 @@ const ItinerarySidebar = ({
 
     // Fetch Nearby Cities (Generic logic moved here)
     // Fetch Nearby Cities (Overpass API for real data)
+    // DISABLED: Geolocation request on mount violates browser privacy standards
+    // This would require user interaction first. For now, using default cities.
     useEffect(() => {
-        if (!navigator.geolocation) return;
-        navigator.geolocation.getCurrentPosition(async (pos) => {
-            const { latitude, longitude } = pos.coords;
-            const uniqueCities = new Set();
-
-            // 1. Get Current City (Dual Strategy: Nominatim -> BDC)
-            let currentCity = null;
-            try {
-                // Try Nominatim
-                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, { signal: AbortSignal.timeout(5000) });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && data.address) {
-                        const addr = data.address;
-                        currentCity = addr.city || addr.town || addr.village;
-                    }
-                }
-            } catch (e) { /* ignore */ }
-
-            if (!currentCity) {
-                try {
-                    // Fallback BDC
-                    const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`, { signal: AbortSignal.timeout(5000) });
-                    const data = await res.json();
-                    currentCity = data.city || data.locality;
-                } catch (e) { /* ignore */ }
-            }
-
-            if (currentCity) uniqueCities.add(currentCity);
-
-            // 2. Get Nearby Big Cities (Overpass) -> >15k pop within 50km
-            try {
-                const query = `
-                    [out:json][timeout:25];
-                    (
-                      node["place"="city"](around:50000,${latitude},${longitude});
-                      node["place"="town"](around:50000,${latitude},${longitude});
-                    );
-                    out body;
-                `;
-                const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
-
-                // Fetch with 8s timeout
-                const res = await fetch(overpassUrl, { signal: AbortSignal.timeout(20000) });
-
-                if (!res.ok) throw new Error(`Overpass status ${res.status}`);
-                const data = await res.json();
-
-                if (data && data.elements) {
-                    // Sort by priority (city > town) then population
-                    const sorted = data.elements.sort((a, b) => {
-                        if (a.tags.place === 'city' && b.tags.place !== 'city') return -1;
-                        if (a.tags.place !== 'city' && b.tags.place === 'city') return 1;
-                        return (parseInt(b.tags.population || 0) - parseInt(a.tags.population || 0));
-                    });
-
-                    sorted.forEach(el => {
-                        if (el.tags && el.tags.name) uniqueCities.add(el.tags.name);
-                    });
-                }
-            } catch (err) {
-                console.debug("Overpass failed, using defaults", err);
-                // Fallback: If list is small, fill with defaults
-                if (uniqueCities.size < 4) {
-                    // Add context-appropriate defaults if possible, otherwise generic
-                    ['Brussels', 'Antwerp', 'Ghent', 'Hasselt'].forEach(c => uniqueCities.add(c));
-                }
-            }
-
-            // Take top 4 unique
-            setNearbyCities(Array.from(uniqueCities).slice(0, 4));
-
-        }, (err) => console.warn("Sidebar Loc Error:", err), { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 });
+        // Use default cities instead of requesting geolocation
+        setNearbyCities(['Brussels', 'Antwerp', 'Ghent', 'Hasselt']);
     }, []);
 
     const t = {
@@ -1272,8 +1206,7 @@ const ItinerarySidebar = ({
                             return `${r}, ${g}, ${b}`;
                         })() : '59, 130, 246'
                 }}
-                className={`absolute top-0 left-0 h-full z-[500] w-[400px] max-w-full bg-[var(--bg-gradient-end)]/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : '-translate-x-full'
-                    }`}
+                className={`absolute top-0 left-0 h-full z-[500] w-[400px] max-w-full bg-[var(--bg-gradient-end)]/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
             >
                 <div className="flex flex-col h-full bg-gradient-to-b from-[var(--bg-gradient-start)]/50 to-transparent">
                     {/* Header */}
@@ -1398,7 +1331,20 @@ const ItinerarySidebar = ({
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                     </svg>
-                                    Settings
+
+                                    {showChangelog && (
+                                        <button
+                                            onClick={() => setShowChangelog(false)}
+                                            className="p-1 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
+                                            {language === 'nl' ? 'TERUG' : 'BACK'}
+                                        </button>
+                                    )}
+                                    {showChangelog
+                                        ? (language === 'nl' ? 'Wat is nieuw' : "What's New")
+                                        : (language === 'nl' ? 'Instellingen' : 'Settings')
+                                    }
                                 </h3>
                                 <button
                                     onClick={() => {
@@ -1416,96 +1362,79 @@ const ItinerarySidebar = ({
                             </div>
 
                             {/* Scrollable Content */}
-                            <div className="p-6 overflow-y-auto custom-scrollbar">
-
-                                {/* Compact Settings List */}
-                                <div className="space-y-4">
-
-                                    {/* 1. Language */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">Language</label>
-                                        <div className="flex flex-col gap-1">
-                                            {[
-                                                { id: 'en', label: 'English', icon: <svg viewBox="0 0 30 20" className="w-5 h-5 rounded-[2px] shadow-sm overflow-hidden"><rect width="30" height="20" fill="#012169" /><path d="M0,0 L30,20 M30,0 L0,20" stroke="white" strokeWidth="4" /><path d="M0,0 L30,20 M30,0 L0,20" stroke="#C8102E" strokeWidth="2" /><path d="M15,0 V20 M0,10 H30" stroke="white" strokeWidth="6" /><path d="M15,0 V20 M0,10 H30" stroke="#C8102E" strokeWidth="4" /></svg> },
-                                                { id: 'nl', label: 'Nederlands', icon: <svg viewBox="0 0 30 20" className="w-5 h-5 rounded-[2px] shadow-sm overflow-hidden"><rect width="30" height="20" fill="#21468B" /><rect width="30" height="13.3" fill="#FFFFFF" /><rect width="30" height="6.6" fill="#AE1C28" /></svg> }
-                                            ].map((opt) => (
-                                                <button
-                                                    key={opt.id}
-                                                    onClick={() => {
-                                                        setLanguage(opt.id);
-                                                        if (setVoiceSettings) setVoiceSettings({ variant: opt.id, gender: 'female' });
-                                                    }}
-                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${language === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        {opt.icon}
-                                                        <span className={`text-sm font-medium ${language === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{opt.label}</span>
-                                                    </div>
-                                                    {language === opt.id && (
-                                                        <div className="text-[var(--primary)]">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                            </svg>
+                            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+                                {showChangelog ? (
+                                    /* Changelog View */
+                                    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                                        {[
+                                            {
+                                                date: "26 Jan 2026",
+                                                version: "v1.5.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Gids Vertelt Verder", desc: "De audio gids leest nu automatisch alle informatie voor (bezienswaardigheid + weetjes + tips) zonder te stoppen." },
+                                                    { title: "Visuele Sync", desc: "Woord-voor-woord highlighting volgt nu de stem door alle secties van de beschrijving." },
+                                                    { title: "Gedeelde Details", desc: "Informatie in de zijbalk en op de kaart popups is nu identiek en real-time gesynchroniseerd." },
+                                                    { title: "Verfijnd Design", desc: "De play-button staat nu naast de titel in popups en de interesses zijn beter leesbaar." },
+                                                    { title: "Opgeruimde Menu's", desc: "Instellingen zijn vereenvoudigd en foutieve systeemteksten zijn verwijderd." }
+                                                ] : [
+                                                    { title: "Continuous Narrative", desc: "The audio guide now automatically reads all information (POI + Fun Facts + Tips) in one go." },
+                                                    { title: "Total Sync", desc: "Word-for-word highlighting now follows the voice through all information sections." },
+                                                    { title: "Unified Info", desc: "Sidebar and Map Popups now show identical, real-time synchronized data." },
+                                                    { title: "Refined Layout", desc: "Play buttons are now aligned with titles and interest matches are more readable." },
+                                                    { title: "Clean Settings", desc: "Simplified menus and removed accidental internal system text." }
+                                                ]
+                                            }
+                                        ].map((rel, ri) => (
+                                            <div key={ri} className="space-y-4">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-black bg-primary/20 text-primary px-2 py-0.5 rounded-full">{rel.version}</span>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{rel.date}</span>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    {rel.items.map((item, ii) => (
+                                                        <div key={ii} className="relative pl-4 border-l border-white/5">
+                                                            <div className="absolute -left-[1px] top-1.5 w-[2px] h-2 bg-primary/40 rounded-full" />
+                                                            <div className="text-sm font-bold text-white mb-0.5">{item.title}</div>
+                                                            <div className="text-xs text-slate-400 leading-relaxed">{item.desc}</div>
                                                         </div>
-                                                    )}
-                                                </button>
-                                            ))}
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        <div className="pt-4 text-center">
+                                            <button
+                                                onClick={() => setShowChangelog(false)}
+                                                className="text-xs text-primary font-bold hover:underline"
+                                            >
+                                                {language === 'nl' ? 'Sluit Changelog' : 'Close Changelog'}
+                                            </button>
                                         </div>
                                     </div>
-
-                                    {/* 2. Voice Preference */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Stem' : 'Voice'}</label>
-                                        <div className="flex flex-col gap-1">
-                                            {[
-                                                { id: 'female', label: { en: 'Female', nl: 'Vrouw' } },
-                                                { id: 'male', label: { en: 'Male', nl: 'Man' } }
-                                            ].map((opt) => (
-                                                <button
-                                                    key={opt.id}
-                                                    onClick={() => setVoiceSettings && setVoiceSettings({ ...voiceSettings, gender: opt.id })}
-                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${voiceSettings?.gender === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`p-1.5 rounded-full ${voiceSettings?.gender === opt.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                                            </svg>
-                                                        </div>
-                                                        <span className={`text-sm font-medium ${voiceSettings?.gender === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
-                                                    </div>
-                                                    {voiceSettings?.gender === opt.id && (
-                                                        <div className="text-[var(--primary)]">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                            </svg>
-                                                        </div>
-                                                    )}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* 3. App Theme */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Thema' : 'Theme'}</label>
-                                        <div className="flex flex-col gap-1">
-                                            <div className="grid grid-cols-1 gap-1">
-                                                {availableThemes && Object.values(availableThemes).map(t => (
+                                ) : (
+                                    /* Settings View */
+                                    <div className="space-y-4">
+                                        {/* 1. Language */}
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">Language</label>
+                                            <div className="flex flex-col gap-1">
+                                                {[
+                                                    { id: 'en', label: 'English', icon: <svg viewBox="0 0 30 20" className="w-5 h-5 rounded-[2px] shadow-sm overflow-hidden"><rect width="30" height="20" fill="#012169" /><path d="M0,0 L30,20 M30,0 L0,20" stroke="white" strokeWidth="4" /><path d="M0,0 L30,20 M30,0 L0,20" stroke="#C8102E" strokeWidth="2" /><path d="M15,0 V20 M0,10 H30" stroke="white" strokeWidth="6" /><path d="M15,0 V20 M0,10 H30" stroke="#C8102E" strokeWidth="4" /></svg> },
+                                                    { id: 'nl', label: 'Nederlands', icon: <svg viewBox="0 0 30 20" className="w-5 h-5 rounded-[2px] shadow-sm overflow-hidden"><rect width="30" height="20" fill="#21468B" /><rect width="30" height="13.3" fill="#FFFFFF" /><rect width="30" height="6.6" fill="#AE1C28" /></svg> }
+                                                ].map((opt) => (
                                                     <button
-                                                        key={t.id}
-                                                        onClick={() => setActiveTheme(t.id)}
-                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${activeTheme === t.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                        key={opt.id}
+                                                        onClick={() => {
+                                                            setLanguage(opt.id);
+                                                            if (setVoiceSettings) setVoiceSettings({ variant: opt.id, gender: 'female' });
+                                                        }}
+                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${language === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                                     >
                                                         <div className="flex items-center gap-3">
-                                                            <div className="w-7 h-7 rounded-full border border-white/10 shadow-sm flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${t.colors.bgStart}, ${t.colors.bgEnd})` }}>
-                                                                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.colors.primary }} />
-                                                            </div>
-                                                            <span className={`text-sm font-medium ${activeTheme === t.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>
-                                                                {language === 'nl' ? t.label.nl : t.label.en}
-                                                            </span>
+                                                            {opt.icon}
+                                                            <span className={`text-sm font-medium ${language === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{opt.label}</span>
                                                         </div>
-                                                        {activeTheme === t.id && (
+                                                        {language === opt.id && (
                                                             <div className="text-[var(--primary)]">
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                                                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -1516,134 +1445,174 @@ const ItinerarySidebar = ({
                                                 ))}
                                             </div>
                                         </div>
-                                    </div>
 
-                                    {/* Travel Mode */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Reiswijze' : 'Travel Mode'}</label>
-                                        <div className="flex flex-col gap-1">
-                                            {[
-                                                { id: 'walking', label: { en: 'Walking', nl: 'Wandelen' }, icon: <><circle cx="12" cy="4" r="2" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v-4l-2-2 1-3h-2M12 9l2 2-1 6" /></> },
-                                                { id: 'cycling', label: { en: 'Cycling', nl: 'Fietsen' }, icon: <><circle cx="5.5" cy="17.5" r="3.5" strokeWidth={2} /><circle cx="18.5" cy="17.5" r="3.5" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-5 5-3-3 2-2M12 17.5V14l-3-3 4-3 2 3h2" /></> }
-                                            ].map(mode => (
-                                                <button
-                                                    key={mode.id}
-                                                    onClick={() => onStyleChange(mode.id)}
-                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${travelMode === mode.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`p-1.5 rounded-full ${travelMode === mode.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                {mode.icon}
-                                                            </svg>
+                                        {/* 2. Voice Preference */}
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Stem' : 'Voice'}</label>
+                                            <div className="flex flex-col gap-1">
+                                                {[
+                                                    { id: 'female', label: { en: 'Female', nl: 'Vrouw' } },
+                                                    { id: 'male', label: { en: 'Male', nl: 'Man' } }
+                                                ].map((opt) => (
+                                                    <button
+                                                        key={opt.id}
+                                                        onClick={() => setVoiceSettings && setVoiceSettings({ ...voiceSettings, gender: opt.id })}
+                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${voiceSettings?.gender === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`p-1.5 rounded-full ${voiceSettings?.gender === opt.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                                                </svg>
+                                                            </div>
+                                                            <span className={`text-sm font-medium ${voiceSettings?.gender === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
                                                         </div>
-                                                        <span className={`text-sm font-medium ${travelMode === mode.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? mode.label.nl : mode.label.en}</span>
+                                                        {voiceSettings?.gender === opt.id && (
+                                                            <div className="text-[var(--primary)]">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                </svg>
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* 3. App Theme */}
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Thema' : 'Theme'}</label>
+                                            <div className="flex flex-col gap-1">
+                                                <div className="grid grid-cols-1 gap-1">
+                                                    {availableThemes && Object.values(availableThemes).map(t => (
+                                                        <button
+                                                            key={t.id}
+                                                            onClick={() => setActiveTheme(t.id)}
+                                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${activeTheme === t.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-7 h-7 rounded-full border border-white/10 shadow-sm flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${t.colors.bgStart}, ${t.colors.bgEnd})` }}>
+                                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.colors.primary }} />
+                                                                </div>
+                                                                <span className={`text-sm font-medium ${activeTheme === t.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>
+                                                                    {language === 'nl' ? t.label.nl : t.label.en}
+                                                                </span>
+                                                            </div>
+                                                            {activeTheme === t.id && (
+                                                                <div className="text-[var(--primary)]">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Travel Mode */}
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Reiswijze' : 'Travel Mode'}</label>
+                                            <div className="flex flex-col gap-1">
+                                                {[
+                                                    { id: 'walking', label: { en: 'Walking', nl: 'Wandelen' }, icon: <><circle cx="12" cy="4" r="2" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v-4l-2-2 1-3h-2M12 9l2 2-1 6" /></> },
+                                                    { id: 'cycling', label: { en: 'Cycling', nl: 'Fietsen' }, icon: <><circle cx="5.5" cy="17.5" r="3.5" strokeWidth={2} /><circle cx="18.5" cy="17.5" r="3.5" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-5 5-3-3 2-2M12 17.5V14l-3-3 4-3 2 3h2" /></> }
+                                                ].map(mode => (
+                                                    <button
+                                                        key={mode.id}
+                                                        onClick={() => onStyleChange(mode.id)}
+                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${travelMode === mode.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`p-1.5 rounded-full ${travelMode === mode.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    {mode.icon}
+                                                                </svg>
+                                                            </div>
+                                                            <span className={`text-sm font-medium ${travelMode === mode.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? mode.label.nl : mode.label.en}</span>
+                                                        </div>
+                                                        {travelMode === mode.id && (
+                                                            <div className="text-[var(--primary)]">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                </svg>
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+
+
+                                        {/* 5. Simulation Mode */}
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Simulatie' : 'Simulation'}</label>
+                                            <button
+                                                onClick={() => {
+                                                    const newVal = !isSimulationEnabled;
+                                                    setIsSimulationEnabled(newVal);
+                                                    if (!newVal) setIsSimulating(false);
+                                                }}
+                                                className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulationEnabled ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`p-1.5 rounded-full ${isSimulationEnabled ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
                                                     </div>
-                                                    {travelMode === mode.id && (
-                                                        <div className="text-[var(--primary)]">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                            </svg>
-                                                        </div>
-                                                    )}
-                                                </button>
-                                            ))}
+                                                    <span className={`text-sm font-medium ${isSimulationEnabled ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
+                                                </div>
+                                                {isSimulationEnabled && (
+                                                    <div className="text-[var(--primary)]">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                        </svg>
+                                                    </div>
+                                                )}
+                                            </button>
+                                        </div>
+
+                                        {/* 6. Auto Audio */}
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Auto Audio' : 'Auto Audio'}</label>
+                                            <button
+                                                onClick={() => setAutoAudio(!autoAudio)}
+                                                className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${autoAudio ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`p-1.5 rounded-full ${autoAudio ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                                                    </div>
+                                                    <span className={`text-sm font-medium ${autoAudio ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Automatisch Voorlezen' : 'Auto-Audio Mode'}</span>
+                                                </div>
+                                                {autoAudio && (
+                                                    <div className="text-[var(--primary)]">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                        </svg>
+                                                    </div>
+                                                )}
+                                            </button>
                                         </div>
                                     </div>
+                                )}
 
-                                    {/* 4. Detail Level */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Detailniveau' : 'Detail Level'}</label>
-                                        <div className="flex flex-col gap-1">
-                                            {[
-                                                { id: 'short', label: { en: 'Brief', nl: 'Kort' }, icon: <path d="M11 7h2v2h-2zm0 4h2v6h-2z" /> },
-                                                { id: 'medium', label: { en: 'Standard', nl: 'Standaard' }, icon: <path d="M7 7h1v2H7zm0 4h1v2H7zM10 7h8v2h-8zm0 4h5v2h-5z" /> },
-                                                { id: 'max', label: { en: 'Deep', nl: 'Diep' }, icon: <path d="M7 6h1v2H7zm0 3h1v2H7zm0 3h1v2H7zM10 6h8v2h-8zm0 3h8v2h-8zm0 3h8v2h-8z" /> }
-                                            ].map(opt => (
-                                                <button
-                                                    key={opt.id}
-                                                    onClick={() => setDescriptionLength(opt.id)}
-                                                    className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${descriptionLength === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`p-1.5 rounded-full ${descriptionLength === opt.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                                                                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM4 16V4h16v12H4z" opacity="0.4" />
-                                                                {opt.icon}
-                                                            </svg>
-                                                        </div>
-                                                        <span className={`text-sm font-medium ${descriptionLength === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
-                                                    </div>
-                                                    {descriptionLength === opt.id && (
-                                                        <div className="text-[var(--primary)]">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                            </svg>
-                                                        </div>
-                                                    )}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* 5. Simulation Mode */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Simulatie' : 'Simulation'}</label>
-                                        <button
-                                            onClick={() => {
-                                                const newVal = !isSimulationEnabled;
-                                                setIsSimulationEnabled(newVal);
-                                                if (!newVal) setIsSimulating(false);
-                                            }}
-                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulationEnabled ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`p-1.5 rounded-full ${isSimulationEnabled ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
-                                                </div>
-                                                <span className={`text-sm font-medium ${isSimulationEnabled ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
-                                            </div>
-                                            {isSimulationEnabled && (
-                                                <div className="text-[var(--primary)]">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                    </svg>
-                                                </div>
-                                            )}
-                                        </button>
-                                    </div>
-
-                                    {/* 6. Auto Audio */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Auto Audio' : 'Auto Audio'}</label>
-                                        <button
-                                            onClick={() => setAutoAudio(!autoAudio)}
-                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${autoAudio ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`p-1.5 rounded-full ${autoAudio ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                                                </div>
-                                                <span className={`text-sm font-medium ${autoAudio ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Automatisch Voorlezen' : 'Auto-Audio Mode'}</span>
-                                            </div>
-                                            {autoAudio && (
-                                                <div className="text-[var(--primary)]">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                    </svg>
-                                                </div>
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* About Section */}
+                                {/* About Section (Visible in both Settings & Changelog) */}
                                 <div className="mt-8 pt-4 border-t border-[var(--panel-border)]">
                                     <h4 className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-3">{language === 'nl' ? 'Over' : 'About'}</h4>
                                     <div className="bg-[var(--input-bg)] rounded-xl p-4 border border-[var(--panel-border)] space-y-3">
-                                        <div className="flex justify-between items-center">
+                                        <div className="flex justify-between items-center py-1">
                                             <span className="text-slate-400 text-sm">Version</span>
-                                            <span className="text-slate-300 text-sm font-medium">v1.4.1</span>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => setShowChangelog(true)}
+                                                    className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded font-bold hover:bg-primary/30 transition-colors"
+                                                >
+                                                    {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
+                                                </button>
+                                                <span className="text-slate-300 text-sm font-medium">v1.5.0</span>
+                                            </div>
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-slate-400 text-sm">Author</span>
@@ -1651,7 +1620,7 @@ const ItinerarySidebar = ({
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                            <span className="text-[var(--text-muted)] text-sm font-medium">20 Jan 2026</span>
+                                            <span className="text-[var(--text-muted)] text-sm font-medium">26 Jan 2026</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1813,170 +1782,15 @@ const ItinerarySidebar = ({
                                                                         {language === 'nl' ? 'HET NIEUWE STARTPUNT' : 'SET AS NEW START'}
                                                                     </button>
                                                                 )}
-                                                                {/* POI Image */}
-                                                                {poi.image && (
-                                                                    <div className="mb-2 rounded-xl overflow-hidden border border-white/10 shadow-2xl h-52 bg-slate-800/50 relative group">
-                                                                        <img
-                                                                            src={poi.image}
-                                                                            alt={poi.name}
-                                                                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                                                            onLoad={(e) => e.target.style.opacity = '1'}
-                                                                            onError={(e) => {
-                                                                                e.target.closest('.group').style.display = 'none';
-                                                                            }}
-                                                                            style={{ opacity: 0, transition: 'opacity 0.8s' }}
-                                                                        />
-                                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
-                                                                    </div>
-                                                                )}
-
-                                                                {/* High-level short description */}
-                                                                <div className="text-sm text-slate-300 font-medium leading-relaxed italic border-l-2 border-primary/30 pl-3">
-                                                                    {(() => {
-                                                                        const short = poi.structured_info?.short_description || "";
-                                                                        const displayDesc = short || poi.description || (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available.");
-
-                                                                        // Use global speakingId and spokenCharCount
-                                                                        if (speakingId === poi.id && spokenCharCount !== undefined) {
-                                                                            const idx = spokenCharCount;
-
-                                                                            // Only highlight if it fits in THIS block (the short part)
-                                                                            if (idx >= 0 && idx < short.length) {
-                                                                                let endIdx = short.indexOf(' ', idx);
-                                                                                if (endIdx === -1) endIdx = short.length;
-
-                                                                                const before = short.slice(0, idx);
-                                                                                const current = short.slice(idx, endIdx);
-                                                                                const after = short.slice(endIdx);
-                                                                                const pColor = activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6';
-
-                                                                                return (
-                                                                                    <>
-                                                                                        <span className="text-white not-italic">{before}</span>
-                                                                                        <span
-                                                                                            ref={poiHighlightedWordRef}
-                                                                                            style={{
-                                                                                                backgroundColor: hexToRgba(pColor, 0.4),
-                                                                                                borderRadius: '2px'
-                                                                                            }}
-                                                                                            className="text-white not-italic"
-                                                                                        >
-                                                                                            {current}
-                                                                                        </span>
-                                                                                        <span className="opacity-50">{after}</span>
-                                                                                    </>
-                                                                                );
-                                                                            } else if (idx >= short.length && short !== "") {
-                                                                                // Entire short block is finished, keep it fully visible but not highlighted
-                                                                                return <span className="text-white not-italic opacity-80">{short}</span>;
-                                                                            }
-                                                                        }
-                                                                        return displayDesc;
-                                                                    })()}
-                                                                </div>
-
-                                                                {/* Interest Alignment */}
-                                                                {poi.structured_info?.matching_reasons && poi.structured_info.matching_reasons.length > 0 && (
-                                                                    <div className="space-y-2">
-                                                                        <h4 className="text-[10px] uppercase tracking-widest text-primary font-bold">{language === 'nl' ? 'WAAROM DIT BIJ JE PAST' : 'WHY THIS MATCHES YOUR INTERESTS'}</h4>
-                                                                        <div className="grid gap-1.5">
-                                                                            {poi.structured_info.matching_reasons.map((reason, ri) => (
-                                                                                <div key={ri} className="flex items-start gap-2 text-xs text-slate-400">
-                                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mt-0.5 text-green-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                                                                    <span>{reason}</span>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Full Description (only if expanded or on Standard/Deep) */}
-                                                                {poi.structured_info?.full_description && (
-                                                                    <div className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
-                                                                        {(() => {
-                                                                            const short = poi.structured_info?.short_description || "";
-                                                                            const displayDesc = poi.structured_info.full_description;
-
-                                                                            if (speakingId === poi.id && spokenCharCount !== undefined) {
-                                                                                // Offset by short_description + "\n\n" (2 chars)
-                                                                                const offset = short ? short.length + 2 : 0;
-                                                                                const idx = spokenCharCount - offset;
-
-                                                                                if (idx >= 0 && idx < displayDesc.length) {
-                                                                                    let endIdx = displayDesc.indexOf(' ', idx);
-                                                                                    if (endIdx === -1) endIdx = displayDesc.length;
-
-                                                                                    const before = displayDesc.slice(0, idx);
-                                                                                    const current = displayDesc.slice(idx, endIdx);
-                                                                                    const after = displayDesc.slice(endIdx);
-
-                                                                                    const pColor = activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6';
-
-                                                                                    return (
-                                                                                        <>
-                                                                                            <span className="text-slate-200">{before}</span>
-                                                                                            <span
-                                                                                                ref={poiHighlightedWordRef}
-                                                                                                style={{
-                                                                                                    backgroundColor: hexToRgba(pColor, 0.4),
-                                                                                                    borderRadius: '2px'
-                                                                                                }}
-                                                                                                className="text-white"
-                                                                                            >
-                                                                                                {current}
-                                                                                            </span>
-                                                                                            <span className="text-slate-600">{after}</span>
-                                                                                        </>
-                                                                                    );
-                                                                                } else if (idx >= displayDesc.length) {
-                                                                                    return displayDesc;
-                                                                                } else if (idx < 0) {
-                                                                                    // Still reading the short description, dim this part
-                                                                                    return <span className="opacity-30">{displayDesc}</span>;
-                                                                                }
-                                                                            }
-                                                                            return displayDesc;
-                                                                        })()}
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Fun Facts */}
-                                                                {poi.structured_info?.fun_facts && poi.structured_info.fun_facts.length > 0 && (
-                                                                    <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3 space-y-2">
-                                                                        <h4 className="text-[10px] uppercase tracking-widest text-blue-400 font-bold flex items-center gap-1.5">
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
-                                                                            {language === 'nl' ? 'WIST JE DAT?' : 'FUN FACTS'}
-                                                                        </h4>
-                                                                        <ul className="space-y-1.5">
-                                                                            {poi.structured_info.fun_facts.map((fact, fi) => (
-                                                                                <li key={fi} className="text-xs text-slate-400 pl-4 relative before:content-['•'] before:absolute before:left-0 before:text-blue-500/50">
-                                                                                    {fact}
-                                                                                </li>
-                                                                            ))}
-                                                                        </ul>
-                                                                    </div>
-                                                                )}
-
-                                                                {/* 2 Minute Highlight */}
-                                                                {poi.structured_info?.two_minute_highlight && (
-                                                                    <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
-                                                                        <h4 className="text-[10px] uppercase tracking-widest text-amber-400 font-bold mb-1">{language === 'nl' ? 'ALS JE MAAR 2 MINUTEN HEBT' : 'IF YOU ONLY HAVE 2 MINUTES'}</h4>
-                                                                        <div className="text-xs text-slate-400 italic">
-                                                                            "{poi.structured_info.two_minute_highlight}"
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Visitor Tips */}
-                                                                {poi.structured_info?.visitor_tips && (
-                                                                    <div className="flex items-start gap-2 bg-slate-900/50 p-2.5 rounded-lg border border-white/5">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                                                                        <div className="text-[11px] text-slate-500">
-                                                                            <span className="font-bold uppercase mr-1">{language === 'nl' ? 'TIPS:' : 'TIPS:'}</span>
-                                                                            {poi.structured_info.visitor_tips}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
+                                                                <PoiDetailContent
+                                                                    poi={poi}
+                                                                    language={language}
+                                                                    speakingId={speakingId}
+                                                                    spokenCharCount={spokenCharCount}
+                                                                    highlightRef={poiHighlightedWordRef}
+                                                                    isDark={true}
+                                                                    primaryColor={activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6'}
+                                                                />
                                                             </div>
 
                                                             <button
@@ -2144,7 +1958,7 @@ const ItinerarySidebar = ({
                     }}
                     onCancel={() => setPoiToDelete(null)}
                 />
-            </div >
+            </div>
         </>
     );
 };

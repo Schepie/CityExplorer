@@ -1,0 +1,58 @@
+
+
+=== Testing query: "Parking Oost UZ Leuven, Leuven" ===
+Clean Query: 'parking oost uz leuven leuven' (Len: 29)
+
+[Nominatim] Fetching: https://nominatim.openstreetmap.org/search?q=Parking%20Oost%20UZ%20Leuven%2C%20Leuven&format=json&limit=5&addressdetails=1
+[Nominatim] No result
+
+[Photon] Fetching: https://photon.komoot.io/api/?q=Parking%20Oost%20UZ%20Leuven%2C%20Leuven&limit=1&lang=en
+[Photon] Result 1: Parking Oost, Leuven [50.879811950000004, 4.675551375559714]
+
+
+=== Testing query: "Parking Oost, Leuven" ===
+Clean Query: 'parking oost leuven' (Len: 19)
+
+[Nominatim] Fetching: https://nominatim.openstreetmap.org/search?q=Parking%20Oost%2C%20Leuven&format=json&limit=5&addressdetails=1
+[Nominatim] Raw Result 1: "Parking Oost, Bruine straat (level L1), Leuven, Vlaams-Brabant, Vlaanderen, 3000, België / Belgique / Belgien"
+[Nominatim] Clean Result: 'parking oost' (Len: 12)
+[Nominatim] ❌ REJECTED by Heuristic (Generic Match)
+[Nominatim] Lat/Lon: 50.8799045, 4.6764655
+[Nominatim] Type: parking, Class: amenity
+
+[Photon] Fetching: https://photon.komoot.io/api/?q=Parking%20Oost%2C%20Leuven&limit=1&lang=en
+[Photon] Result 1: Parking Oost, Leuven [50.879904499999995, 4.676465522136365]
+
+
+=== Testing query: "UZ Leuven Parking Oost, Leuven" ===
+Clean Query: 'uz leuven parking oost leuven' (Len: 29)
+
+[Nominatim] Fetching: https://nominatim.openstreetmap.org/search?q=UZ%20Leuven%20Parking%20Oost%2C%20Leuven&format=json&limit=5&addressdetails=1
+[Nominatim] No result
+
+[Photon] Fetching: https://photon.komoot.io/api/?q=UZ%20Leuven%20Parking%20Oost%2C%20Leuven&limit=1&lang=en
+[Photon] Result 1: Parking Oost, Leuven [50.879811950000004, 4.675551375559714]
+
+
+=== Testing query: "Bezoekersparking Oost UZ Leuven, Leuven" ===
+Clean Query: 'bezoekersparking oost uz leuven leuven' (Len: 38)
+
+[Nominatim] Fetching: https://nominatim.openstreetmap.org/search?q=Bezoekersparking%20Oost%20UZ%20Leuven%2C%20Leuven&format=json&limit=5&addressdetails=1
+[Nominatim] No result
+
+[Photon] Fetching: https://photon.komoot.io/api/?q=Bezoekersparking%20Oost%20UZ%20Leuven%2C%20Leuven&limit=1&lang=en
+[Photon] Result 1: Parking Oost, Leuven [50.879904499999995, 4.676465522136365]
+
+
+=== Testing query: "Parking Oost" ===
+Clean Query: 'parking oost' (Len: 12)
+
+[Nominatim] Fetching: https://nominatim.openstreetmap.org/search?q=Parking%20Oost&format=json&limit=5&addressdetails=1
+[Nominatim] Raw Result 1: "Parking Oost, Vissersdijk, Gent, Oost-Vlaanderen, 9000, België / Belgique / Belgien"
+[Nominatim] Clean Result: 'parking oost' (Len: 12)
+[Nominatim] ✅ ACCEPTED by Heuristic
+[Nominatim] Lat/Lon: 51.0455175, 3.6923528
+[Nominatim] Type: parking, Class: amenity
+
+[Photon] Fetching: https://photon.komoot.io/api/?q=Parking%20Oost&limit=1&lang=en
+[Photon] Result 1: Parking Ledeberg, Ghent [51.03619725, 3.7386399727401822]
