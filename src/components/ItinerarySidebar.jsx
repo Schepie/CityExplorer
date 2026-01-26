@@ -1369,6 +1369,15 @@ const ItinerarySidebar = ({
                                         {[
                                             {
                                                 date: "26 Jan 2026",
+                                                version: "v1.5.1",
+                                                items: language === 'nl' ? [
+                                                    { title: "Bugfix Suggesties", desc: "Een bug verholpen waarbij het toevoegen van een extra POI uit de lijst van voorstellen soms een foutmelding gaf." }
+                                                ] : [
+                                                    { title: "Suggestion Bugfix", desc: "Fixed a bug where adding a POI from the guide's suggestions would sometimes trigger an error." }
+                                                ]
+                                            },
+                                            {
+                                                date: "26 Jan 2026",
                                                 version: "v1.5.0",
                                                 items: language === 'nl' ? [
                                                     { title: "Gids Vertelt Verder", desc: "De audio gids leest nu automatisch alle informatie voor (bezienswaardigheid + weetjes + tips) zonder te stoppen." },
@@ -1611,7 +1620,7 @@ const ItinerarySidebar = ({
                                                 >
                                                     {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                                 </button>
-                                                <span className="text-slate-300 text-sm font-medium">v1.5.0</span>
+                                                <span className="text-slate-300 text-sm font-medium">v1.5.1</span>
                                             </div>
                                         </div>
                                         <div className="flex justify-between items-center">
@@ -1684,9 +1693,12 @@ const ItinerarySidebar = ({
                                         isSpecial: true,
                                         specialType: 'start',
                                         // Use rich description if available, otherwise fallback to accessibility info
-                                        description: (routeData.startIsPoi && routeData.startPoi?.description)
-                                            ? routeData.startPoi.description
+                                        // If it IS a POI, we prioritize its own description. 
+                                        // If we have both, we can show both in the detailed view.
+                                        description: (routeData.startIsPoi && (routeData.startPoi?.description || routeData.startPoi?.structured_info?.short_description))
+                                            ? (routeData.startPoi.description || routeData.startPoi?.structured_info?.short_description)
                                             : (routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info...")),
+                                        arrivalInfo: routeData.startInfo,
                                         isFullyEnriched: routeData.startIsPoi ? (routeData.startPoi?.isFullyEnriched) : (!!routeData.startInfo)
                                     };
 

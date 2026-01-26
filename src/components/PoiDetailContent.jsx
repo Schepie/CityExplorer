@@ -145,6 +145,19 @@ const PoiDetailContent = ({
                 </div>
             )}
 
+            {/* 3.5 Arrival / Transport Instructions (For Start Points) */}
+            {poi.arrivalInfo && (
+                <div className={`${isDark ? 'bg-emerald-500/5' : 'bg-emerald-50'} border ${isDark ? 'border-emerald-500/10' : 'border-emerald-200'} rounded-xl p-3 space-y-2`}>
+                    <h4 className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        {language === 'nl' ? 'AANKOMST & PARKEREN' : 'ARRIVAL & PARKING'}
+                    </h4>
+                    <div className={`text-xs ${textMuted} leading-relaxed font-medium`}>
+                        {poi.arrivalInfo}
+                    </div>
+                </div>
+            )}
+
             {/* 4. Full Description (Level 3) */}
             {info?.full_description && (
                 <div className={`text-sm ${textMuted} leading-relaxed whitespace-pre-wrap`}>

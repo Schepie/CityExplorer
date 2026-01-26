@@ -1657,6 +1657,7 @@ function App() {
       let finalDist = 0;
       let finalSteps = [];
       let walkDist = 0;
+      let finalLegs = [];
 
       try {
         const routeResult = await calculateRoutePath(fullyEnriched, cityCenter, travelMode);
@@ -1664,6 +1665,7 @@ function App() {
         finalDist = routeResult.dist;
         finalSteps = routeResult.steps;
         walkDist = routeResult.walkDist || 0;
+        finalLegs = routeResult.legs || [];
       } catch (calcErr) {
         console.error("OSRM Route Calculation Failed in AddToJourney:", calcErr);
         finalPath = [];
@@ -1687,7 +1689,7 @@ function App() {
         pois: fullyEnriched,
         routePath: finalPath,
         navigationSteps: finalSteps,
-        legs: finalRouteResult ? finalRouteResult.legs : [],
+        legs: finalLegs,
         stats: {
           ...routeData.stats,
           totalDistance: finalDist.toFixed(1),
@@ -2360,6 +2362,11 @@ function App() {
         const newStartCenter = [newStartPoi.lat, newStartPoi.lng];
         const routeResult = await calculateRoutePath(remainingPois, newStartCenter, travelMode);
 
+        // 3. Fetch specific arrival instructions for this POI as a start point
+        const cityName = validatedCityData?.address?.city || city;
+        const engine = new PoiIntelligence({ city: cityName, language });
+        const newStartInstr = await engine.fetchArrivalInstructions(newStartPoi.name, cityName, language);
+
         setRouteData(prev => ({
           ...prev,
           center: newStartCenter,
@@ -2367,6 +2374,7 @@ function App() {
           startPoiId: newStartPoi.id,
           startPoi: newStartPoi, // Keep full POI metadata
           startIsPoi: true,
+          startInfo: newStartInstr,
           pois: remainingPois,
           routePath: routeResult.path,
           navigationSteps: routeResult.steps,
@@ -2432,6 +2440,15 @@ function App() {
         newLegs = rotatedLegs;
       }
     }
+
+    // ASYNC: Fetch specific arrival instructions for this POI as a start point
+    const cityName = validatedCityData?.address?.city || city;
+    const engine = new PoiIntelligence({ city: cityName, language });
+    engine.fetchArrivalInstructions(newStartPoi.name, cityName, language).then(newStartInstr => {
+      if (newStartInstr) {
+        setRouteData(prev => (prev && prev.startPoiId === newStartPoi.id) ? { ...prev, startInfo: newStartInstr } : prev);
+      }
+    });
 
     // Update State
     setRouteData(prev => ({
