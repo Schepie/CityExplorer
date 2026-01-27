@@ -160,8 +160,26 @@ const PoiDetailContent = ({
 
             {/* 4. Full Description (Level 3) */}
             {info?.full_description && (
-                <div className={`text-sm ${textMuted} leading-relaxed whitespace-pre-wrap`}>
-                    {renderWithHighlight(info.full_description, offsets.full, textMuted)}
+                <div className="space-y-4">
+                    {/* Secondary Image: Always show if available, prioritizing the second image for variety */}
+                    {poi.images?.length > 0 && (
+                        <div className={`rounded-lg overflow-hidden border ${borderPanel} shadow-lg h-44 bg-slate-800/30 relative group`}>
+                            <img
+                                src={poi.images.length > 1 ? poi.images[1] : poi.images[0]}
+                                alt={`${poi.name} detail`}
+                                className="w-full h-full object-cover transition-all duration-700 group-hover:scale-105"
+                                onLoad={(e) => e.target.style.opacity = '1'}
+                                onError={(e) => {
+                                    e.target.closest('.group').style.display = 'none';
+                                }}
+                                style={{ opacity: 0, transition: 'opacity 0.8s' }}
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
+                        </div>
+                    )}
+                    <div className={`text-sm ${textDescription} leading-relaxed whitespace-pre-wrap`}>
+                        {renderWithHighlight(info.full_description, offsets.full, textMuted)}
+                    </div>
                 </div>
             )}
 

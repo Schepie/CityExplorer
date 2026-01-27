@@ -82,6 +82,7 @@ export class PoiIntelligence {
             description: bestData.description,
             structured_info: bestData.structured_info || null,
             image: bestData.image || candidate.image || null,
+            images: bestData.images || (bestData.image || candidate.image ? [bestData.image || candidate.image] : []),
             link: bestData.link,
             source: bestData.source,
             intelligence: {
@@ -399,8 +400,13 @@ Je MOET antwoorden met een JSON object in dit formaat:
             const data = await response.json();
             const text = data.text ? data.text.trim() : "";
 
+            const analyzed = this.analyzeSignals(poi, signals || []);
+            const resolved = this.resolveConflicts(analyzed);
+
             return {
                 short_description: text,
+                image: resolved.image,
+                images: resolved.images,
                 // Partial structure for compatibility
                 structured_info: { short_description: text }
             };
@@ -470,8 +476,6 @@ Je MOET antwoorden met een JSON object in dit formaat:
             const result = JSON.parse(cleanText);
 
             return {
-                standard_description: result.standard_version?.description || "",
-                // Wrap in structured_info for sidebar compatibility
                 structured_info: {
                     short_description: shortDesc || "", // Preserve short desc
                     full_description: result.extended_version?.full_description || result.standard_version?.description || "",
@@ -481,7 +485,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     visitor_tips: result.extended_version?.visitor_tips || "",
                     standard_description: result.standard_version?.description || "", // Duplicated for safety
                     one_fun_fact: result.standard_version?.fun_fact || ""
-                }
+                },
+                ...this.resolveConflicts(this.analyzeSignals(poi, signals || []))
             };
 
         } catch (e) {
@@ -801,6 +806,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     content: combinedSnippets.map(s => s.text).join('\n\n'),
                     link: res.items[0].link,
                     image: combinedSnippets.find(s => s.image)?.image,
+                    images: [...new Set(combinedSnippets.map(s => s.image).filter(Boolean))],
                     confidence: 0.75
                 };
             }
@@ -846,10 +852,12 @@ Je MOET antwoorden met een JSON object in dit formaat:
         const ranked = signals.sort((a, b) => b.score - a.score);
 
         if (ranked.length > 0 && ranked[0].score > 0.4) {
+            const allImages = [...new Set(ranked.flatMap(r => r.images || (r.image ? [r.image] : [])).filter(Boolean))];
             return {
                 description: ranked[0].content,
                 link: ranked[0].link,
-                image: ranked.find(r => r.image)?.image || null,
+                image: allImages[0] || null,
+                images: allImages,
                 source: ranked[0].source,
                 confidence: ranked[0].score
             };
