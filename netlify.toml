@@ -12,6 +12,7 @@
   status = 200
 
 [[redirects]]
-  from = "/*"
-  to = "/index.html"
+  from = "/.well-known/*"
+  to = "/.well-known/:splat"
   status = 200
+  force = true
