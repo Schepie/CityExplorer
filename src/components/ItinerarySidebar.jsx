@@ -993,7 +993,6 @@ const ItinerarySidebar = ({
     const [showSettings, setShowSettings] = useState(false);
     const [showChangelog, setShowChangelog] = useState(false);
     const [settingsOpenedFromMap, setSettingsOpenedFromMap] = useState(false);
-    const [areOptionsVisible, setAreOptionsVisible] = useState(false); // New Toggle for Footer Options
     const [shouldAutoFocusInterests, setShouldAutoFocusInterests] = useState(false);
     const [expandedPoi, setExpandedPoi] = useState(null);
     const [poiToDelete, setPoiToDelete] = useState(null);
@@ -1902,55 +1901,24 @@ const ItinerarySidebar = ({
                                 )}
 
                                 <button
-                                    onClick={() => setAreOptionsVisible(!areOptionsVisible)}
-                                    className="h-full px-2.5 text-[9px] uppercase font-bold text-slate-500 hover:text-white transition-colors flex items-center gap-1 bg-slate-800/20 rounded-lg hover:bg-slate-800/60 border border-transparent hover:border-white/5"
+                                    onClick={() => {
+                                        setIsAddingMode(false);
+                                        onReset();
+                                    }}
+                                    className="flex-1 h-full text-[9px] uppercase tracking-wider font-bold rounded-lg bg-slate-800/40 border border-white/5 text-slate-500 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5"
                                 >
-                                    {text.options}
-                                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${areOptionsVisible ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                                    </svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
+                                    <span className="truncate">{text.reset}</span>
+                                </button>
+
+                                <button
+                                    onClick={onSave}
+                                    className="flex-1 h-full text-[9px] uppercase tracking-wider font-bold rounded-lg bg-slate-800/40 border border-white/5 text-slate-500 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                                    <span className="truncate">{text.save}</span>
                                 </button>
                             </div>
-
-                            {areOptionsVisible && (
-                                <div className="mt-2 grid grid-cols-3 gap-2 animate-in slide-in-from-bottom-2 fade-in duration-300">
-                                    <button
-                                        onClick={() => {
-                                            setIsAddingMode(false);
-                                            setAreOptionsVisible(false);
-                                            onReset();
-                                        }}
-                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] border border-[var(--panel-border)] hover:border-[var(--primary)]/30 transition-all group shadow-lg"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[var(--primary)] group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
-                                        <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase group-hover:text-[var(--text-main)] transition-colors">{text.reset}</span>
-                                    </button>
-
-
-
-                                    <button
-                                        onClick={onSave}
-                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] border border-[var(--panel-border)] hover:border-[var(--primary)]/30 transition-all group shadow-lg"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[var(--primary)] group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-                                        <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase group-hover:text-[var(--text-main)] transition-colors">{text.save}</span>
-                                    </button>
-
-                                    <button
-                                        onClick={onSaveAs}
-                                        className="flex flex-col items-center gap-1.5 p-2 rounded-xl bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] border border-[var(--panel-border)] hover:border-[var(--primary)]/30 transition-all group shadow-lg"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[var(--primary)] group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                                            <polyline points="17 21 17 13 7 13 7 21" />
-                                            <polyline points="7 3 7 8 15 8" />
-                                            <line x1="12" y1="11" x2="16" y2="15" />
-                                            <line x1="12" y1="15" x2="16" y2="15" />
-                                        </svg>
-                                        <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase group-hover:text-[var(--text-main)] transition-colors">{language === 'nl' ? 'Opslaan als' : 'Save As'}</span>
-                                    </button>
-                                </div>
-                            )}
                         </div>
                     )}
                 </div>
