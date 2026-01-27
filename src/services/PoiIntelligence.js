@@ -176,7 +176,10 @@ Genereer de introductie voor de tocht in ${this.config.city}.
                 body: JSON.stringify({ prompt })
             });
 
-            if (!response.ok) return null;
+            if (!response.ok) {
+                console.warn(`[AI] Welcome message fetch failed: ${response.status}`);
+                return null;
+            }
             const data = await response.json();
             return data.text ? data.text.trim() : null;
         } catch (e) {
@@ -213,7 +216,10 @@ DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'En
                 body: JSON.stringify({ prompt })
             });
 
-            if (!response.ok) return null;
+            if (!response.ok) {
+                console.warn(`[AI] Arrival instructions fetch failed: ${response.status}`);
+                return null;
+            }
             const data = await response.json();
             return data.text ? data.text.trim() : null;
         } catch (e) {
@@ -310,10 +316,18 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 body: JSON.stringify({ prompt })
             });
 
-            if (!response.ok) return null;
+            if (!response.ok) {
+                console.warn(`[AI] /api/gemini returned ${response.status} ${response.statusText}`);
+                const errText = await response.text().catch(() => "");
+                console.warn("[AI] Response content:", errText);
+                return null;
+            }
             const data = await response.json();
             const text = data.text;
-            if (!text) return null;
+            if (!text) {
+                console.warn("[AI] Response missing 'text' property:", data);
+                return null;
+            }
 
             console.log("Raw AI Response Text:", text);
 
@@ -341,7 +355,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
             console.log("Parsed AI Object:", parsed);
             return parsed;
         } catch (e) {
-            console.warn("Prompt Parsing Failed:", e);
+            console.error("AI Prompt Processing Failed:", e);
             return null;
         }
     }
@@ -378,7 +392,10 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 signal
             });
 
-            if (!response.ok) return null;
+            if (!response.ok) {
+                console.warn(`[AI] Short description fetch failed: ${response.status}`);
+                return null;
+            }
             const data = await response.json();
             const text = data.text ? data.text.trim() : "";
 
@@ -444,7 +461,10 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 signal
             });
 
-            if (!response.ok) return null;
+            if (!response.ok) {
+                console.warn(`[AI] Full details fetch failed: ${response.status}`);
+                return null;
+            }
             const data = await response.json();
             const cleanText = data.text.replace(/```json/g, '').replace(/```/g, '').trim();
             const result = JSON.parse(cleanText);

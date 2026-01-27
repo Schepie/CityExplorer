@@ -125,12 +125,14 @@ app.post('/api/build-booklet', async (req, res) => {
 app.post('/api/gemini', async (req, res) => {
     try {
         const { prompt } = req.body;
-        console.log(`[Proxy] Gemini Request`);
+        console.log(`[Proxy] Gemini Request received`);
         if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
-        if (!GEMINI_KEY) return res.status(500).json({ error: 'GEMINI_KEY not configured on server' });
+        if (!GEMINI_KEY) {
+            console.error("[Proxy] GEMINI_KEY missing");
+            return res.status(500).json({ error: 'GEMINI_KEY not configured on server' });
+        }
 
         const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-        // Using valid model as discovered in previous turns or standard generic one
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
         const result = await model.generateContent(prompt);
@@ -232,34 +234,33 @@ app.get('/api/google-search', async (req, res) => {
     try {
         const { q, cx } = req.query;
         console.log(`[Proxy] Google Search: "${q}"`);
-        // Allows passing CX from client or ENV. If configured on server, use server.
-        // We will assume the server has the keys if we want to secure them.
-        // But CX is usually not secret. The API KEY is secret.
-        // Let's use the GOOGLE_PLACES_KEY (often same project) or a specific SEARCH_KEY.
-        // The existing code used GOOGLE_PLACES_KEY for search too.
-
         if (!GOOGLE_PLACES_KEY) return res.status(500).json({ error: 'GOOGLE_KEY not configured' });
-
-        // If CX is not passed, maybe use env?
         const searchCx = cx || process.env.VITE_GOOGLE_SEARCH_CX || process.env.GOOGLE_SEARCH_CX;
         if (!searchCx) return res.status(500).json({ error: 'CX not configured' });
 
         const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_PLACES_KEY}&cx=${searchCx}&q=${encodeURIComponent(q)}&num=1`;
-
-        const response = await fetch(url, {
-            headers: { 'Referer': 'http://localhost:5173/' }
-        });
+        const response = await fetch(url, { headers: { 'Referer': 'http://localhost:5173/' } });
         const data = await response.json();
 
-        if (data.error) {
-            console.error(`[Proxy] Google Search API Error:`, data.error);
-        } else {
-            console.log(`[Proxy] Google Search Found: ${data.items ? data.items.length : 0}`);
-        }
-
+        if (data.error) console.error(`[Proxy] Google Search API Error:`, data.error);
         res.json(data);
     } catch (error) {
         console.error("Google Search Proxy Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- DuckDuckGo Proxy ---
+app.get('/api/ddg', async (req, res) => {
+    try {
+        const { q } = req.query;
+        console.log(`[Proxy] DDG: "${q}"`);
+        const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1`;
+        const response = await fetch(url);
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error("DDG Proxy Error:", error);
         res.status(500).json({ error: error.message });
     }
 });
