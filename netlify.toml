@@ -13,6 +13,6 @@
 
 [[redirects]]
   from = "/.well-known/*"
-  to = "/.well-known/:splat"
+  to = "/well-known/:splat"
   status = 200
   force = true
