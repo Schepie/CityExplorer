@@ -1,6 +1,11 @@
 
 
 
+let authToken = null;
+export const setAuthToken = (token) => {
+    authToken = token;
+};
+
 export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) => {
     let poiData = [];
 
@@ -127,7 +132,8 @@ export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s
 
-        const res = await fetch(url, { signal: controller.signal });
+        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        const res = await fetch(url, { signal: controller.signal, headers });
         clearTimeout(timeoutId);
 
         if (!res.ok) {
@@ -165,7 +171,8 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
         const response = await fetch(url, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
             },
             body: JSON.stringify({
                 textQuery: interest,

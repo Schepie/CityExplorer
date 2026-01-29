@@ -1,5 +1,6 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { validateUser } from './utils/auth.js';
 
 const GEMINI_KEY = process.env.GEMINI_KEY || process.env.VITE_GEMINI_KEY || process.env.VITE_GEMINI_API_KEY;
 
@@ -7,6 +8,12 @@ export const handler = async (event, context) => {
     // Only allow POST
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    // 1. Auth Check
+    const auth = validateUser(event);
+    if (auth.error) {
+        return { statusCode: auth.status, body: JSON.stringify({ error: auth.error }) };
     }
 
     try {

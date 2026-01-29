@@ -1,5 +1,13 @@
 
+import { validateUser } from './utils/auth.js';
+
 export const handler = async (event, context) => {
+    // Auth Check
+    const auth = validateUser(event);
+    if (auth.error) {
+        return { statusCode: auth.status, body: JSON.stringify({ error: auth.error }) };
+    }
+
     try {
         const queryParams = new URLSearchParams(event.queryStringParameters).toString();
         const { lat, lon, q } = event.queryStringParameters;

@@ -11,6 +11,16 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import { Resend } from 'resend';
+import jwt from 'jsonwebtoken';
+import {
+    validateUser,
+    generateMagicToken,
+    verifyMagicToken,
+    generateSessionToken,
+    isEmailBlocked
+} from './netlify/functions/utils/auth.js';
+
 const execPromise = promisify(exec);
 
 dotenv.config();
@@ -20,6 +30,12 @@ app.use(cors());
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+// Debug Logger
+app.use((req, res, next) => {
+    console.log(`[Server] ${req.method} ${req.url}`);
+    next();
+});
 
 const PORT = 3001;
 
@@ -34,8 +50,82 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// --- Auth Endpoints (Mimic Netlify Functions) ---
+app.post('/api/auth-request-link', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: "Email is required" });
+
+        // Revocation Check (Prevent sending links to blocked users)
+        if (isEmailBlocked(email)) {
+            console.warn(`Link request denied for blocked user: ${email}`);
+            return res.status(403).json({ error: "Access Revoked" });
+        }
+
+        const token = generateMagicToken(email);
+        const appUrl = process.env.APP_URL || 'http://localhost:5173';
+        const magicLink = `${appUrl}?token=${token}`;
+
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+        const adminEmail = 'geert.schepers@gmail.com';
+
+        await resend.emails.send({
+            from: fromEmail,
+            to: adminEmail,
+            subject: `Login Link for ${email}`,
+            html: `
+                <h2>Login Request for CityExplorer</h2>
+                <p><strong>User Email:</strong> ${email}</p>
+                <p>Forward this link to the user:</p>
+                <p><a href="${magicLink}">${magicLink}</a></p>
+            `
+        });
+
+        res.json({ message: `Relay sent to ${adminEmail}`, success: true });
+    } catch (error) {
+        console.error("Local Auth Request Failed:", error);
+        res.status(500).json({ error: "Failed to send link" });
+    }
+});
+
+app.post('/api/auth-verify-link', async (req, res) => {
+    try {
+        const { token } = req.body;
+        // We decode first to get the email, but verifyMagicToken already checks blocklist and returns null.
+        // To be explicit for the frontend (403), we can decode manually or update verifyMagicToken.
+        // Let's check explicitly for 403 support.
+        const decoded = verifyMagicToken(token);
+
+        if (!decoded) {
+            // Re-check token without blocklist to see if it was just blocked or actually invalid
+            // Or simpler: just use jwt.decode to check the email if verify failed.
+            const rawDecoded = jwt.decode(token);
+            if (rawDecoded && rawDecoded.email && isEmailBlocked(rawDecoded.email)) {
+                return res.status(403).json({ error: "Access Revoked" });
+            }
+            return res.status(401).json({ error: "Invalid link" });
+        }
+
+        const sessionToken = generateSessionToken(decoded.email);
+        res.json({ token: sessionToken, user: { email: decoded.email } });
+    } catch (error) {
+        res.status(500).json({ error: "Verification failed" });
+    }
+});
+
+// Middleware to protect subsequent routes
+const authMiddleware = (req, res, next) => {
+    const auth = validateUser(req);
+    if (auth.error) {
+        return res.status(auth.status).json({ error: auth.error });
+    }
+    req.user = auth.user;
+    next();
+};
+
 // --- Build Booklet PDF Endpoint ---
-app.post('/api/build-booklet', async (req, res) => {
+app.post('/api/build-booklet', authMiddleware, async (req, res) => {
     try {
         const data = req.body;
         console.log(`[Proxy] Build Booklet Request for ${data.city}`);
@@ -122,7 +212,7 @@ app.post('/api/build-booklet', async (req, res) => {
 });
 
 // --- Gemini Endpoint ---
-app.post('/api/gemini', async (req, res) => {
+app.post('/api/gemini', authMiddleware, async (req, res) => {
     try {
         const { prompt } = req.body;
         console.log(`[Proxy] Gemini Request received`);
@@ -148,7 +238,7 @@ app.post('/api/gemini', async (req, res) => {
 });
 
 // --- Google Places Endpoint ---
-app.post('/api/google-places', async (req, res) => {
+app.post('/api/google-places', authMiddleware, async (req, res) => {
     try {
         const { textQuery, center, radius } = req.body;
         console.log(`[Proxy] Google Places: "${textQuery}" @ ${JSON.stringify(center)}`);
@@ -198,7 +288,7 @@ app.post('/api/google-places', async (req, res) => {
 });
 
 // --- Foursquare Endpoint ---
-app.get('/api/foursquare', async (req, res) => {
+app.get('/api/foursquare', authMiddleware, async (req, res) => {
     try {
         const { query, ll, radius, limit } = req.query;
         console.log(`[Proxy] Foursquare: "${query}" @ ${ll}`);
@@ -230,7 +320,7 @@ app.get('/api/foursquare', async (req, res) => {
 });
 
 // --- Google Custom Search Endpoint ---
-app.get('/api/google-search', async (req, res) => {
+app.get('/api/google-search', authMiddleware, async (req, res) => {
     try {
         const { q, cx } = req.query;
         console.log(`[Proxy] Google Search: "${q}"`);
@@ -251,7 +341,7 @@ app.get('/api/google-search', async (req, res) => {
 });
 
 // --- DuckDuckGo Proxy ---
-app.get('/api/ddg', async (req, res) => {
+app.get('/api/ddg', authMiddleware, async (req, res) => {
     try {
         const { q } = req.query;
         console.log(`[Proxy] DDG: "${q}"`);
@@ -266,7 +356,7 @@ app.get('/api/ddg', async (req, res) => {
 });
 
 // --- Nominatim Proxy Endpoint (Avoids CORS) ---
-app.get('/api/nominatim', async (req, res) => {
+app.get('/api/nominatim', authMiddleware, async (req, res) => {
     try {
         const queryParams = new URLSearchParams(req.query).toString();
         // Heuristic: If 'q' is missing but 'lat'/'lon' are there, assume reverse geocoding.

@@ -1,5 +1,13 @@
 
+import { validateUser } from './utils/auth.js';
+
 export const handler = async (event, context) => {
+    // Auth Check
+    const auth = validateUser(event);
+    if (auth.error) {
+        return { statusCode: auth.status, body: JSON.stringify({ error: auth.error }) };
+    }
+
     const { q, cx } = event.queryStringParameters;
     const GOOGLE_PLACES_KEY = process.env.GOOGLE_PLACES_KEY || process.env.VITE_GOOGLE_PLACES_KEY;
     const GOOGLE_SEARCH_CX = cx || process.env.GOOGLE_SEARCH_CX || process.env.VITE_GOOGLE_SEARCH_CX;

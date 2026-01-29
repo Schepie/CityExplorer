@@ -1,7 +1,15 @@
 
+import { validateUser } from './utils/auth.js';
+
 export const handler = async (event, context) => {
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    // Auth Check
+    const auth = validateUser(event);
+    if (auth.error) {
+        return { statusCode: auth.status, body: JSON.stringify({ error: auth.error }) };
     }
 
     const { textQuery, center, radius } = JSON.parse(event.body);

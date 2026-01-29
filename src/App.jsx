@@ -4,7 +4,9 @@ import MapContainer from './components/MapContainer';
 import ItinerarySidebar from './components/ItinerarySidebar';
 import CitySelector from './components/CitySelector';
 import './index.css'; // Ensure styles are loaded
-import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
+import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions, setAuthToken } from './utils/poiService';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import LoginModal from './components/auth/LoginModal';
 import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle } from './utils/routeUtils';
 
@@ -50,7 +52,24 @@ export const NAV_PHASES = {
 
 import NavigationOverlay from './components/NavigationOverlay';
 
-function App() {
+function CityExplorerApp() {
+  const { user, sessionToken, verifyMagicLink, isLoading: authLoading, isBlocked } = useAuth();
+
+  useEffect(() => {
+    // Magic Link Verification
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (token) {
+      verifyMagicLink(token).then(status => {
+        if (status === true) window.history.replaceState({}, document.title, window.location.pathname);
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    setAuthToken(sessionToken);
+  }, [sessionToken]);
+
   const [routeData, setRouteData] = useState(null);
   const [isNavigationOpen, setIsNavigationOpen] = useState(false); // Navigation UI State
   const [isLoading, setIsLoading] = useState(false);
@@ -2984,6 +3003,50 @@ function App() {
     // setIsNavigationOpen(true);
   };
 
+  // Auth Guard (Moved here to obey Rules of Hooks)
+  if (authLoading) return <div className="fixed inset-0 bg-slate-900 flex items-center justify-center text-white">Loading...</div>;
+
+  // Blocked Screen (Precedes LoginModal to catch blocked login attempts)
+  if (isBlocked) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950 p-4 font-sans text-white">
+        <div className="w-full max-w-md bg-slate-900 border border-red-500/30 rounded-2xl shadow-2xl p-8 text-center relative overflow-hidden">
+          {/* Subtle Red Glow */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-red-500/10 blur-[50px] rounded-full pointer-events-none" />
+
+          <div className="relative z-10">
+            <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m4-11a4 4 0 11-8 0 4 4 0 018 0zM7 10h10a2 2 0 012 2v7a2 2 0 01-2 2H7a2 2 0 01-2-2v-7a2 2 0 012-2z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold mb-4">Account Locked</h2>
+            <p className="text-slate-400 mb-8 leading-relaxed">
+              Your access to CityExplorer has been suspended by the administrator.
+            </p>
+            <div className="bg-slate-800/50 rounded-xl p-5 mb-8 text-sm text-slate-300 border border-white/5">
+              To request access, please contact:<br />
+              <a
+                href={`mailto:geert.schepers@gmail.com?subject=${encodeURIComponent('CityExplorer blocked ')}&body=${encodeURIComponent('Dear CityExplorer team,\n\nCan you please deblock my account.\nEmail address : [ADD YOUR EMAIL ADDRESS]')}`}
+                className="text-blue-400 hover:text-blue-300 font-bold mt-2 block text-base"
+              >
+                CityExplorer admin
+              </a>
+            </div>
+            <button
+              onClick={() => window.location.href = '/'}
+              className="px-6 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all border border-white/10"
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginModal />;
+
   return (
     <div
       className="flex h-screen w-screen overflow-hidden bg-slate-900 text-white relative transition-all duration-500"
@@ -3244,4 +3307,10 @@ function App() {
   );
 }
 
-export default App;
+export default function AppWrapper() {
+  return (
+    <AuthProvider>
+      <CityExplorerApp />
+    </AuthProvider>
+  );
+}
