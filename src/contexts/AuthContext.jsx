@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
+import { setAuthToken, clearAuthToken } from '../utils/authStore.js';
+
 const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
@@ -25,6 +27,7 @@ export const AuthProvider = ({ children }) => {
     const login = (token, userData) => {
         localStorage.setItem('city_explorer_token', token);
         localStorage.setItem('city_explorer_user', JSON.stringify(userData));
+        setAuthToken(token); // Sync external store
         setSessionToken(token);
         setUser(userData);
         setIsBlocked(false);
@@ -33,6 +36,7 @@ export const AuthProvider = ({ children }) => {
     const logout = () => {
         localStorage.removeItem('city_explorer_token');
         localStorage.removeItem('city_explorer_user');
+        clearAuthToken(); // Sync external store
         setSessionToken(null);
         setUser(null);
         setIsBlocked(false);
@@ -86,7 +90,32 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    // 4. AUTHENTICATED FETCH
+    // 4. Verify Access Code
+    const verifyAccessCode = async (email, code) => {
+        try {
+            const res = await fetch('/api/auth-verify-code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, code })
+            });
+            const data = await res.json();
+
+            if (res.status === 403) {
+                setIsBlocked(true);
+                return 'blocked';
+            }
+
+            if (!res.ok) throw new Error(data.error || 'Verification failed');
+
+            login(data.token, data.user);
+            return true;
+        } catch (err) {
+            console.error(err);
+            throw err;
+        }
+    };
+
+    // 5. AUTHENTICATED FETCH
     // Wrapper for fetch that auto-injects the token
     const authFetch = async (url, options = {}) => {
         const headers = options.headers || {};
@@ -115,7 +144,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, sessionToken, isLoading, isBlocked, login, logout, requestMagicLink, verifyMagicLink, authFetch }}>
+        <AuthContext.Provider value={{ user, sessionToken, isLoading, isBlocked, login, logout, requestMagicLink, verifyMagicLink, verifyAccessCode, authFetch }}>
             {children}
         </AuthContext.Provider>
     );

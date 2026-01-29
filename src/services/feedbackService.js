@@ -1,3 +1,5 @@
+import { apiFetch } from '../utils/api.js';
+
 /* Feedback service for POI thumbs up/down */
 
 /**
@@ -31,9 +33,8 @@ export function getFeedback(poiId) {
  */
 export async function postFeedback(poiId, vote) {
     try {
-        await fetch('/api/feedback', {
+        await apiFetch('/api/feedback', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ poiId, vote })
         });
     } catch (e) {

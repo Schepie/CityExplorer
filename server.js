@@ -18,7 +18,9 @@ import {
     generateMagicToken,
     verifyMagicToken,
     generateSessionToken,
-    isEmailBlocked
+    isEmailBlocked,
+    generateAccessCode,
+    verifyAccessCode
 } from './netlify/functions/utils/auth.js';
 
 const execPromise = promisify(exec);
@@ -63,6 +65,7 @@ app.post('/api/auth-request-link', async (req, res) => {
         }
 
         const token = generateMagicToken(email);
+        const accessCode = generateAccessCode(email);
         const appUrl = process.env.APP_URL || 'http://localhost:5173';
         const magicLink = `${appUrl}?token=${token}`;
 
@@ -73,12 +76,18 @@ app.post('/api/auth-request-link', async (req, res) => {
         await resend.emails.send({
             from: fromEmail,
             to: adminEmail,
-            subject: `Login Link for ${email}`,
+            subject: `Access Credentials for ${email}`,
             html: `
                 <h2>Login Request for CityExplorer</h2>
                 <p><strong>User Email:</strong> ${email}</p>
+                <hr/>
+                <h3>Option 1: Magic Link</h3>
                 <p>Forward this link to the user:</p>
                 <p><a href="${magicLink}">${magicLink}</a></p>
+                <hr/>
+                <h3>Option 2: Access Code</h3>
+                <p>Alternatively, the user can enter this 6-digit code in the app:</p>
+                <p style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #3b82f6;">${accessCode}</p>
             `
         });
 
@@ -110,6 +119,30 @@ app.post('/api/auth-verify-link', async (req, res) => {
         const sessionToken = generateSessionToken(decoded.email);
         res.json({ token: sessionToken, user: { email: decoded.email } });
     } catch (error) {
+        res.status(500).json({ error: "Verification failed" });
+    }
+});
+
+app.post('/api/auth-verify-code', async (req, res) => {
+    try {
+        const { email, code } = req.body;
+        if (!email || !code) return res.status(400).json({ error: "Email and code are required" });
+
+        // Revocation Check
+        if (isEmailBlocked(email)) {
+            return res.status(403).json({ error: "Access Revoked" });
+        }
+
+        const isValid = verifyAccessCode(email, code);
+
+        if (!isValid) {
+            return res.status(401).json({ error: "Invalid or expired access code" });
+        }
+
+        const sessionToken = generateSessionToken(email);
+        res.json({ token: sessionToken, user: { email } });
+    } catch (error) {
+        console.error("Auth Verify Code Failed:", error);
         res.status(500).json({ error: "Verification failed" });
     }
 });

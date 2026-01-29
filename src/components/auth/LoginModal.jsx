@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const LoginModal = () => {
-    const { requestMagicLink, isLoading: authLoading } = useAuth();
+    const { requestMagicLink, verifyAccessCode, isLoading: authLoading } = useAuth();
     const [email, setEmail] = useState('');
+    const [accessCode, setAccessCode] = useState('');
+    const [loginMode, setLoginMode] = useState('request'); // request | code
     const [status, setStatus] = useState('idle'); // idle | loading | success | error
     const [errorMsg, setErrorMsg] = useState('');
 
-    const handleSubmit = async (e) => {
+    const handleRequestLink = async (e) => {
         e.preventDefault();
         if (!email) return;
 
@@ -16,6 +18,7 @@ const LoginModal = () => {
 
         try {
             const success = await requestMagicLink(email);
+            if (success === 'blocked') return;
             if (success) {
                 setStatus('success');
             } else {
@@ -28,10 +31,24 @@ const LoginModal = () => {
         }
     };
 
-    if (authLoading) return null; // Don't show while checking session
+    const handleVerifyCode = async (e) => {
+        e.preventDefault();
+        if (!email || !accessCode) return;
 
-    // If fully logged in, Parent component should hide this. 
-    // This component assumes it is being shown because user is NOT logged in.
+        setStatus('loading');
+        setErrorMsg('');
+
+        try {
+            const success = await verifyAccessCode(email, accessCode);
+            if (success === 'blocked') return;
+            // Success handles redirection in AuthContext
+        } catch (err) {
+            setStatus('error');
+            setErrorMsg(err.message || 'Invalid or expired code.');
+        }
+    };
+
+    if (authLoading) return null;
 
     return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -42,8 +59,8 @@ const LoginModal = () => {
 
                 <div className="relative z-10">
                     <h2 className="text-2xl font-bold text-white mb-2">Welcome to CityExplorer</h2>
-                    <p className="text-slate-400 mb-8 text-sm">
-                        Sign in to access premium AI features and explore the world.
+                    <p className="text-slate-400 mb-6 text-sm">
+                        Sign in to access premium AI features.
                     </p>
 
                     {status === 'success' ? (
@@ -55,58 +72,101 @@ const LoginModal = () => {
                             </div>
                             <h3 className="text-white font-bold mb-2">Request Received</h3>
                             <p className="text-slate-400 text-sm">
-                                Due to security/verification settings, your login link for <span className="text-white">{email}</span> will be manually approved and forwarded by our administrator.
+                                Your access credentials for <span className="text-white">{email}</span> will be manually approved and forwarded by our administrator.
                             </p>
-                            <p className="text-slate-500 text-[10px] mt-4 leading-relaxed">
-                                Please check your inbox (and spam) in a few minutes after the administrator forwards the link to you.
-                            </p>
-                            <button
-                                onClick={() => setStatus('idle')}
-                                className="mt-6 text-xs text-slate-500 hover:text-white transition-colors"
-                            >
-                                Try a different email
-                            </button>
+                            <div className="mt-6 flex flex-col gap-3">
+                                <button
+                                    onClick={() => {
+                                        setLoginMode('code');
+                                        setStatus('idle');
+                                    }}
+                                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-sm transition-colors"
+                                >
+                                    I received my Access Code
+                                </button>
+                                <button
+                                    onClick={() => setStatus('idle')}
+                                    className="text-xs text-slate-500 hover:text-white transition-colors"
+                                >
+                                    Try a different email
+                                </button>
+                            </div>
                         </div>
                     ) : (
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div>
-                                <label className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">
-                                    Email Address
-                                </label>
-                                <input
-                                    type="email"
-                                    required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    placeholder="you@example.com"
-                                    className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                                />
+                        <>
+                            {/* Tabs */}
+                            <div className="flex bg-slate-800/50 p-1 rounded-xl mb-6">
+                                <button
+                                    onClick={() => setLoginMode('request')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${loginMode === 'request' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    Request Access
+                                </button>
+                                <button
+                                    onClick={() => setLoginMode('code')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${loginMode === 'code' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    Enter Access Code
+                                </button>
                             </div>
 
-                            {status === 'error' && (
-                                <div className="text-red-400 text-xs bg-red-500/10 p-3 rounded-lg border border-red-500/20">
-                                    {errorMsg}
+                            <form onSubmit={loginMode === 'request' ? handleRequestLink : handleVerifyCode} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">
+                                        Email Address
+                                    </label>
+                                    <input
+                                        type="email"
+                                        required
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        placeholder="you@example.com"
+                                        className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                    />
                                 </div>
-                            )}
 
-                            <button
-                                type="submit"
-                                disabled={status === 'loading'}
-                                className="w-full bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-600/90 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                                {status === 'loading' ? (
-                                    <>
-                                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Sending...
-                                    </>
-                                ) : (
-                                    "Send Magic Link"
+                                {loginMode === 'code' && (
+                                    <div>
+                                        <label className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">
+                                            6-Digit Access Code
+                                        </label>
+                                        <input
+                                            type="text"
+                                            required
+                                            maxLength={6}
+                                            value={accessCode}
+                                            onChange={(e) => setAccessCode(e.target.value.replace(/[^0-9]/g, ''))}
+                                            placeholder="000000"
+                                            className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 text-center tracking-[1em] text-xl font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                                        />
+                                    </div>
                                 )}
-                            </button>
-                        </form>
+
+                                {status === 'error' && (
+                                    <div className="text-red-400 text-xs bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+                                        {errorMsg}
+                                    </div>
+                                )}
+
+                                <button
+                                    type="submit"
+                                    disabled={status === 'loading'}
+                                    className="w-full bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-600/90 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {status === 'loading' ? (
+                                        <>
+                                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Processing...
+                                        </>
+                                    ) : (
+                                        loginMode === 'request' ? "Request Magic Link" : "Sign In with Code"
+                                    )}
+                                </button>
+                            </form>
+                        </>
                     )}
                 </div>
             </div>

@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { apiFetch } from "../utils/api.js";
 
 /**
  * POI Intelligence Engine
@@ -171,7 +172,7 @@ Genereer de introductie voor de tocht in ${this.config.city}.
 
         try {
             const url = '/api/gemini';
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt })
@@ -211,7 +212,7 @@ DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'En
 
         try {
             const url = '/api/gemini';
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt })
@@ -312,7 +313,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
         try {
             const url = '/api/gemini';
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt })
@@ -387,7 +388,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
         try {
             const url = '/api/gemini';
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt }),
@@ -461,7 +462,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
         try {
             const url = '/api/gemini';
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt }),

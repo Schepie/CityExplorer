@@ -4,7 +4,7 @@ import MapContainer from './components/MapContainer';
 import ItinerarySidebar from './components/ItinerarySidebar';
 import CitySelector from './components/CitySelector';
 import './index.css'; // Ensure styles are loaded
-import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions, setAuthToken } from './utils/poiService';
+import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import LoginModal from './components/auth/LoginModal';
 import * as smartPoiUtils from './utils/smartPoiUtils';
@@ -51,6 +51,7 @@ export const NAV_PHASES = {
 
 
 import NavigationOverlay from './components/NavigationOverlay';
+import { apiFetch } from './utils/api.js';
 
 function CityExplorerApp() {
   const { user, sessionToken, verifyMagicLink, isLoading: authLoading, isBlocked } = useAuth();
@@ -66,9 +67,7 @@ function CityExplorerApp() {
     }
   }, []);
 
-  useEffect(() => {
-    setAuthToken(sessionToken);
-  }, [sessionToken]);
+
 
   const [routeData, setRouteData] = useState(null);
   const [isNavigationOpen, setIsNavigationOpen] = useState(false); // Navigation UI State
@@ -660,7 +659,7 @@ function CityExplorerApp() {
       let results = [];
       try {
         // 1. Try Nominatim (via Local Proxy to avoid CORS)
-        const cityResponse = await fetch(`/api/nominatim?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, {
+        const cityResponse = await apiFetch(`/api/nominatim?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, {
           headers: { 'Accept-Language': language },
           signal: AbortSignal.timeout(8000)
         });
@@ -1053,7 +1052,7 @@ function CityExplorerApp() {
       // We rely on the server to have the API KEY and CX configured.
       const searchUrl = `/api/google-search?q=${encodeURIComponent(fullQuery)}`;
 
-      let gRes = await fetch(searchUrl);
+      let gRes = await apiFetch(searchUrl);
       let gData = await gRes.json();
 
       // RETRY LOGIC: If context search failed, try raw name
@@ -1061,7 +1060,7 @@ function CityExplorerApp() {
       if ((!gData.items || gData.items.length === 0) && fullQuery !== query) {
         // console.log("Google Context Search failed. Retrying raw:", query);
         const retryUrl = `/api/google-search?q=${encodeURIComponent(query)}`;
-        gRes = await fetch(retryUrl);
+        gRes = await apiFetch(retryUrl);
         gData = await gRes.json();
       }
 
@@ -1948,13 +1947,13 @@ function CityExplorerApp() {
           // Geocode relative to current city to avoid jumps
           const cityName = validatedCityData?.address?.city || city;
           const q = `${newStartInput}, ${cityName}`;
-          const res = await fetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
+          const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
           const data = await res.json();
           if (data && data[0]) {
             newStartCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
           } else {
             // Try global
-            const res2 = await fetch(`/api/nominatim?q=${encodeURIComponent(newStartInput)}&format=json&limit=1`);
+            const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(newStartInput)}&format=json&limit=1`);
             const data2 = await res2.json();
             if (data2 && data2[0]) {
               newStartCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
@@ -2087,14 +2086,14 @@ function CityExplorerApp() {
       try {
         const cityName = cityData.address?.city || cityData.name;
         const q = `${activeStart}, ${cityName}`;
-        const res = await fetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
+        const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
         const data = await res.json();
         if (data && data[0]) {
           cityCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
         } else {
           // Fallback 1: Try space instead of comma ( Nominatim sometimes prefers "Place City" over "Place, City" )
           const q2 = `${activeStart} ${cityName}`;
-          const res2 = await fetch(`/api/nominatim?q=${encodeURIComponent(q2)}&format=json&limit=1`);
+          const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q2)}&format=json&limit=1`);
           const data2 = await res2.json();
 
           if (data2 && data2[0]) {
@@ -2102,7 +2101,7 @@ function CityExplorerApp() {
           } else {
             // Fallback 2: Try searching for the start point globally (maybe it contains the city name itself or is unique)
             console.log("Start point context search failed. Retrying global search:", activeStart);
-            const res3 = await fetch(`/api/nominatim?q=${encodeURIComponent(activeStart)}&format=json&limit=1`);
+            const res3 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(activeStart)}&format=json&limit=1`);
             const data3 = await res3.json();
             if (data3 && data3[0]) {
               cityCenter = [parseFloat(data3[0].lat), parseFloat(data3[0].lon)];
@@ -2729,7 +2728,7 @@ function CityExplorerApp() {
       };
 
       console.log("[PDF] Requesting booklet generation...");
-      const response = await fetch('/api/build-booklet', {
+      const response = await apiFetch('/api/build-booklet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dataToSave)

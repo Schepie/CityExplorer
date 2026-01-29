@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import { generateMagicToken, isEmailBlocked } from './utils/auth.js';
+import { generateMagicToken, isEmailBlocked, generateAccessCode } from './utils/auth.js';
 
 export const handler = async (event, context) => {
   // Only allow POST
@@ -20,8 +20,9 @@ export const handler = async (event, context) => {
       return { statusCode: 403, body: JSON.stringify({ error: "Access Revoked" }) };
     }
 
-    // 1. Generate Token
+    // 1. Generate Token & Access Code
     const token = generateMagicToken(email);
+    const accessCode = generateAccessCode(email);
 
     // 2. Construct Link
     const appUrl = process.env.APP_URL || 'http://localhost:5173'; // Matches development port
@@ -35,13 +36,24 @@ export const handler = async (event, context) => {
     await resend.emails.send({
       from: fromEmail,
       to: adminEmail,
-      subject: `Login Link for ${email}`,
+      subject: `Access Credentials for ${email}`,
       html: `
-        <div style="font-family: sans-serif; padding: 20px;">
-          <h2>Login Request for CityExplorer</h2>
+        <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
+          <h2 style="color: #0f172a;">Login Request for CityExplorer</h2>
           <p><strong>User Email:</strong> ${email}</p>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;"/>
+          
+          <h3 style="color: #334155;">Option 1: Magic Link</h3>
           <p>Forward the link below to the user. This link expires in 15 minutes.</p>
-          <p><a href="${magicLink}">${magicLink}</a></p>
+          <p style="word-break: break-all;"><a href="${magicLink}">${magicLink}</a></p>
+          
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;"/>
+          
+          <h3 style="color: #334155;">Option 2: Access Code</h3>
+          <p>Alternatively, the user can enter this 6-digit code in the app:</p>
+          <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; display: inline-block;">
+            <span style="font-size: 28px; font-weight: bold; letter-spacing: 6px; color: #2563eb; font-family: monospace;">${accessCode}</span>
+          </div>
         </div>
       `
     });

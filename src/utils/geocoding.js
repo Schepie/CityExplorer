@@ -1,3 +1,4 @@
+import { apiFetch } from './api.js';
 
 /**
  * robustGeocoding.js
@@ -13,7 +14,7 @@ export const resolveLocation = async (query, language = 'en', signal = null) => 
     // 1. Try Nominatim (via Local Proxy to avoid CORS and usage limits if configured)
     // 1. Try Nominatim (via Local Proxy to avoid CORS and usage limits if configured)
     const performNominatimSearch = async (searchQuery) => {
-        const cityResponse = await fetch(`/api/nominatim?q=${encodeURIComponent(searchQuery)}&format=json&limit=5&addressdetails=1`, {
+        const cityResponse = await apiFetch(`/api/nominatim?q=${encodeURIComponent(searchQuery)}&format=json&limit=5&addressdetails=1`, {
             headers: { 'Accept-Language': language },
             signal: signal || AbortSignal.timeout(8000)
         });
