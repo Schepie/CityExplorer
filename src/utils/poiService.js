@@ -75,7 +75,12 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) =
         }
 
         try {
-            const res = await fetch(url);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
             const data = await res.json();
             if (data && data.length > 0) {
                 // Determine source for attribution
@@ -119,7 +124,12 @@ export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => 
     const url = `/api/foursquare?query=${encodeURIComponent(interest)}&ll=${lat},${lng}&radius=${radius}&limit=30`;
 
     try {
-        const res = await fetch(url);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s
+
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
         if (!res.ok) {
             console.warn(`Foursquare Proxy Error ${res.status}`);
             return [];
@@ -129,8 +139,8 @@ export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => 
         if (data.results && data.results.length > 0) {
             return data.results.map(place => ({
                 name: place.name,
-                lat: place.geocodes?.main?.latitude,
-                lng: place.geocodes?.main?.longitude,
+                lat: parseFloat(place.geocodes?.main?.latitude),
+                lng: parseFloat(place.geocodes?.main?.longitude),
                 description: place.categories?.map(c => c.name).join(', ') || 'Place of interest',
                 id: `fs-${place.fsq_id}`,
                 source: 'Foursquare'
@@ -149,6 +159,9 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
     const url = '/api/google-places';
 
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s
+
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -158,8 +171,10 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
                 textQuery: interest,
                 center: { lat, lng },
                 radius: maxRadius
-            })
+            }),
+            signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const errText = await response.text();
@@ -172,8 +187,8 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
         if (data.places && data.places.length > 0) {
             return data.places.map(place => ({
                 name: place.displayName?.text || 'Unknown Place',
-                lat: place.location?.latitude,
-                lng: place.location?.longitude,
+                lat: parseFloat(place.location?.latitude),
+                lng: parseFloat(place.location?.longitude),
                 description: place.editorialSummary?.text || place.types?.map(t => t.replace('_', ' ')).slice(0, 3).join(', ') || 'Place of Interest',
                 address: place.formattedAddress,
                 id: `google-${place.id}`,

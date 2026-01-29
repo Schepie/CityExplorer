@@ -411,6 +411,12 @@ function App() {
         setConstraintValue(data.constraintValue || 5);
         // isRoundtrip removed as it's now constant true
         setDescriptionLength(data.descriptionLength || 'medium');
+        // Update auto-save ref to prevent immediate re-saving of the loaded file
+        if (data.routeData.pois) {
+          const currentKey = `${data.city || ''}_${data.routeData.pois.length}_${data.routeData.pois.map(p => p.id).join('_')}`;
+          lastAutoSavedKeyRef.current = currentKey;
+        }
+
         setRouteData(data.routeData);
         setFoundPoisCount(data.routeData.pois ? data.routeData.pois.length : 0);
         setIsLoading(false);
@@ -486,6 +492,9 @@ function App() {
       // We do this for ALL POIs first so the user sees results quickly.
       for (const poi of pois) {
         if (signal.aborted) return; // Exit if reset
+        // New: Skip if already done
+        if (poi.isFullyEnriched) continue;
+
 
         try {
           // Step 1: Gather Signals (Triangulation)
@@ -531,6 +540,9 @@ function App() {
       // Now iterate again to get the heavy content
       for (const poi of pois) {
         if (signal.aborted) return; // Exit if reset
+        // New: Skip if already done
+        if (poi.isFullyEnriched) continue;
+
 
         try {
           // Retrieve stored signals (or should we re-fetch? Stored is better)
@@ -1094,11 +1106,21 @@ function App() {
       let searchIntent = null;
 
       // DETECT SEARCH INTENT
-      const searchMatch = aiResponseText.match(/\[\[SEARCH:\s*(.*?)\]\]/);
+      // Regex: Case insensitive "SEARCH", allow newlines, optional spaces
+      // Supports both [[SEARCH:...]] and [SEARCH:...]
+      const searchMatch = aiResponseText.match(/\[{1,2}\s*SEARCH\s*:\s*([\s\S]*?)\s*\]{1,2}/i);
+
+      // FALLBACK: Semantic Promise Detection
+      // If AI says "Ik zoek [X] voor je op", it means valid intent even if tag is missing.
+      const semanticMatch = aiResponseText.match(/(?:Ik zoek|I am searching for|Checking|Opzoeken van)\s+(?:de|het|een|an|a|the)?\s*([A-Z][a-zA-Z0-9\s\-\']+?)\s+(?:voor je op|for you|in de buurt|nearby)/i);
+
       if (searchMatch) {
         searchIntent = searchMatch[1];
-        // Clean the message for display
         aiResponseText = aiResponseText.replace(searchMatch[0], '').trim();
+      } else if (semanticMatch) {
+        console.log("[AI] Semantic Search Promise detected:", semanticMatch[1]);
+        searchIntent = semanticMatch[1].trim();
+        // Don't remove text, let the user see the confirmation
       }
 
       setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
@@ -1137,7 +1159,8 @@ function App() {
           const effectiveInterests = result.params?.interests || interests;
 
           // CASE A: Start New / Regenerate
-          if (searchMode === 'prompt' || !routeData || isCitySwitch) {
+          // Fix: Don't force new route if just using prompt mode with existing route (unless switching cities)
+          if (!routeData || isCitySwitch) {
             let finalCity = newCity || city;
 
             // Fix: If city is null but startPoint implies current location, use current location
@@ -1171,11 +1194,46 @@ function App() {
           }
 
           // CASE B: ADD to current journey
-          // CASE B: ADD to current journey
           if (routeData) {
             setIsAiViewActive(true);
-            await handleAddToJourney(null, effectiveInterests, result.params);
-            setTimeout(() => setIsAiViewActive(false), 1000);
+
+            // 1. Check if user explicitly asked for an ADD/SEARCH
+            // Regex tries to capture the object: "Voeg [Molenpoort] toe", "Zoek [Koffie]"
+            // Robust cleaning: explicit steps are safer than one giant regex
+            const actionRegex = /^(?:voeg|add|zoek|find|plaats|put)\b/i;
+            const hasAction = actionRegex.test(promptText);
+
+            let extractedInterest = null;
+            if (hasAction) {
+              let clean = promptText.replace(actionRegex, '').trim();
+              clean = clean.replace(/[\.\?!]+$/, '');
+              clean = clean.replace(/\b(?:toe|aan|in)\b$/i, '').trim();
+              clean = clean.replace(/^(?:de|het|een|an|a|the)\b\s*/i, '').trim();
+              clean = clean.replace(/^["']|["']$/g, '');
+              if (clean.length > 2) extractedInterest = clean;
+            }
+
+            const userAskedForAdd = hasAction && !!extractedInterest;
+
+            // 2. Determine target interest (AI param OR Regex fallback)
+            // If AI gave a NEW interest, use it. If not, but user asked for Add, use extracted.
+            let targetInterest = (effectiveInterests && effectiveInterests !== interests) ? effectiveInterests : null;
+
+            if (!targetInterest && userAskedForAdd && extractedInterest) {
+              console.log("[AI] Missing AI params but valid User Intent. Using extracted:", extractedInterest);
+              // DEBUG: Notify user that we are using the fallback - REMOVED
+
+              targetInterest = extractedInterest;
+            }
+
+            if (targetInterest) {
+              console.log("[AI] Redirecting to Search Proposal:", targetInterest);
+              await handleAiSearchRequest(targetInterest);
+            } else {
+              // Just updating parameters (travel mode, distance etc) is okay to do automatically
+              await handleAddToJourney(null, effectiveInterests, result.params);
+              setTimeout(() => setIsAiViewActive(false), 1000);
+            }
             return;
           }
         }
@@ -1194,147 +1252,165 @@ function App() {
 
   // New Handler for AI-triggered Searches - Revised for Smart Algorithm
   const handleAiSearchRequest = async (rawQuery) => {
-    console.log("AI Requested Search for:", rawQuery);
+    const searchId = Date.now();
+    console.log(`[AI Search #${searchId}] Starting for:`, rawQuery);
 
-    // Parse "Item | NEAR: Location" syntax
     let query = rawQuery;
     let locationContext = null;
 
-    if (rawQuery.includes("NEAR:")) {
-      const parts = rawQuery.split("NEAR:");
-      query = parts[0].replace('|', '').trim();
-      locationContext = parts[1].trim();
+    // Regex split to handle NEAR/near/Near with optional spaces
+    const nearSplit = rawQuery.split(/\s*\|\s*NEAR:\s*/i);
+
+    if (nearSplit.length > 1) {
+      query = nearSplit[0].trim();
+      locationContext = nearSplit[1].trim();
     }
 
     setLoadingText(language === 'nl' ? `Zoeken naar ${query}...` : `Searching for ${query}...`);
     setIsLoading(true);
 
-    try {
-      // 1. Determine Search Location (User Loc > Route Center)
-      let center = routeData?.center;
-      let radius = 2; // Default 2km lookaround
+    // DEBUG: Explicit confirmation in chat - REMOVED
 
-      // Overwrite center if NEAR context is provided and found in route
+    try {
+      let center = routeData?.center;
+      let radius = 2;
       let contextFound = false;
       let referencePoiId = null;
-      if (locationContext && routeData && routeData.pois) {
 
-        if (locationContext.toUpperCase() === '@MIDPOINT') {
-          let totalStats = 0;
-          const dists = [0];
-          // Simple Euclidean sum for midpoint estimation
-          for (let i = 0; i < routeData.pois.length - 1; i++) {
-            const d = getDistance(routeData.pois[i].lat, routeData.pois[i].lng, routeData.pois[i + 1].lat, routeData.pois[i + 1].lng);
-            totalStats += d;
-            dists.push(totalStats);
-          }
-          const halfDist = totalStats / 2;
-          let midIndex = 0;
-          for (let i = 0; i < dists.length; i++) {
-            if (dists[i] >= halfDist) {
-              midIndex = Math.max(0, i - 1);
-              break;
+      if (locationContext && routeData && routeData.pois) {
+        const upperContext = locationContext.toUpperCase();
+        if (upperContext === '@CURRENT_ROUTE' || upperContext === '@ROUTE') {
+          center = routeData.center;
+          radius = 10;
+          contextFound = true;
+          console.log(`[AI Search #${searchId}] Context: Whole Route (10km)`);
+        } else if (upperContext === '@MIDPOINT') {
+          if (routeData.pois.length >= 2) {
+            let totalDist = 0;
+            const dists = [0];
+            for (let i = 0; i < routeData.pois.length - 1; i++) {
+              const d = getDistance(routeData.pois[i].lat, routeData.pois[i].lng, routeData.pois[i + 1].lat, routeData.pois[i + 1].lng);
+              totalDist += d;
+              dists.push(totalDist);
             }
-          }
-          const midPoi = routeData.pois[midIndex];
-          if (midPoi) {
-            center = [midPoi.lat, midPoi.lng];
-            radius = 1.5;
-            contextFound = true;
-            referencePoiId = midPoi.id;
-            console.log(`AI Search: Calculated Midpoint at POI #${midIndex} (${midPoi.name})`);
+            const halfDist = totalDist / 2;
+            let midIndex = 0;
+            for (let i = 0; i < dists.length; i++) {
+              if (dists[i] >= halfDist) {
+                midIndex = Math.max(0, i - 1);
+                break;
+              }
+            }
+            const midPoi = routeData.pois[midIndex];
+            if (midPoi) {
+              center = [midPoi.lat, midPoi.lng];
+              radius = 5.0;
+              contextFound = true;
+              referencePoiId = midPoi.id;
+              console.log(`[AI Search #${searchId}] Context: Midpoint @ ${midPoi.name}`);
+            }
           }
         } else {
-          // Normal Match (Name or Index)
           let target = null;
-
-          // Check for Index Match (e.g. "POI 9", "punt 9", or just "9")
           const indexMatch = locationContext.match(/(?:POI|punt|#)?\s*(\d+)/i);
           if (indexMatch) {
-            const idx = parseInt(indexMatch[1]) - 1; // 1-based to 0-based
-            if (idx >= 0 && idx < routeData.pois.length) {
-              target = routeData.pois[idx];
-              console.log(`AI Search: Index Match found for "${locationContext}" -> #${idx + 1} (${target.name})`);
-            }
+            const idx = parseInt(indexMatch[1]) - 1;
+            if (idx >= 0 && idx < routeData.pois.length) target = routeData.pois[idx];
           }
-
-          // Fallback to Name Match
           if (!target) {
             target = routeData.pois.find(p => p.name.toLowerCase().includes(locationContext.toLowerCase()));
           }
-
           if (target) {
             center = [target.lat, target.lng];
-            radius = 1.0;
+            radius = 5.0;
             contextFound = true;
             referencePoiId = target.id;
-            console.log(`AI Search: Focusing on ${target.name} based on context '${locationContext}'`);
+            console.log(`[AI Search #${searchId}] Context: Anchor POI ${target.name}`);
           }
         }
       }
 
-      // If user is sharing location and is valid (AND no specific context used)
-      if (!contextFound && userLocation && userLocation.lat && userLocation.lng) {
-        center = [userLocation.lat, userLocation.lng];
-        radius = 1.5;
-      } else if (!contextFound && focusedLocation) {
-        center = [focusedLocation.lat, focusedLocation.lng];
+      if (!contextFound) {
+        if (userLocation && userLocation.lat) {
+          center = [userLocation.lat, userLocation.lng];
+          radius = 5.0;
+        } else if (routeData?.center) {
+          center = routeData.center;
+          radius = 7.0;
+        } else if (validatedCityData) {
+          center = [validatedCityData.lat, validatedCityData.lon];
+          radius = 10.0;
+        }
       }
 
-      // Mock City Data for getCombinedPOIs
+      if (!center || isNaN(center[0])) {
+        console.warn(`[AI Search #${searchId}] No center found. Fallback to city defaults.`);
+        center = validatedCityData ? [validatedCityData.lat, validatedCityData.lon] : [48.8566, 2.3522]; // Paris fallback
+        radius = 15;
+      }
+
       const tempCityData = { lat: center[0], lon: center[1], name: "Search Area" };
+      const robustSources = { osm: true, foursquare: true, google: true };
 
-      // 2. Fetch Candidates
-      const candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, searchSources);
+      console.log(`[AI Search #${searchId}] Fetching for "${query}" at ${center} (Sources: All)`);
+      let candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, robustSources);
 
-      if (candidates.length > 0) {
-        // Take top 3 & Calculate Detour Impact using the new Smart Algorithm
+      if ((!candidates || candidates.length === 0) && radius < 15) {
+        console.log(`[AI Search #${searchId}] Retrying broader (15km) search...`);
+        candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", 15, robustSources);
+      }
+
+      if (candidates && candidates.length > 0) {
+        console.log(`[AI Search #${searchId}] Found ${candidates.length} results.`);
         const currentRoute = routeData?.pois || [];
-        const startLoc = { lat: routeData?.center[0], lng: routeData?.center[1] };
         const travelModeForEstimation = travelMode === 'cycling' ? 'bike' : 'walk';
 
         const suggestions = candidates.slice(0, 3).map(cand => {
-          // 1. Calculate Primary Detour (After Anchor)
           let anchorIdx = -1;
           if (referencePoiId) {
             anchorIdx = currentRoute.findIndex(p => p.id === referencePoiId);
           }
 
-          const primaryDetour = smartPoiUtils.added_detour_if_inserted_after(
-            { center: routeData.center, pois: currentRoute },
-            anchorIdx,
-            cand,
-            travelModeForEstimation
-          );
+          // Safety check for detour calculation
+          let primaryDetour = { added_distance_m: 0, added_duration_min: 0 };
+          if (routeData && routeData.center) {
+            try {
+              primaryDetour = smartPoiUtils.added_detour_if_inserted_after(
+                { center: routeData.center, pois: currentRoute },
+                anchorIdx,
+                cand,
+                travelModeForEstimation
+              );
+            } catch (err) { console.warn("Detour calc failed", err); }
+          }
 
-          // 2. Search for Smart Alternatives (Beter na POI k?)
           let bestAlternative = null;
           let minAlternativeDetour = primaryDetour.added_distance_m;
 
-          // Check if any other insertion point is much better
-          // We check all possible indices
-          for (let i = -1; i < currentRoute.length; i++) {
-            if (i === anchorIdx) continue; // Skip the primary one
+          if (routeData && routeData.center) {
+            for (let i = -1; i < currentRoute.length; i++) {
+              if (i === anchorIdx) continue;
+              try {
+                const altDetour = smartPoiUtils.added_detour_if_inserted_after(
+                  { center: routeData.center, pois: currentRoute },
+                  i,
+                  cand,
+                  travelModeForEstimation
+                );
 
-            const altDetour = smartPoiUtils.added_detour_if_inserted_after(
-              { center: routeData.center, pois: currentRoute },
-              i,
-              cand,
-              travelModeForEstimation
-            );
-
-            // If alternative is >100m better and distance to that POI is small
-            if (altDetour.added_distance_m < minAlternativeDetour - 100) {
-              minAlternativeDetour = altDetour.added_distance_m;
-              const refPoi = i === -1 ? { name: language === 'nl' ? 'Start' : 'Start', index: -1 } : { ...currentRoute[i], index: i };
-              bestAlternative = {
-                suggest_after_poi_index: i,
-                poi_name: refPoi.name,
-                detour: altDetour,
-                why_better: language === 'nl'
-                  ? `Slechts ${altDetour.added_distance_m}m omweg vs ${primaryDetour.added_distance_m}m.`
-                  : `Only ${altDetour.added_distance_m}m detour vs ${primaryDetour.added_distance_m}m.`
-              };
+                if (altDetour.added_distance_m < minAlternativeDetour - 100) {
+                  minAlternativeDetour = altDetour.added_distance_m;
+                  const refPoi = i === -1 ? { name: language === 'nl' ? 'Start' : 'Start', index: -1 } : { ...currentRoute[i], index: i };
+                  bestAlternative = {
+                    suggest_after_poi_index: i,
+                    poi_name: refPoi.name,
+                    detour: altDetour,
+                    why_better: language === 'nl'
+                      ? `Slechts ${altDetour.added_distance_m}m omweg vs ${primaryDetour.added_distance_m}m.`
+                      : `Only ${altDetour.added_distance_m}m detour vs ${primaryDetour.added_distance_m}m.`
+                  };
+                }
+              } catch (e) { /* ignore */ }
             }
           }
 
@@ -1347,7 +1423,6 @@ function App() {
           };
         });
 
-        // Add "Suggestion Card" to chat with new structure
         setAiChatHistory(prev => [...prev, {
           role: 'system',
           type: 'poi_suggestions',
@@ -1356,18 +1431,21 @@ function App() {
           context: { referencePoiId, anchorPoiIndex: referencePoiId ? currentRoute.findIndex(p => p.id === referencePoiId) : -1 }
         }]);
       } else {
+        console.warn(`[AI Search #${searchId}] No candidates found.`);
         setAiChatHistory(prev => [...prev, {
           role: 'brain',
-          text: language === 'nl' ? `Ik heb helaas geen "${query}" gevonden in de directe omgeving.` : `I couldn't find any "${query}" nearby.`
+          text: language === 'nl' ? `Ik heb helaas geen "${query}" gevonden in de buurt. Misschien staat het anders bekend?` : `I couldn't find any "${query}" nearby. Maybe it's known under a different name?`
         }]);
       }
 
     } catch (e) {
-      console.warn("AI Search Failed", e);
-      setAiChatHistory(prev => [...prev, { role: 'brain', text: "Er liep iets mis bij het zoeken." }]);
+      console.error(`[AI Search #${searchId}] CRASH:`, e);
+      setAiChatHistory(prev => [...prev, {
+        role: 'brain',
+        text: language === 'nl' ? "Oei, er liep iets mis bij het zoeken. Probeer je het nog een keer met een andere omschrijving?" : "Oops, something went wrong while searching. Could you try again with a different description?"
+      }]);
     } finally {
       setIsLoading(false);
-      setNavPhase(NAV_PHASES.PRE_ROUTE);
     }
   };
 
@@ -1647,11 +1725,19 @@ function App() {
       }
 
       // 4. Enrich & Get Path
-      const fullyEnriched = await Promise.all(optimizedPois.map(async p => {
-        if (p.description) return p;
-        const desc = await fetchWikipediaSummary(p.name, language);
-        return { ...p, description: desc };
-      }));
+      // Initialize POIs with defaults and loading state for enrichment
+      const fullyEnriched = optimizedPois.map(p => {
+        // If it's already enriched, keep it.
+        if (p.description && p.isFullyEnriched) return p;
+
+        // Otherwise set as loading
+        return {
+          ...p,
+          description: p.description || (language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...'),
+          isFullyEnriched: false,
+          isLoading: true
+        };
+      });
 
       let finalPath = [];
       let finalDist = 0;
@@ -1715,6 +1801,10 @@ function App() {
         // Fits! Update directly
         console.log("AddJourney: Fits within limit. Updating route directly.");
         setRouteData(newRouteData);
+
+        // TRIGGER ENRICHMENT FOR NEW POIS
+        enrichBackground(newRouteData.pois, validatedCityData?.name || city, language, descriptionLength, activeInterest, "Added Spot Enrichment");
+
         if (searchMode === 'prompt') {
           setAiChatHistory(prev => [...prev, {
             role: 'brain',
@@ -1729,6 +1819,17 @@ function App() {
 
     } catch (err) {
       console.error("Add to journey failed", err);
+      // Feedback to User
+      if (searchMode === 'prompt') {
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: language === 'nl'
+            ? "Oei, ik kon de plek niet toevoegen door een technische fout. Soms helpt het om de pagina te verversen."
+            : "Oops, I couldn't add the spot due to a technical error. Refreshing the page might help."
+        }]);
+      } else {
+        alert("Failed to add spot to route.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1737,6 +1838,11 @@ function App() {
   const handleConfirmLimit = (proceed) => {
     if (proceed && limitConfirmation) {
       setRouteData(limitConfirmation.proposedRouteData);
+
+      // TRIGGER ENRICHMENT FOR NEW POIS (Post-Confirmation)
+      const cityName = validatedCityData?.name || city;
+      enrichBackground(limitConfirmation.proposedRouteData.pois, cityName, language, descriptionLength, interests, "Added Spot Enrichment");
+
       if (searchMode === 'prompt') {
         setAiChatHistory(prev => [...prev, {
           role: 'brain',
@@ -2998,6 +3104,7 @@ function App() {
         onJourneyStart={handleJourneyStart}
         onAddToJourney={handleAddToJourney}
         isLoading={isLoading}
+        loadingText={loadingText}
         onCityValidation={handleCityValidation}
         disambiguationOptions={disambiguationOptions}
         onDisambiguationSelect={handleDisambiguationSelect}

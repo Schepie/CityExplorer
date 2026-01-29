@@ -19,7 +19,7 @@ const SidebarInput = ({
     isAiViewActive, setIsAiViewActive,
     onSpeak, voiceSettings,
     speakingId, spokenCharCount,
-    isLoading, onRemovePoi, onStopSpeech,
+    isLoading, loadingText, onRemovePoi, onStopSpeech,
     routeData, onAddToJourney,
     activeTheme, availableThemes
 }) => {
@@ -331,7 +331,7 @@ const SidebarInput = ({
                                         <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ animationDelay: '200ms', backgroundColor: primaryColor }}></div>
                                         <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ animationDelay: '400ms', backgroundColor: primaryColor }}></div>
                                     </div>
-                                    <span className="text-[10px] uppercase tracking-widest font-bold opacity-50">{language === 'nl' ? 'gids denkt na...' : 'guide is thinking...'}</span>
+                                    <span className="text-[10px] uppercase tracking-widest font-bold opacity-50">{loadingText || (language === 'nl' ? 'gids denkt na...' : 'guide is thinking...')}</span>
                                 </div>
                             </div>
                         )}
@@ -960,7 +960,7 @@ const ItinerarySidebar = ({
     isRoundtrip, setIsRoundtrip,
     searchSources, setSearchSources,
     onJourneyStart, onAddToJourney,
-    isLoading, onCityValidation,
+    isLoading, loadingText, onCityValidation,
     onUseCurrentLocation,
     disambiguationOptions, onDisambiguationSelect, onDisambiguationCancel,
     searchMode, setSearchMode,
@@ -1868,6 +1868,7 @@ const ItinerarySidebar = ({
                                     onSpeak={onSpeak}
                                     voiceSettings={voiceSettings}
                                     isLoading={isLoading}
+                                    loadingText={loadingText}
                                     onStopSpeech={onStopSpeech}
                                     onRemovePoi={onRemovePoi}
                                     onAddToJourney={onAddToJourney}

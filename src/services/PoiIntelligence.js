@@ -254,12 +254,13 @@ Je helpt de gebruiker om een stad te verkennen met de focus op CULTUUR, HISTORIE
   - Je bent een routeplanner-assistent. De gebruiker is AL onderweg.
   - Vraag NIET om de stad, reiswijze, startpunt of rondtrip-status.
   - Verwerk vragen om op elk moment een extra stop/POI toe te voegen.
-  - Zoek geschikte plaatsen in de buurt van een opgegeven anker-POI (bijv. "na het museum", "bij de kerk").
-  - Gebruik DIRECT de speciale tag: \`[[SEARCH: <term> | NEAR: <referentiepunt>]]\`. Je kunt de naam OF de index van de POI gebruiken (bijv. \`NEAR: 9\` voor POI #9).
-  - Als de gebruiker iets "halverwege" of "tussenin" wil, gebruik: \`[[SEARCH: <term> | NEAR: @MIDPOINT]]\`.
-  - Rapporteer altijd dat je geschikte plaatsen zoekt en de extra reistijd zult berekenen.
-  - Toon top 3 directe suggesties en zoek naar slimme alternatieven (bv. "plan dit na POI #k i.p.v. na het huidige POI").
+  - **CRITIEKE REGEL**: Als de gebruiker vraagt om een SPECIFIEKE plek toe te voegen (bijv. "Voeg het Atomium toe"), gebruik dan ALTIJD de tag: [[SEARCH: <naam van de plek>]]. (De app zoekt automatisch in de buurt van de route).
+  - Je mag NOOIT een plek direct toevoegen via 'params' als er al een route actief is. Zet de status ALTIJD op "interactive".
+  - De app toont jouw zoekresultaat als een "Voorstel-kaart" in de chat. De gebruiker moet op "Toevoegen" klikken om het te accepteren.
+  - Rapporteer in je bericht dat je de plek opzoekt en dat de gebruiker deze kan toevoegen via de kaart die verschijnt.
   - Conversatie in natuurlijk Nederlands, kort en helder.
+  - Als de gebruiker iets "halverwege" of "tussenin" wilt, gebruik: [[SEARCH: <term> | NEAR: @MIDPOINT]].
+  - Voor algemene categorieën (bijv. "Ik wil koffie", "Zoek een toilet"), gebruik ook de [[SEARCH]] tag met een NEAR referentie (bijv. NEAR: @CURRENT_ROUTE of NEAR: <referentiepunt>).
 
 3. Dit betekent dat je de volgende informatie MOET hebben of vaststellen voordat je de status op "complete" zet (ALLEEN als route NIET actief is):
    - **Stad/Plaats**: Welke specifieke stad of plek wil de gebruiker verkennen?
@@ -372,17 +373,17 @@ Je MOET antwoorden met een JSON object in dit formaat:
             : "No external data signals found.";
 
         const prompt = `
-                Je bent een snelle, efficiënte gids.
-                Schrijf één pakkende, informatieve beschrijving van 5-7 regels voor "${poi.name}" (${this.config.city}).
-                Gebruik deze context indien relevant: ${contextData}
+                        Je bent een snelle, efficiënte gids.
+                        Schrijf één pakkende, informatieve beschrijving van 5-7 regels voor "${poi.name}" (${this.config.city}).
+                        Gebruik deze context indien relevant: ${contextData}
 
-                Richtlijnen:
-                - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
-                - Focus: Wat is het en waarom is het interessant?
-                - Geen inleiding, alleen de tekst.
+                        Richtlijnen:
+                        - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+                        - Focus: Wat is het en waarom is het interessant?
+                        - Geen inleiding, alleen de tekst.
 
-                Start Nu.
-                `;
+                        Start Nu.
+                        `;
 
         try {
             const url = '/api/gemini';
@@ -425,38 +426,38 @@ Je MOET antwoorden met een JSON object in dit formaat:
             : "No external data signals found.";
 
         const prompt = `
-                Je bent een ervaren lokale gids. We hebben al een korte beschrijving van "${poi.name}".
-                Nu willen we de diepte in.
+                        Je bent een ervaren lokale gids. We hebben al een korte beschrijving van "${poi.name}".
+                        Nu willen we de diepte in.
 
-                ### CONText
-                - POI: ${poi.name}
-                - Stad: ${this.config.city}
-                - Interesses: ${this.config.interests || 'Algemeen'}
-                - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
-                - Context Data: ${contextData}
+                        ### CONText
+                        - POI: ${poi.name}
+                        - Stad: ${this.config.city}
+                        - Interesses: ${this.config.interests || 'Algemeen'}
+                        - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+                        - Context Data: ${contextData}
 
-                ### TAAK
-                Genereer de uitgebreide details in JSON formaat.
+                        ### TAAK
+                        Genereer de uitgebreide details in JSON formaat.
 
-                ### OUTPUT JSON
-                {
-                    "standard_version": {
-                    "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
-                "fun_fact": "Eén boeiend weetje of anekdote."
+                        ### OUTPUT JSON
+                        {
+                            "standard_version": {
+                            "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
+                        "fun_fact": "Eén boeiend weetje of anekdote."
   },
-                "extended_version": {
-                    "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
-                "why_this_matches_your_interests": [
-                "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
-                ],
-                "fun_facts": [
-                "2–4 leuke weetjes of anekdotes"
-                ],
-                "if_you_only_have_2_minutes": "Wat moet je écht gezien hebben?",
-                "visitor_tips": "Praktische info indien relevant."
+                        "extended_version": {
+                            "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
+                        "why_this_matches_your_interests": [
+                        "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
+                        ],
+                        "fun_facts": [
+                        "2–4 leuke weetjes of anekdotes"
+                        ],
+                        "if_you_only_have_2_minutes": "Wat moet je écht gezien hebben?",
+                        "visitor_tips": "Praktische info indien relevant."
   }
 }
-                `;
+                        `;
 
         try {
             const url = '/api/gemini';
