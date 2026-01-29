@@ -159,12 +159,16 @@ Geef de output als één vloeiende tekst van 6 tot 10 zinnen, met:
 - Verwijzing naar interesses van de gebruiker
 - Een uitnodiging om te vertrekken
 
-### STIJLREGELS
-- Gebruik duidelijke, natuurlijke, enthousiasmerende taal
-- Schrijf als een lokale gids die de stad goed kent
-- Maak het menselijk, warm en persoonlijk
-- Noem de POI’s niet allemaal één voor één op; houd het high‑level maar pakkend
-- Geen verzonnen feiten; gebruik enkel algemeen bekende eigenschappen of afleidingen uit de input
+### STIJLREGELS & STRIKTE NAUWKEURIGHEID
+1. Doe GEEN aannames over specifieke POI-kenmerken die niet in de input staan.
+2. Als informatie niet met zekerheid bekend is: laat het weg of meld het als "Onbekend".
+3. Gebruik alleen expliciet genoemde bronnen of meegeleverde data.
+4. Vermijd verouderde informatie.
+5. Indien je over een POI spreekt: gebruik enkel feiten waar je zeker van bent.
+6. Gebruik duidelijke, natuurlijke, enthousiasmerende taal
+7. Schrijf als een lokale gids die de stad goed kent
+8. Maak het menselijk, warm en persoonlijk
+9. Noem de POI’s niet allemaal één voor één op; houd het high‑level maar pakkend
 
 ### START NU
 Genereer de introductie voor de tocht in ${this.config.city}.
@@ -206,6 +210,11 @@ CRITICAl RULES:
 
 2. Is "${locationName}" generiek (alleen de stadsnaam)?
    - Geef dan pas een algemene suggestie voor het centrum.
+
+3. STRIKTE NAUWKEURIGHEID:
+   - Doe GEEN aannames over parkeertarieven of exacte busnummers als je het niet zeker weet.
+   - Als de parkeerinfo niet bekend is voor deze specifieke plek: schrijf "Parkeergegevens onbekend".
+   - Gebruik alleen betrouwbare, expliciete brondata.
 
 DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'Engels'}.
 `;
@@ -378,10 +387,25 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         Schrijf één pakkende, informatieve beschrijving van 5-7 regels voor "${poi.name}" (${this.config.city}).
                         Gebruik deze context indien relevant: ${contextData}
 
+                        ### STRIKTE REGELS (ESSENTIEEL)
+                        1. Doe GEEN aannames.
+                        2. Als informatie niet met zekerheid bekend is: schrijf "Onbekend".
+                        3. Gebruik alleen expliciet genoemde bronnen of meegeleverde data.
+                        4. Vermijd verouderde informatie.
+                        5. Schat de zekerheid in (Hoog / Middel / Laag), maar zet dit NIET in de tekst zelf.
+                        6. Als bronnen elkaar tegenspreken: meld dit expliciet.
+
+                        ### OUTPUT JSON
+                        {
+                            "description": "5-7 regels tekst",
+                            "confidence": "Hoog | Middel | Laag"
+                        }
+
                         Richtlijnen:
                         - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
                         - Focus: Wat is het en waarom is het interessant?
-                        - Geen inleiding, alleen de tekst.
+                        - Geen inleiding of afsluiting.
+                        - Antwoord ENKEL met de JSON.
 
                         Start Nu.
                         `;
@@ -400,17 +424,21 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 return null;
             }
             const data = await response.json();
-            const text = data.text ? data.text.trim() : "";
+            const cleanText = data.text.replace(/```json/g, '').replace(/```/g, '').trim();
+            const result = JSON.parse(cleanText);
 
             const analyzed = this.analyzeSignals(poi, signals || []);
             const resolved = this.resolveConflicts(analyzed);
 
             return {
-                short_description: text,
+                short_description: result.description || "",
                 image: resolved.image,
                 images: resolved.images,
                 // Partial structure for compatibility
-                structured_info: { short_description: text }
+                structured_info: {
+                    short_description: result.description || "",
+                    short_description_confidence: result.confidence || "Middel"
+                }
             };
         } catch (e) {
             if (e.name === 'AbortError') throw e;
@@ -436,6 +464,17 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         - Interesses: ${this.config.interests || 'Algemeen'}
                         - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
                         - Context Data: ${contextData}
+                        - Eerdere korte beschrijving: "${shortDesc}"
+
+                        ### STRIKTE REGELS (ESSENTIEEL)
+                        1. Doe GEEN aannames.
+                        2. Belangrijk: De 'Eerdere korte beschrijving' bevat de gevalideerde basis. Als deze "Onbekend" zegt, mag jij GEEN geschiedenis of details verzinnen uit je eigen geheugen, tenzij de 'Context Data' hierboven expliciet nieuwe feiten levert.
+                        3. Als informatie niet met zekerheid bekend is: schrijf "Onbekend".
+                        4. Gebruik alleen expliciet die bronnen die in 'Context Data' staan.
+                        5. Vermijd verouderde informatie.
+                        6. Voor ELK veld in de JSON: schat de zekerheid in (Hoog / Middel / Laag).
+                        7. Zet de zekerheid NOOIT in de tekstvelden zelf.
+                        8. Als bronnen elkaar tegenspreken: meld dit expliciet in de beschrijving.
 
                         ### TAAK
                         Genereer de uitgebreide details in JSON formaat.
@@ -443,21 +482,27 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         ### OUTPUT JSON
                         {
                             "standard_version": {
-                            "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
-                        "fun_fact": "Eén boeiend weetje of anekdote."
-  },
-                        "extended_version": {
-                            "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
-                        "why_this_matches_your_interests": [
-                        "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
-                        ],
-                        "fun_facts": [
-                        "2–4 leuke weetjes of anekdotes"
-                        ],
-                        "if_you_only_have_2_minutes": "Wat moet je écht gezien hebben?",
-                        "visitor_tips": "Praktische info indien relevant."
-  }
-}
+                                "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
+                                "fun_fact": "Eén boeiend weetje of anekdote.",
+                                "confidence": "Hoog | Middel | Laag"
+                            },
+                            "extended_version": {
+                                "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
+                                "full_description_confidence": "Hoog | Middel | Laag",
+                                "why_this_matches_your_interests": [
+                                    "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
+                                ],
+                                "interests_confidence": "Hoog | Middel | Laag",
+                                "fun_facts": [
+                                    "2–4 leuke weetjes of anekdotes"
+                                ],
+                                "fun_facts_confidence": "Hoog | Middel | Laag",
+                                "if_you_only_have_2_minutes": "Wat moet je écht gezien hebben?",
+                                "highlight_confidence": "Hoog | Middel | Laag",
+                                "visitor_tips": "Praktische info indien relevant.",
+                                "tips_confidence": "Hoog | Middel | Laag"
+                            }
+                        }
                         `;
 
         try {
@@ -481,10 +526,15 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 structured_info: {
                     short_description: shortDesc || "", // Preserve short desc
                     full_description: result.extended_version?.full_description || result.standard_version?.description || "",
+                    full_description_confidence: result.extended_version?.full_description_confidence || result.standard_version?.confidence || "Middel",
                     matching_reasons: result.extended_version?.why_this_matches_your_interests || [],
+                    matching_reasons_confidence: result.extended_version?.interests_confidence || "Middel",
                     fun_facts: result.extended_version?.fun_facts || [],
+                    fun_facts_confidence: result.extended_version?.fun_facts_confidence || "Middel",
                     two_minute_highlight: result.extended_version?.if_you_only_have_2_minutes || "",
+                    two_minute_highlight_confidence: result.extended_version?.highlight_confidence || "Middel",
                     visitor_tips: result.extended_version?.visitor_tips || "",
+                    visitor_tips_confidence: result.extended_version?.tips_confidence || "Middel",
                     standard_description: result.standard_version?.description || "", // Duplicated for safety
                     one_fun_fact: result.standard_version?.fun_fact || ""
                 },
@@ -608,6 +658,10 @@ Je MOET antwoorden met een JSON object in dit formaat:
             "stadsmus": {
                 description: "Het Stadsmus (Stedelijk Museum Stellingwerff-Waerdenhof) is het stedelijk museum van Hasselt waar je de geschiedenis van de stad en haar inwoners ontdekt.",
                 link: "https://www.visithasselt.be/nl/het-stadsmus"
+            },
+            "het volkstehuis": {
+                description: "Het Volkstehuis in Hasselt (ABVV-gebouw) is een historisch pand dat symbool staat voor de sociale geschiedenis en de arbeidersbeweging in de stad. Het biedt vandaag de dag ruimte voor ontmoeting, advies en vakbondsdiensten.",
+                link: "https://www.volkstehuis.be/"
             }
         };
 
@@ -698,7 +752,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-            const res = await fetch(url, { signal: controller.signal }).then(r => {
+            const res = await apiFetch(url, { signal: controller.signal }).then(r => {
                 clearTimeout(timeoutId);
                 return r.json();
             });
@@ -764,7 +818,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
             for (const q of queriesToTry) {
                 try {
                     const searchUrl = `/api/google-search?q=${encodeURIComponent(q)}&num=5`;
-                    const attempt = await fetch(searchUrl).then(r => r.json());
+                    const attempt = await apiFetch(searchUrl).then(r => r.json());
 
                     // Simple Validation: If we got items, assume success and stop.
                     if (attempt.items && attempt.items.length > 0) {
@@ -781,7 +835,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
             if ((!res.items || res.items.length === 0) && name.trim().split(/\s+/).length > 1) {
                 console.log(`POI Intelligence: Fallback to name-only search for "${name}"`);
                 url = `/api/google-search?q=${encodeURIComponent(name)}&num=5`;
-                res = await fetch(url).then(r => r.json());
+                res = await apiFetch(url).then(r => r.json());
             }
 
             if (res.items && res.items.length > 0) {
@@ -798,14 +852,25 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     }
                     return {
                         text,
+                        link: item.link,
                         image: item.pagemap?.cse_image?.[0]?.src || item.pagemap?.metatags?.[0]?.['og:image'] || null
                     };
-                }).filter(s => s.text);
+                }).filter(s => s.text).map(s => {
+                    // STRICTOR IMAGE FILTERING: Reject common "noise" images from search
+                    const img = s.image;
+                    if (img) {
+                        const low = img.toLowerCase();
+                        if (low.includes('logo') || low.includes('icon') || low.includes('placeholder') || low.includes('avatar') || low.includes('favicon')) {
+                            return { ...s, image: null };
+                        }
+                    }
+                    return s;
+                });
 
                 return {
                     type: 'description',
                     source: 'google_search',
-                    content: combinedSnippets.map(s => s.text).join('\n\n'),
+                    content: combinedSnippets.map(s => `[Link: ${s.link}] ${s.text}`).join('\n\n'),
                     link: res.items[0].link,
                     image: combinedSnippets.find(s => s.image)?.image,
                     images: [...new Set(combinedSnippets.map(s => s.image).filter(Boolean))],
@@ -825,19 +890,26 @@ Je MOET antwoorden met een JSON object in dit formaat:
             // Heuristic: Penalize generic city descriptions
             let score = signal.confidence || 0.5;
             const text = (signal.content || "").toLowerCase();
+            const url = (signal.link || "").toLowerCase();
+
+            // GENERIC FIX: Semantic Domain Matching
+            // If the URL contains the POI name, it's highly likely the official site
+            if (this.isLikelyOfficialLink(poi.name, url)) {
+                score = 0.95; // Maximum trust for official sites
+            }
 
             // Detection: "Hasselt is de hoofdstad..."
             // ONLY penalize if the specific POI name is NOT in the text.
-            // If the text talks about the city but mentions the POI, it might be valid context.
             if (text && (text.includes(this.config.city.toLowerCase() + " is") ||
                 text.includes("hoofdstad") ||
                 text.includes("provincie")) && !text.includes(poi.name.toLowerCase())) {
-                score = 0.1; // Untrustworthy
+                score = Math.min(score, 0.1); // Keep the high score if it was official, otherwise drop. 
+                // Actually, if it's official it won't have this generic text.
             }
 
-            // Boost Google Search if it contains the exact name
+            // Boost Google Search if it contains the exact name in the content
             if (signal.source === 'google_search' && text.includes(poi.name.toLowerCase())) {
-                score = 0.9;
+                score = Math.max(score, 0.9);
             }
 
             // Detection: Tag lists ("Museum, Building, Point of Interest")
@@ -849,12 +921,36 @@ Je MOET antwoorden met een JSON object in dit formaat:
         });
     }
 
+    isLikelyOfficialLink(poiName, link) {
+        if (!link || !poiName) return false;
+        try {
+            const url = new URL(link);
+            const domain = url.hostname.toLowerCase();
+            const name = poiName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            // Exact match (e.g. volkstehuis.be)
+            if (domain.includes(name)) return true;
+
+            // Partial match for common structures
+            const fragments = poiName.toLowerCase().split(/\s+/).filter(f => f.length > 3);
+            if (fragments.length > 0 && fragments.every(f => domain.includes(f))) return true;
+
+            return false;
+        } catch (e) {
+            return false;
+        }
+    }
+
     resolveConflicts(signals) {
         // Sort by Trust Score
         const ranked = signals.sort((a, b) => b.score - a.score);
 
         if (ranked.length > 0 && ranked[0].score > 0.4) {
-            const allImages = [...new Set(ranked.flatMap(r => r.images || (r.image ? [r.image] : [])).filter(Boolean))];
+            // STRICTOR IMAGE RULE: Only take images from signals with EXTREMELY high confidence (>= 0.9)
+            // This ensures we avoid generic search noise and only show "100% sure" photos (Wiki/Archive/High-Confidence G-Places).
+            const highConfidenceSignals = ranked.filter(r => r.score >= 0.9);
+            const allImages = [...new Set(highConfidenceSignals.flatMap(r => r.images || (r.image ? [r.image] : [])).filter(Boolean))];
+
             return {
                 description: ranked[0].content,
                 link: ranked[0].link,

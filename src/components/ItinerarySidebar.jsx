@@ -996,6 +996,13 @@ const ItinerarySidebar = ({
     const [shouldAutoFocusInterests, setShouldAutoFocusInterests] = useState(false);
     const [expandedPoi, setExpandedPoi] = useState(null);
     const [poiToDelete, setPoiToDelete] = useState(null);
+    const [showTruthfulnessLegend, setShowTruthfulnessLegend] = useState(false);
+    const [showLanguageSettings, setShowLanguageSettings] = useState(false);
+    const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+    const [showThemeSettings, setShowThemeSettings] = useState(false);
+    const [showTravelSettings, setShowTravelSettings] = useState(false);
+    const [showSimulationSettings, setShowSimulationSettings] = useState(false);
+    const [showAudioSettings, setShowAudioSettings] = useState(false);
     const poiHighlightedWordRef = useRef(null);
     const scrollerRef = useRef(null);
 
@@ -1437,89 +1444,47 @@ const ItinerarySidebar = ({
                                     <div className="space-y-4">
                                         {/* 1. Language */}
                                         <div className="space-y-1">
-                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">Language</label>
-                                            <div className="flex flex-col gap-1">
-                                                {[
-                                                    { id: 'en', label: 'English', icon: <svg viewBox="0 0 30 20" className="w-5 h-5 rounded-[2px] shadow-sm overflow-hidden"><rect width="30" height="20" fill="#012169" /><path d="M0,0 L30,20 M30,0 L0,20" stroke="white" strokeWidth="4" /><path d="M0,0 L30,20 M30,0 L0,20" stroke="#C8102E" strokeWidth="2" /><path d="M15,0 V20 M0,10 H30" stroke="white" strokeWidth="6" /><path d="M15,0 V20 M0,10 H30" stroke="#C8102E" strokeWidth="4" /></svg> },
-                                                    { id: 'nl', label: 'Nederlands', icon: <svg viewBox="0 0 30 20" className="w-5 h-5 rounded-[2px] shadow-sm overflow-hidden"><rect width="30" height="20" fill="#21468B" /><rect width="30" height="13.3" fill="#FFFFFF" /><rect width="30" height="6.6" fill="#AE1C28" /></svg> }
-                                                ].map((opt) => (
-                                                    <button
-                                                        key={opt.id}
-                                                        onClick={() => {
-                                                            setLanguage(opt.id);
-                                                            if (setVoiceSettings) setVoiceSettings({ variant: opt.id, gender: 'female' });
-                                                        }}
-                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${language === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                            <button
+                                                onClick={() => setShowLanguageSettings(!showLanguageSettings)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                            >
+                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'Taal' : 'Language'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    {!showLanguageSettings && (
+                                                        <span className="text-[10px] text-primary/60 font-bold uppercase tracking-tighter">
+                                                            {language === 'en' ? 'English' : 'Nederlands'}
+                                                        </span>
+                                                    )}
+                                                    <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showLanguageSettings ? 'rotate-180' : ''}`}
+                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
                                                     >
-                                                        <div className="flex items-center gap-3">
-                                                            {opt.icon}
-                                                            <span className={`text-sm font-medium ${language === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{opt.label}</span>
-                                                        </div>
-                                                        {language === opt.id && (
-                                                            <div className="text-[var(--primary)]">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                                </svg>
-                                                            </div>
-                                                        )}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* 2. Voice Preference */}
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Stem' : 'Voice'}</label>
-                                            <div className="flex flex-col gap-1">
-                                                {[
-                                                    { id: 'female', label: { en: 'Female', nl: 'Vrouw' } },
-                                                    { id: 'male', label: { en: 'Male', nl: 'Man' } }
-                                                ].map((opt) => (
-                                                    <button
-                                                        key={opt.id}
-                                                        onClick={() => setVoiceSettings && setVoiceSettings({ ...voiceSettings, gender: opt.id })}
-                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${voiceSettings?.gender === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={`p-1.5 rounded-full ${voiceSettings?.gender === opt.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                                                                </svg>
-                                                            </div>
-                                                            <span className={`text-sm font-medium ${voiceSettings?.gender === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
-                                                        </div>
-                                                        {voiceSettings?.gender === opt.id && (
-                                                            <div className="text-[var(--primary)]">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                                </svg>
-                                                            </div>
-                                                        )}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* 3. App Theme */}
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Thema' : 'Theme'}</label>
-                                            <div className="flex flex-col gap-1">
-                                                <div className="grid grid-cols-1 gap-1">
-                                                    {availableThemes && Object.values(availableThemes).map(t => (
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </div>
+                                            </button>
+                                            {showLanguageSettings && (
+                                                <div className="flex flex-col gap-1 mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
+                                                    {[
+                                                        { id: 'en', label: 'English', icon: <svg viewBox="0 0 30 20" className="w-5 h-5 rounded-[2px] shadow-sm overflow-hidden"><rect width="30" height="20" fill="#012169" /><path d="M0,0 L30,20 M30,0 L0,20" stroke="white" strokeWidth="4" /><path d="M0,0 L30,20 M30,0 L0,20" stroke="#C8102E" strokeWidth="2" /><path d="M15,0 V20 M0,10 H30" stroke="white" strokeWidth="6" /><path d="M15,0 V20 M0,10 H30" stroke="#C8102E" strokeWidth="4" /></svg> },
+                                                        { id: 'nl', label: 'Nederlands', icon: <svg viewBox="0 0 30 20" className="w-5 h-5 rounded-[2px] shadow-sm overflow-hidden"><rect width="30" height="20" fill="#21468B" /><rect width="30" height="13.3" fill="#FFFFFF" /><rect width="30" height="6.6" fill="#AE1C28" /></svg> }
+                                                    ].map((opt) => (
                                                         <button
-                                                            key={t.id}
-                                                            onClick={() => setActiveTheme(t.id)}
-                                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${activeTheme === t.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                            key={opt.id}
+                                                            onClick={() => {
+                                                                setLanguage(opt.id);
+                                                                if (setVoiceSettings) setVoiceSettings({ variant: opt.id, gender: 'female' });
+                                                            }}
+                                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${language === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                                         >
                                                             <div className="flex items-center gap-3">
-                                                                <div className="w-7 h-7 rounded-full border border-white/10 shadow-sm flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${t.colors.bgStart}, ${t.colors.bgEnd})` }}>
-                                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.colors.primary }} />
-                                                                </div>
-                                                                <span className={`text-sm font-medium ${activeTheme === t.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>
-                                                                    {language === 'nl' ? t.label.nl : t.label.en}
-                                                                </span>
+                                                                {opt.icon}
+                                                                <span className={`text-sm font-medium ${language === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{opt.label}</span>
                                                             </div>
-                                                            {activeTheme === t.id && (
+                                                            {language === opt.id && (
                                                                 <div className="text-[var(--primary)]">
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                                                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -1529,31 +1494,219 @@ const ItinerarySidebar = ({
                                                         </button>
                                                     ))}
                                                 </div>
-                                            </div>
+                                            )}
+                                        </div>
+
+                                        {/* 2. Voice Preference */}
+                                        <div className="space-y-1">
+                                            <button
+                                                onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                            >
+                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'Stem' : 'Voice'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    {!showVoiceSettings && (
+                                                        <span className="text-[10px] text-primary/60 font-bold uppercase tracking-tighter">
+                                                            {voiceSettings?.gender === 'female' ? (language === 'nl' ? 'Vrouw' : 'Female') : (language === 'nl' ? 'Man' : 'Male')}
+                                                        </span>
+                                                    )}
+                                                    <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showVoiceSettings ? 'rotate-180' : ''}`}
+                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </div>
+                                            </button>
+                                            {showVoiceSettings && (
+                                                <div className="flex flex-col gap-1 mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
+                                                    {[
+                                                        { id: 'female', label: { en: 'Female', nl: 'Vrouw' } },
+                                                        { id: 'male', label: { en: 'Male', nl: 'Man' } }
+                                                    ].map((opt) => (
+                                                        <button
+                                                            key={opt.id}
+                                                            onClick={() => setVoiceSettings && setVoiceSettings({ ...voiceSettings, gender: opt.id })}
+                                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${voiceSettings?.gender === opt.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`p-1.5 rounded-full ${voiceSettings?.gender === opt.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                </div>
+                                                                <span className={`text-sm font-medium ${voiceSettings?.gender === opt.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? opt.label.nl : opt.label.en}</span>
+                                                            </div>
+                                                            {voiceSettings?.gender === opt.id && (
+                                                                <div className="text-[var(--primary)]">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* 3. App Theme */}
+                                        <div className="space-y-1">
+                                            <button
+                                                onClick={() => setShowThemeSettings(!showThemeSettings)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                            >
+                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'Thema' : 'Theme'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    {!showThemeSettings && (
+                                                        <span className="text-[10px] text-primary/60 font-bold uppercase tracking-tighter">
+                                                            {availableThemes && availableThemes[activeTheme] ? (language === 'nl' ? availableThemes[activeTheme].label.nl : availableThemes[activeTheme].label.en) : activeTheme}
+                                                        </span>
+                                                    )}
+                                                    <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showThemeSettings ? 'rotate-180' : ''}`}
+                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </div>
+                                            </button>
+                                            {showThemeSettings && (
+                                                <div className="flex flex-col gap-1 mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
+                                                    <div className="grid grid-cols-1 gap-1">
+                                                        {availableThemes && Object.values(availableThemes).map(t => (
+                                                            <button
+                                                                key={t.id}
+                                                                onClick={() => setActiveTheme(t.id)}
+                                                                className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${activeTheme === t.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                            >
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-7 h-7 rounded-full border border-white/10 shadow-sm flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${t.colors.bgStart}, ${t.colors.bgEnd})` }}>
+                                                                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.colors.primary }} />
+                                                                    </div>
+                                                                    <span className={`text-sm font-medium ${activeTheme === t.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>
+                                                                        {language === 'nl' ? t.label.nl : t.label.en}
+                                                                    </span>
+                                                                </div>
+                                                                {activeTheme === t.id && (
+                                                                    <div className="text-[var(--primary)]">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                    </div>
+                                                                )}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Travel Mode */}
                                         <div className="space-y-1">
-                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Reiswijze' : 'Travel Mode'}</label>
-                                            <div className="flex flex-col gap-1">
-                                                {[
-                                                    { id: 'walking', label: { en: 'Walking', nl: 'Wandelen' }, icon: <><circle cx="12" cy="4" r="2" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v-4l-2-2 1-3h-2M12 9l2 2-1 6" /></> },
-                                                    { id: 'cycling', label: { en: 'Cycling', nl: 'Fietsen' }, icon: <><circle cx="5.5" cy="17.5" r="3.5" strokeWidth={2} /><circle cx="18.5" cy="17.5" r="3.5" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-5 5-3-3 2-2M12 17.5V14l-3-3 4-3 2 3h2" /></> }
-                                                ].map(mode => (
+                                            <button
+                                                onClick={() => setShowTravelSettings(!showTravelSettings)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                            >
+                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'Reiswijze' : 'Travel Mode'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    {!showTravelSettings && (
+                                                        <span className="text-[10px] text-primary/60 font-bold uppercase tracking-tighter">
+                                                            {travelMode === 'walking' ? (language === 'nl' ? 'Wandelen' : 'Walking') : (language === 'nl' ? 'Fietsen' : 'Cycling')}
+                                                        </span>
+                                                    )}
+                                                    <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showTravelSettings ? 'rotate-180' : ''}`}
+                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </div>
+                                            </button>
+                                            {showTravelSettings && (
+                                                <div className="flex flex-col gap-1 mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
+                                                    {[
+                                                        { id: 'walking', label: { en: 'Walking', nl: 'Wandelen' }, icon: <><circle cx="12" cy="4" r="2" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v-4l-2-2 1-3h-2M12 9l2 2-1 6" /></> },
+                                                        { id: 'cycling', label: { en: 'Cycling', nl: 'Fietsen' }, icon: <><circle cx="5.5" cy="17.5" r="3.5" strokeWidth={2} /><circle cx="18.5" cy="17.5" r="3.5" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-5 5-3-3 2-2M12 17.5V14l-3-3 4-3 2 3h2" /></> }
+                                                    ].map(mode => (
+                                                        <button
+                                                            key={mode.id}
+                                                            onClick={() => onStyleChange(mode.id)}
+                                                            className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${travelMode === mode.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`p-1.5 rounded-full ${travelMode === mode.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        {mode.icon}
+                                                                    </svg>
+                                                                </div>
+                                                                <span className={`text-sm font-medium ${travelMode === mode.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? mode.label.nl : mode.label.en}</span>
+                                                            </div>
+                                                            {travelMode === mode.id && (
+                                                                <div className="text-[var(--primary)]">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+
+
+                                        {/* 5. Simulation Mode */}
+                                        <div className="space-y-1">
+                                            <button
+                                                onClick={() => setShowSimulationSettings(!showSimulationSettings)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                            >
+                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'Simulatie' : 'Simulation'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    {!showSimulationSettings && (
+                                                        <span className={`text-[10px] font-bold uppercase tracking-tighter ${isSimulationEnabled ? 'text-primary' : 'text-slate-500'}`}>
+                                                            {isSimulationEnabled ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
+                                                        </span>
+                                                    )}
+                                                    <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showSimulationSettings ? 'rotate-180' : ''}`}
+                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </div>
+                                            </button>
+                                            {showSimulationSettings && (
+                                                <div className="mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
                                                     <button
-                                                        key={mode.id}
-                                                        onClick={() => onStyleChange(mode.id)}
-                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${travelMode === mode.id ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                        onClick={() => {
+                                                            const newVal = !isSimulationEnabled;
+                                                            setIsSimulationEnabled(newVal);
+                                                            if (!newVal) setIsSimulating(false);
+                                                        }}
+                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulationEnabled ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
                                                     >
                                                         <div className="flex items-center gap-3">
-                                                            <div className={`p-1.5 rounded-full ${travelMode === mode.id ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    {mode.icon}
-                                                                </svg>
+                                                            <div className={`p-1.5 rounded-full ${isSimulationEnabled ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
                                                             </div>
-                                                            <span className={`text-sm font-medium ${travelMode === mode.id ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? mode.label.nl : mode.label.en}</span>
+                                                            <span className={`text-sm font-medium ${isSimulationEnabled ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
                                                         </div>
-                                                        {travelMode === mode.id && (
+                                                        {isSimulationEnabled && (
                                                             <div className="text-[var(--primary)]">
                                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                                                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -1561,60 +1714,116 @@ const ItinerarySidebar = ({
                                                             </div>
                                                         )}
                                                     </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-
-
-                                        {/* 5. Simulation Mode */}
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Simulatie' : 'Simulation'}</label>
-                                            <button
-                                                onClick={() => {
-                                                    const newVal = !isSimulationEnabled;
-                                                    setIsSimulationEnabled(newVal);
-                                                    if (!newVal) setIsSimulating(false);
-                                                }}
-                                                className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulationEnabled ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`p-1.5 rounded-full ${isSimulationEnabled ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
-                                                    </div>
-                                                    <span className={`text-sm font-medium ${isSimulationEnabled ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
                                                 </div>
-                                                {isSimulationEnabled && (
-                                                    <div className="text-[var(--primary)]">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                        </svg>
-                                                    </div>
-                                                )}
-                                            </button>
+                                            )}
                                         </div>
 
                                         {/* 6. Auto Audio */}
                                         <div className="space-y-1">
-                                            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1">{language === 'nl' ? 'Auto Audio' : 'Auto Audio'}</label>
                                             <button
-                                                onClick={() => setAutoAudio(!autoAudio)}
-                                                className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${autoAudio ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                onClick={() => setShowAudioSettings(!showAudioSettings)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`p-1.5 rounded-full ${autoAudio ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                                                    </div>
-                                                    <span className={`text-sm font-medium ${autoAudio ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Automatisch Voorlezen' : 'Auto-Audio Mode'}</span>
+                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'Auto Audio' : 'Auto Audio'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    {!showAudioSettings && (
+                                                        <span className={`text-[10px] font-bold uppercase tracking-tighter ${autoAudio ? 'text-primary' : 'text-slate-500'}`}>
+                                                            {autoAudio ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
+                                                        </span>
+                                                    )}
+                                                    <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showAudioSettings ? 'rotate-180' : ''}`}
+                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                    </svg>
                                                 </div>
-                                                {autoAudio && (
-                                                    <div className="text-[var(--primary)]">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                        </svg>
+                                            </button>
+                                            {showAudioSettings && (
+                                                <div className="mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
+                                                    <button
+                                                        onClick={() => setAutoAudio(!autoAudio)}
+                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${autoAudio ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`p-1.5 rounded-full ${autoAudio ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                                                            </div>
+                                                            <span className={`text-sm font-medium ${autoAudio ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Automatisch Voorlezen' : 'Auto-Audio Mode'}</span>
+                                                        </div>
+                                                        {autoAudio && (
+                                                            <div className="text-[var(--primary)]">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                </svg>
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* 7. Truthfulness Legend */}
+                                        <div className="pt-4 border-t border-white/5">
+                                            <div className="flex flex-col gap-1">
+                                                <button
+                                                    onClick={() => setShowTruthfulnessLegend(!showTruthfulnessLegend)}
+                                                    className="flex items-center justify-between w-full hover:bg-white/5 py-2 px-1 rounded-lg transition-all group"
+                                                >
+                                                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                        {language === 'nl' ? 'Betrouwbaarheid' : 'Truthfulness'}
+                                                    </label>
+                                                    <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        className={`h-3.5 w-3.5 text-slate-500 transition-transform duration-300 ${showTruthfulnessLegend ? 'rotate-180' : ''}`}
+                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </button>
+
+                                                {showTruthfulnessLegend && (
+                                                    <div className="mt-1 bg-black/20 rounded-xl p-3 border border-white/5 space-y-3 animate-in slide-in-from-top-2 fade-in duration-300">
+                                                        <div className="flex gap-3">
+                                                            <div className="p-1.5 rounded-full bg-emerald-400/10 text-emerald-400 shrink-0">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Hoge Betrouwbaarheid' : 'High Confidence'}</div>
+                                                                <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Geverifieerd via officiële bronnen of Wikipedia.' : 'Verified via official sources or Wikipedia.'}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-3">
+                                                            <div className="p-1.5 rounded-full bg-blue-400/10 text-blue-400 shrink-0">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Gemiddelde Betrouwbaarheid' : 'Medium Confidence'}</div>
+                                                                <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Gebaseerd op algemene AI-kennis of zoekresultaten.' : 'Based on general AI knowledge or search results.'}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-3">
+                                                            <div className="p-1.5 rounded-full bg-amber-400/10 text-amber-400 shrink-0">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m10.29 3.86 7.98 13.9a2 2 0 0 1-1.71 3H3.44a2 2 0 0 1-1.71-3l7.98-13.9a2 2 0 0 1 3.44 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Lage Betrouwbaarheid' : 'Low Confidence'}</div>
+                                                                <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Beperkte data gevonden, interpretatie is vereist.' : 'Limited data found, interpretation is required.'}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="pt-2 border-t border-white/5">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                                                <div className="text-[10px] font-bold text-slate-200 uppercase tracking-tighter">100% Photo Rule</div>
+                                                            </div>
+                                                            <div className="text-[10px] text-slate-400 leading-tight mt-1">{language === 'nl' ? 'Foto\'s worden alleen getoond bij een betrouwbaarheid van 90%+. Geen generieke placeholders.' : 'Photos are only displayed if source trust is 90%+. No generic placeholders.'}</div>
+                                                        </div>
                                                     </div>
                                                 )}
-                                            </button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}

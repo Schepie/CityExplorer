@@ -47,7 +47,14 @@ const MAGIC_LINK_EXPIRY = '15m';
 export const isEmailBlocked = (email) => {
     if (!email) return false;
     const blockedString = process.env.BLOCKED_EMAILS || '';
-    const blockedList = blockedString.split(',').map(e => e.trim().toLowerCase());
+    if (!blockedString.trim()) return false;
+
+    // Split by comma, trim whitespace, convert to lowercase, and remove empty entries
+    const blockedList = blockedString
+        .split(',')
+        .map(e => e.trim().toLowerCase())
+        .filter(e => e !== '');
+
     return blockedList.includes(email.toLowerCase());
 };
 

@@ -107,6 +107,59 @@ const translateHUDInstruction = (step, lang) => {
     return `Ga ${m} op ${name || 'het pad'}`.replace(/\s+/g, ' ');
 };
 
+// Route Arrows Component
+const RouteArrows = ({ polyline }) => {
+    const arrows = React.useMemo(() => {
+        if (!polyline || polyline.length < 2) return [];
+        const result = [];
+        let accumulatedDistance = 0;
+        const intervalKm = 0.05; // Show arrow every 50m (much denser for city walks)
+
+        for (let i = 0; i < polyline.length - 1; i++) {
+            const p1 = { lat: polyline[i][0], lng: polyline[i][1] };
+            const p2 = { lat: polyline[i + 1][0], lng: polyline[i + 1][1] };
+            const d = calcDistance(p1, p2);
+            accumulatedDistance += d;
+
+            if (accumulatedDistance >= intervalKm) {
+                const bearing = calcBearing(p1, p2);
+                result.push({
+                    position: polyline[i + 1],
+                    bearing: bearing
+                });
+                accumulatedDistance = 0;
+            }
+        }
+        return result;
+    }, [polyline]);
+
+    if (arrows.length === 0) return null;
+
+    return (
+        <>
+            {arrows.map((arrow, idx) => (
+                <Marker
+                    key={`arrow-${idx}`}
+                    position={arrow.position}
+                    interactive={false}
+                    pane="markerPane"
+                    zIndexOffset={500}
+                    icon={L.divIcon({
+                        className: 'route-arrow-marker',
+                        html: `<div style="transform: rotate(${arrow.bearing}deg); color: white; background-color: var(--primary); border-radius: 50%; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; border: 1.5px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.4);">
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+                                   <polyline points="18 15 12 9 6 15"></polyline>
+                                 </svg>
+                               </div>`,
+                        iconSize: [14, 14],
+                        iconAnchor: [7, 7]
+                    })}
+                />
+            ))}
+        </>
+    );
+};
+
 // Zoom Controls Component
 const ZoomControls = ({ language, isPopupOpen, setUserHasInteracted }) => {
     const map = useMap();
@@ -1008,6 +1061,11 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                     lineCap: 'round'
                                 }}
                             />
+                        )}
+
+                        {/* Direction Arrows on the dotted route */}
+                        {polyline && polyline.length > 1 && (
+                            <RouteArrows polyline={polyline} />
                         )}
 
                         {/* Search Radius Circle (Only in Radius Mode) */}

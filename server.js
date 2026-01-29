@@ -360,13 +360,14 @@ app.get('/api/foursquare', authMiddleware, async (req, res) => {
 // --- Google Custom Search Endpoint ---
 app.get('/api/google-search', authMiddleware, async (req, res) => {
     try {
-        const { q, cx } = req.query;
-        console.log(`[Proxy] Google Search: "${q}"`);
+        const { q, cx, num } = req.query;
+        console.log(`[Proxy] Google Search: "${q}" (num=${num || 5})`);
         if (!GOOGLE_PLACES_KEY) return res.status(500).json({ error: 'GOOGLE_KEY not configured' });
         const searchCx = cx || process.env.VITE_GOOGLE_SEARCH_CX || process.env.GOOGLE_SEARCH_CX;
         if (!searchCx) return res.status(500).json({ error: 'CX not configured' });
 
-        const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_PLACES_KEY}&cx=${searchCx}&q=${encodeURIComponent(q)}&num=1`;
+        const searchNum = num || 5;
+        const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_PLACES_KEY}&cx=${searchCx}&q=${encodeURIComponent(q)}&num=${searchNum}`;
         const response = await fetch(url, { headers: { 'Referer': 'http://localhost:5173/' } });
         const data = await response.json();
 
