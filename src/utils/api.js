@@ -23,8 +23,11 @@ export const apiFetch = async (url, options = {}) => {
 
     if (response.status === 401) {
         console.error("API Error: 401 Unauthorized. Clearing token.");
-        // We don't clear here to avoid race conditions, 
-        // but the UI should handle redirecting to login.
+    }
+
+    if (response.status === 403) {
+        console.warn("API Error: 403 Forbidden. User may be blocked.");
+        window.dispatchEvent(new CustomEvent('city-explorer-auth-blocked'));
     }
 
     return response;

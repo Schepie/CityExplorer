@@ -1367,6 +1367,19 @@ const ItinerarySidebar = ({
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
                                             {
+                                                date: "29 Jan 2026",
+                                                version: "v1.6.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Beveiligde API", desc: "Volledige JWT authenticatie voor alle zoek- en AI-functies." },
+                                                    { title: "Toegangscodes", desc: "Nieuwe mogelijkheid om in te loggen met een 6-cijferige code." },
+                                                    { title: "Admin Relay", desc: "Verbeterde login-flow via handmatige goedkeuring." }
+                                                ] : [
+                                                    { title: "Secure API", desc: "Full JWT authentication for all search and AI features." },
+                                                    { title: "Access Codes", desc: "New option to sign in using a 6-digit code." },
+                                                    { title: "Admin Relay", desc: "Improved login flow via manual admin approval." }
+                                                ]
+                                            },
+                                            {
                                                 date: "26 Jan 2026",
                                                 version: "v1.5.1",
                                                 items: language === 'nl' ? [
@@ -1619,7 +1632,7 @@ const ItinerarySidebar = ({
                                                 >
                                                     {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                                 </button>
-                                                <span className="text-slate-300 text-sm font-medium">v1.5.1</span>
+                                                <span className="text-slate-300 text-sm font-medium">v1.6.0</span>
                                             </div>
                                         </div>
                                         <div className="flex justify-between items-center">
@@ -1628,7 +1641,7 @@ const ItinerarySidebar = ({
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                            <span className="text-[var(--text-muted)] text-sm font-medium">26 Jan 2026</span>
+                                            <span className="text-[var(--text-muted)] text-sm font-medium">29 Jan 2026</span>
                                         </div>
                                     </div>
                                 </div>

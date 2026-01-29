@@ -48,8 +48,22 @@ const FOURSQUARE_KEY = process.env.VITE_FOURSQUARE_KEY || process.env.FOURSQUARE
 
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
-    console.log("[Health] Ping received");
     res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// Middleware to protect internal API routes
+const authMiddleware = (req, res, next) => {
+    const auth = validateUser(req);
+    if (auth.error) {
+        return res.status(auth.status).json({ error: auth.error });
+    }
+    req.user = auth.user;
+    next();
+};
+
+// Used to check if token is still valid/not blocked on app startup
+app.get('/api/auth-validate', authMiddleware, (req, res) => {
+    res.json({ valid: true, user: req.user });
 });
 
 // --- Auth Endpoints (Mimic Netlify Functions) ---
@@ -147,15 +161,6 @@ app.post('/api/auth-verify-code', async (req, res) => {
     }
 });
 
-// Middleware to protect subsequent routes
-const authMiddleware = (req, res, next) => {
-    const auth = validateUser(req);
-    if (auth.error) {
-        return res.status(auth.status).json({ error: auth.error });
-    }
-    req.user = auth.user;
-    next();
-};
 
 // --- Build Booklet PDF Endpoint ---
 app.post('/api/build-booklet', authMiddleware, async (req, res) => {

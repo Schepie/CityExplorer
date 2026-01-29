@@ -19,9 +19,29 @@ export const AuthProvider = ({ children }) => {
 
         if (storedToken) {
             setSessionToken(storedToken);
+            setAuthToken(storedToken);
             if (storedUser) setUser(JSON.parse(storedUser));
+
+            // 2. Startup validation ping (Check if still valid/not blocked)
+            fetch('/api/auth-validate', {
+                headers: { 'Authorization': `Bearer ${storedToken}` }
+            }).then(res => {
+                if (res.status === 200) setIsBlocked(false);
+                if (res.status === 403) setIsBlocked(true);
+                if (res.status === 401) logout();
+            })
+                .catch(() => { })
+                .finally(() => {
+                    setIsLoading(false);
+                });
+        } else {
+            setIsLoading(false);
         }
-        setIsLoading(false);
+
+        // 3. Listen for external block events (from apiFetch)
+        const handleExternalBlock = () => setIsBlocked(true);
+        window.addEventListener('city-explorer-auth-blocked', handleExternalBlock);
+        return () => window.removeEventListener('city-explorer-auth-blocked', handleExternalBlock);
     }, []);
 
     const login = (token, userData) => {
