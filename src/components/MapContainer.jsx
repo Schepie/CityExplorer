@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useMap, Tooltip, Circle } from 'react-leaflet';
+import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, Tooltip, Circle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { isLocationOnPath } from '../utils/geometry';
@@ -109,11 +109,39 @@ const translateHUDInstruction = (step, lang) => {
 
 // Route Arrows Component
 const RouteArrows = ({ polyline }) => {
+    const [zoom, setZoom] = useState(13); // fallback default
+
+    // Use useMapEvents to reliably track zoom changes
+    const map = useMapEvents({
+        zoomend() {
+            setZoom(map.getZoom());
+        }
+    });
+
+    // Initialize zoom on mount
+    useEffect(() => {
+        setZoom(map.getZoom());
+    }, [map]);
+
     const arrows = React.useMemo(() => {
         if (!polyline || polyline.length < 2) return [];
+
+        // Dynamic interval based on zoom level
+        // Base: 0.1km (100m) at zoom level 16
+        // We double the distance for every zoom level we go out.
+        const baseInterval = 0.1;
+        const zoomRef = 16;
+
+        // At zoom 16 -> 0.1km
+        // At zoom 13 -> 0.1 * 2^3 = 0.8km
+        // At zoom 10 -> 0.1 * 2^6 = 6.4km
+        let intervalKm = baseInterval * Math.pow(2, zoomRef - zoom);
+
+        // Clamp to keep it sane: min 50m, max 10km
+        intervalKm = Math.max(0.05, Math.min(intervalKm, 10.0));
+
         const result = [];
         let accumulatedDistance = 0;
-        const intervalKm = 0.05; // Show arrow every 50m (much denser for city walks)
 
         for (let i = 0; i < polyline.length - 1; i++) {
             const p1 = { lat: polyline[i][0], lng: polyline[i][1] };
@@ -130,8 +158,10 @@ const RouteArrows = ({ polyline }) => {
                 accumulatedDistance = 0;
             }
         }
-        return result;
-    }, [polyline]);
+
+        // Safeguard: Limit total arrows to prevent crashing the browser/DOM
+        return result.slice(0, 50);
+    }, [polyline, zoom]);
 
     if (arrows.length === 0) return null;
 
