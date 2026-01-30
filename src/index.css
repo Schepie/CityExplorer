@@ -50,6 +50,13 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  /* Disable double-tap zoom and pinch-zoom on global UI */
+  touch-action: manipulation;
+}
+
+/* Allow zooming and panning on the map specifically */
+.leaflet-container {
+  touch-action: auto !important;
 }
 
 #root {
@@ -248,12 +255,25 @@ body {
   line-height: 1.6;
   width: 480px !important;
   /* Considerably wider */
-  max-width: 90vw;
-  /* Responsive */
-  max-height: 70vh;
-  /* Taller */
+  max-width: calc(100vw - 40px) !important;
+  /* Responsive margin-aware width */
+  max-height: 50vh;
+  /* Reduced height to allow more map visibility on mobile */
   overflow-y: auto;
   /* Scrollable if text is very long */
+}
+
+/* On small screens, make popups almost full-width */
+@media (max-width: 640px) {
+  .leaflet-popup-content {
+    width: auto !important;
+    min-width: 280px;
+    max-width: calc(100vw - 32px) !important;
+  }
+
+  .leaflet-popup {
+    margin-bottom: 20px;
+  }
 }
 
 /* Custom Scrollbar for Sidebar (Windows-style) */

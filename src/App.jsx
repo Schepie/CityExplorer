@@ -130,8 +130,9 @@ function CityExplorerApp() {
   const [interests, setInterests] = useState('');
   const [constraintType, setConstraintType] = useState('distance');
   const [constraintValue, setConstraintValue] = useState(5);
-  const isRoundtrip = true;
+  const [isRoundtrip, setIsRoundtrip] = useState(true);
   const [startPoint, setStartPoint] = useState('');
+  const [stopPoint, setStopPoint] = useState('');
   // Default to Google only as requested
   const [searchMode, setSearchMode] = useState('prompt'); // 'radius', 'journey', or 'prompt'
   const [searchSources, setSearchSources] = useState({ osm: false, foursquare: false, google: true });
@@ -258,12 +259,13 @@ function CityExplorerApp() {
   };
 
   // Helper: Calculate Route Path & Steps
-  const calculateRoutePath = async (pois, center, mode) => {
+  const calculateRoutePath = async (pois, center, mode, endCenter = null) => {
     const waypoints = [
       `${center[1]},${center[0]}`,
       ...pois.map(p => `${p.lng},${p.lat}`)
     ];
-    if (isRoundtrip) waypoints.push(`${center[1]},${center[0]}`);
+    if (endCenter) waypoints.push(`${endCenter[1]},${endCenter[0]}`);
+    else if (isRoundtrip) waypoints.push(`${center[1]},${center[0]}`);
 
     try {
       const profile = mode === 'cycling' ? 'routed-bike' : 'routed-foot';
@@ -279,7 +281,7 @@ function CityExplorerApp() {
         let walkDist = 0;
         let steps = [];
         if (route.legs && route.legs.length > 1) {
-          const poiLegs = isRoundtrip ? route.legs.slice(1, -1) : route.legs.slice(1);
+          const poiLegs = (isRoundtrip || endCenter) ? route.legs.slice(1, -1) : route.legs.slice(1);
           walkDist = poiLegs.reduce((acc, leg) => acc + leg.distance, 0) / 1000;
         }
         if (route.legs) {
@@ -1479,7 +1481,7 @@ function CityExplorerApp() {
       return;
     }
 
-    const activeInterest = interestOverride || interests;
+    const activeInterest = interestOverride || interests || (language === 'nl' ? 'toeristische plekken' : 'tourist highlights');
 
     // NOTE: Removed empty interest guard. poiService.js now handles empty interests 
     // by defaulting to popular tourist categories.
@@ -1494,7 +1496,7 @@ function CityExplorerApp() {
 
     // console.log("handleJourneyStart called. City:", city, "Interest:", activeInterest);
     setIsLoading(true);
-    setIsSidebarOpen(false); // Close sidebar immediately on start
+    // setIsSidebarOpen(false); // REMOVED: Keep sidebar state manageable or let logic decide 
     setLoadingText(language === 'nl' ? 'Aan het verkennen...' : 'Exploring...');
     setFoundPoisCount(0); // Reset count
 
@@ -1526,7 +1528,7 @@ function CityExplorerApp() {
       return await processAIPrompt(aiPrompt);
     }
 
-    const activeInterest = interestOverride || interests;
+    const activeInterest = interestOverride || interests || (language === 'nl' ? 'toeristische plekken' : 'tourist highlights');
     // NOTE: Removed empty interest guard. poiService.js now handles empty interests.
 
     if (interestOverride) setInterests(interestOverride);
@@ -1764,7 +1766,8 @@ function CityExplorerApp() {
       let finalLegs = [];
 
       try {
-        const routeResult = await calculateRoutePath(fullyEnriched, cityCenter, travelMode);
+        const finalStopCenter = routeData?.stopCenter || null;
+        const routeResult = await calculateRoutePath(fullyEnriched, cityCenter, travelMode, finalStopCenter);
         finalPath = routeResult.path;
         finalDist = routeResult.dist;
         finalSteps = routeResult.steps;
@@ -2064,8 +2067,9 @@ function CityExplorerApp() {
     const effectiveTravelMode = activeParams.travelMode || travelMode;
     const effectiveConstraintType = activeParams.constraintType || constraintType;
     const effectiveConstraintValue = activeParams.constraintValue || constraintValue;
-    const effectiveRoundtrip = activeParams.isRoundtrip !== undefined ? activeParams.isRoundtrip : isRoundtrip;
+    const effectiveRoundtrip = (activeParams.isRoundtrip !== undefined) ? activeParams.isRoundtrip : isRoundtrip;
     const effectiveStartPoint = activeParams.startPoint || startPoint;
+    const effectiveStopPoint = activeParams.stopPoint || stopPoint;
 
     // Handle Start Point (if provided by AI or user)
     const activeStart = effectiveStartPoint;
@@ -2091,7 +2095,7 @@ function CityExplorerApp() {
         if (data && data[0]) {
           cityCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
         } else {
-          // Fallback 1: Try space instead of comma ( Nominatim sometimes prefers "Place City" over "Place, City" )
+          // Fallback 1: Try space instead of comma
           const q2 = `${activeStart} ${cityName}`;
           const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q2)}&format=json&limit=1`);
           const data2 = await res2.json();
@@ -2099,19 +2103,43 @@ function CityExplorerApp() {
           if (data2 && data2[0]) {
             cityCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
           } else {
-            // Fallback 2: Try searching for the start point globally (maybe it contains the city name itself or is unique)
-            console.log("Start point context search failed. Retrying global search:", activeStart);
+            // Fallback 2: Global search
             const res3 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(activeStart)}&format=json&limit=1`);
             const data3 = await res3.json();
             if (data3 && data3[0]) {
               cityCenter = [parseFloat(data3[0].lat), parseFloat(data3[0].lon)];
             } else {
-              console.warn("Start point geocoding failed entirely. Defaulting to city center.");
+              console.warn("Start point geocoding failed entirely.");
             }
           }
         }
       } catch (e) {
         console.warn("Failed to geocode startPoint", e);
+      }
+    }
+
+    // Handle Stop Point (for Point-to-Point)
+    let finalStopCenter = null;
+    if (!effectiveRoundtrip) {
+      if (effectiveStopPoint && effectiveStopPoint.trim().length > 2) {
+        try {
+          const cityName = cityData.address?.city || cityData.name;
+          const q = `${effectiveStopPoint}, ${cityName}`;
+          const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
+          const data = await res.json();
+          if (data && data[0]) {
+            finalStopCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+          } else {
+            // Fallback global search for stop point
+            const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(effectiveStopPoint)}&format=json&limit=1`);
+            const data2 = await res2.json();
+            if (data2 && data2[0]) {
+              finalStopCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to geocode stopPoint", e);
+        }
       }
     }
 
@@ -2127,7 +2155,7 @@ function CityExplorerApp() {
 
     // Use the city name from the data to improve the POI search
     // Prioritize specific locality names
-    const cityName = cityData.address?.city ||
+    const searchCityName = cityData.address?.city ||
       cityData.address?.town ||
       cityData.address?.village ||
       cityData.address?.municipality ||
@@ -2151,7 +2179,7 @@ function CityExplorerApp() {
         searchRadiusKm = (constraints.value / 60) * speed;
       }
 
-      const candidates = await getCombinedPOIs(cityData, activeInterest, cityName, searchRadiusKm, searchSources);
+      const candidates = await getCombinedPOIs(cityData, activeInterest, searchCityName, searchRadiusKm, searchSources);
       setFoundPoisCount(candidates.length);
 
       if (candidates.length === 0) {
@@ -2160,8 +2188,8 @@ function CityExplorerApp() {
           setAiChatHistory(prev => [...prev, {
             role: 'brain',
             text: language === 'nl'
-              ? `Oei, ik kon helaas geen plekken vinden voor "${activeInterest}" in ${cityName}. Heb je misschien andere interesses of een andere plek in gedachten?`
-              : `Oops, I couldn't find any spots for "${activeInterest}" in ${cityName}. Do you have other interests or maybe another place in mind?`
+              ? `Oei, ik kon helaas geen plekken vinden voor "${activeInterest}" in ${searchCityName}. Heb je misschien andere interesses of een andere plek in gedachten?`
+              : `Oops, I couldn't find any spots for "${activeInterest}" in ${searchCityName}. Do you have other interests or maybe another place in mind?`
           }]);
           setIsSidebarOpen(true);
           setRouteData(null);
@@ -2183,10 +2211,10 @@ function CityExplorerApp() {
         // Fallback: Check for generic tourism to provide suggestions
         let suggestions = [];
         try {
-          suggestions = await fetchGenericSuggestions(cityName);
+          suggestions = await fetchGenericSuggestions(searchCityName);
         } catch (e) { console.warn("Fallback failed", e); }
 
-        let msg = `No matches found for "${activeInterest}" in ${cityName}.`;
+        let msg = `No matches found for "${activeInterest}" in ${searchCityName}.`;
         if (suggestions.length > 0) {
           msg += `\n\nMaybe try one of these nearby places:\n- ${[...new Set(suggestions)].slice(0, 3).join('\n- ')}`;
         } else {
@@ -2309,11 +2337,12 @@ function CityExplorerApp() {
           const candidate = potentialNext[i];
           const walkingDist = candidate.distFromCurr * 1.3; // 1.3x buffer
 
-          const distBackToStart = isRoundtrip
-            ? getDistance(candidate.lat, candidate.lng, cityCenter[0], cityCenter[1]) * 1.3
+          const endPoint = finalStopCenter ? { lat: finalStopCenter[0], lng: finalStopCenter[1] } : { lat: cityCenter[0], lng: cityCenter[1] };
+          const distToEnd = (isRoundtrip || finalStopCenter)
+            ? getDistance(candidate.lat, candidate.lng, endPoint.lat, endPoint.lng) * 1.3
             : 0;
 
-          if (totalDistance + walkingDist + distBackToStart <= maxLimitKm) {
+          if (totalDistance + walkingDist + distToEnd <= maxLimitKm) {
             selected = candidate;
             break; // Found one!
           }
@@ -2349,7 +2378,7 @@ function CityExplorerApp() {
 
       // We might need to prune multiple times if the estimation was way off
       while (selectedPois.length > 0) {
-        const routeResult = await calculateRoutePath(selectedPois, cityCenter, travelMode);
+        const routeResult = await calculateRoutePath(selectedPois, cityCenter, travelMode, finalStopCenter);
         const dKm = routeResult.dist;
 
         // Check if this real distance fits our limit (with tolerance)
@@ -2394,13 +2423,19 @@ function CityExplorerApp() {
           totalDistance: realDistance.toFixed(1),
           walkDistance: (finalRouteResult?.walkDist || 0).toFixed(1),
           limitKm: targetLimitKm.toFixed(1),
-          isRoundtrip: true
-        }
+          isRoundtrip: effectiveRoundtrip
+        },
+        stopCenter: finalStopCenter
       });
 
       // 2. Background Process: Enrich iteratively
-      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${realDistance.toFixed(1)} km, roundtrip)`;
+      const routeTypeLabel = searchMode === 'radius' ? 'Radius search' : (effectiveRoundtrip ? 'Roundtrip' : 'Point-to-Point');
+      const routeCtx = `${routeTypeLabel} (${realDistance.toFixed(1)} km)`;
       enrichBackground(selectedPois, cityData.name, language, descriptionLength, activeInterest, routeCtx);
+
+      // Auto-transition to Results View
+      setIsSidebarOpen(true);
+      setIsAiViewActive(false);
 
     } catch (err) {
       console.error("Error fetching POIs", err);
@@ -2699,6 +2734,7 @@ function CityExplorerApp() {
     setInterests('');
     setConstraintValue(5);
     setStartPoint('');
+    setStopPoint('');
     setAiPrompt('');
     setAiChatHistory([
       {
@@ -3161,7 +3197,9 @@ function CityExplorerApp() {
         interests={interests} setInterests={setInterests}
         constraintType={constraintType} setConstraintType={setConstraintType}
         constraintValue={constraintValue} setConstraintValue={setConstraintValue}
-        isRoundtrip={true}
+        isRoundtrip={isRoundtrip} setIsRoundtrip={setIsRoundtrip}
+        startPoint={startPoint} setStartPoint={setStartPoint}
+        stopPoint={stopPoint} setStopPoint={setStopPoint}
         searchSources={searchSources} setSearchSources={setSearchSources}
         onJourneyStart={handleJourneyStart}
         onAddToJourney={handleAddToJourney}
