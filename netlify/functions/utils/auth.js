@@ -88,8 +88,8 @@ export const validateUser = (event) => {
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
 
-        // Revocation Check
-        if (isEmailBlocked(decoded.email)) {
+        // Revocation Check (Admins bypass this)
+        if (decoded.role !== 'admin' && isEmailBlocked(decoded.email)) {
             console.warn(`Access denied for blocked user: ${decoded.email}`);
             return { error: "Access Revoked", status: 403 };
         }
@@ -127,8 +127,8 @@ export const verifyMagicToken = (token) => {
     }
 };
 
-export const generateSessionToken = (email) => {
+export const generateSessionToken = (email, role = 'user') => {
     const SECRET = getJwtSecret();
     if (!SECRET) throw new Error("Missing JWT_SECRET");
-    return jwt.sign({ email, role: 'user' }, SECRET, { expiresIn: TOKEN_EXPIRY });
+    return jwt.sign({ email, role }, SECRET, { expiresIn: TOKEN_EXPIRY });
 };

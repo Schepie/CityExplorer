@@ -1129,6 +1129,8 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                     )}
                                 </div>
                             )}
+
+
                             <div className="flex justify-between items-center text-[10px]">
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Duur' : 'Duration'}</span>
@@ -1184,6 +1186,7 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
 const ItinerarySidebar = ({
     routeData, onPoiClick, onReset, language, setLanguage,
     speakingId, onSpeak, autoAudio, setAutoAudio,
+    autoSaveEnabled, setAutoSaveEnabled,
     voiceSettings, setVoiceSettings,
     city, setCity, interests, setInterests,
     constraintType, setConstraintType,
@@ -1234,8 +1237,7 @@ const ItinerarySidebar = ({
     const [showVoiceSettings, setShowVoiceSettings] = useState(false);
     const [showThemeSettings, setShowThemeSettings] = useState(false);
     const [showTravelSettings, setShowTravelSettings] = useState(false);
-    const [showSimulationSettings, setShowSimulationSettings] = useState(false);
-    const [showAudioSettings, setShowAudioSettings] = useState(false);
+
     const poiHighlightedWordRef = useRef(null);
     const scrollerRef = useRef(null);
 
@@ -1297,7 +1299,7 @@ const ItinerarySidebar = ({
             add: "Add Spots",
             add_short: "Add",
             options: "Options",
-            reset: "Reset",
+            reset: "Restart",
             save: "Save",
             adjust: "Adjust Plan",
             guide: "Talk to guide"
@@ -1313,7 +1315,7 @@ const ItinerarySidebar = ({
             add: "Spots Toevoegen",
             add_short: "Voeg toe",
             options: "Opties",
-            reset: "Reset",
+            reset: "Herstarten",
             save: "Opslaan",
             adjust: "Wijzig Plan",
             guide: "Praat met gids"
@@ -1485,6 +1487,23 @@ const ItinerarySidebar = ({
                                             </svg>
                                         </button>
                                     </div>
+                                )}
+
+                                {/* Guide Icon - Return to AI Chat */}
+                                {showItinerary && !isAiViewActive && (
+                                    <button
+                                        onClick={() => {
+                                            setSearchMode('prompt');
+                                            setIsAiViewActive(true);
+                                            setShowSettings(false);
+                                        }}
+                                        className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5"
+                                        title={language === 'nl' ? 'Vraag de gids' : 'Ask the guide'}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                        </svg>
+                                    </button>
                                 )}
 
                                 <button
@@ -1685,7 +1704,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setShowLanguageSettings(!showLanguageSettings)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Taal' : 'Language'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -1740,7 +1759,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setShowVoiceSettings(!showVoiceSettings)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Stem' : 'Voice'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -1796,7 +1815,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setShowThemeSettings(!showThemeSettings)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Thema' : 'Theme'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -1851,7 +1870,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setShowTravelSettings(!showTravelSettings)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Reiswijze' : 'Travel Mode'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -1906,116 +1925,72 @@ const ItinerarySidebar = ({
                                         {/* 5. Simulation Mode */}
                                         <div className="space-y-1">
                                             <button
-                                                onClick={() => setShowSimulationSettings(!showSimulationSettings)}
+                                                onClick={() => {
+                                                    const newVal = !isSimulationEnabled;
+                                                    setIsSimulationEnabled(newVal);
+                                                    if (!newVal) setIsSimulating(false);
+                                                }}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Simulatie' : 'Simulation'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
-                                                    {!showSimulationSettings && (
-                                                        <span className={`text-[10px] font-bold uppercase tracking-tighter ${isSimulationEnabled ? 'text-primary' : 'text-slate-500'}`}>
-                                                            {isSimulationEnabled ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
-                                                        </span>
-                                                    )}
-                                                    <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showSimulationSettings ? 'rotate-180' : ''}`}
-                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                                    >
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                                                    </svg>
+                                                    <span className={`text-[10px] font-bold uppercase tracking-tighter ${isSimulationEnabled ? 'text-primary' : 'text-slate-500'}`}>
+                                                        {isSimulationEnabled ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
+                                                    </span>
                                                 </div>
                                             </button>
-                                            {showSimulationSettings && (
-                                                <div className="mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
-                                                    <button
-                                                        onClick={() => {
-                                                            const newVal = !isSimulationEnabled;
-                                                            setIsSimulationEnabled(newVal);
-                                                            if (!newVal) setIsSimulating(false);
-                                                        }}
-                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${isSimulationEnabled ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={`p-1.5 rounded-full ${isSimulationEnabled ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
-                                                            </div>
-                                                            <span className={`text-sm font-medium ${isSimulationEnabled ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Route Simulatie' : 'Route Simulation'}</span>
-                                                        </div>
-                                                        {isSimulationEnabled && (
-                                                            <div className="text-[var(--primary)]">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                                </svg>
-                                                            </div>
-                                                        )}
-                                                    </button>
-                                                </div>
-                                            )}
                                         </div>
 
                                         {/* 6. Auto Audio */}
                                         <div className="space-y-1">
                                             <button
-                                                onClick={() => setShowAudioSettings(!showAudioSettings)}
+                                                onClick={() => setAutoAudio(!autoAudio)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Auto Audio' : 'Auto Audio'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
-                                                    {!showAudioSettings && (
-                                                        <span className={`text-[10px] font-bold uppercase tracking-tighter ${autoAudio ? 'text-primary' : 'text-slate-500'}`}>
-                                                            {autoAudio ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
-                                                        </span>
-                                                    )}
-                                                    <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showAudioSettings ? 'rotate-180' : ''}`}
-                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                                    >
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                                                    </svg>
+                                                    <span className={`text-[10px] font-bold uppercase tracking-tighter ${autoAudio ? 'text-primary' : 'text-slate-500'}`}>
+                                                        {autoAudio ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
+                                                    </span>
                                                 </div>
                                             </button>
-                                            {showAudioSettings && (
-                                                <div className="mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
-                                                    <button
-                                                        onClick={() => setAutoAudio(!autoAudio)}
-                                                        className={`w-full py-2 px-3 flex items-center justify-between text-left rounded-lg transition-all border ${autoAudio ? 'bg-[var(--panel-bg)] border-[var(--primary)]' : 'bg-[var(--panel-bg)] border-[var(--panel-border)] hover:bg-[var(--input-bg)]'}`}
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={`p-1.5 rounded-full ${autoAudio ? 'bg-[var(--primary)]/20 text-[var(--primary)]' : 'bg-[var(--input-bg)] text-[var(--text-muted)]'}`}>
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                                                            </div>
-                                                            <span className={`text-sm font-medium ${autoAudio ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{language === 'nl' ? 'Automatisch Voorlezen' : 'Auto-Audio Mode'}</span>
-                                                        </div>
-                                                        {autoAudio && (
-                                                            <div className="text-[var(--primary)]">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                                </svg>
-                                                            </div>
-                                                        )}
-                                                    </button>
+                                        </div>
+
+
+                                        {/* 6b. Autosave */}
+                                        <div className="space-y-1">
+                                            <button
+                                                onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                            >
+                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'Autosave' : 'Autosave'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] font-bold uppercase tracking-tighter ${autoSaveEnabled ? 'text-primary' : 'text-slate-500'}`}>
+                                                        {autoSaveEnabled ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
+                                                    </span>
                                                 </div>
-                                            )}
+                                            </button>
                                         </div>
 
                                         {/* 7. Truthfulness Legend */}
-                                        <div className="pt-4 border-t border-white/5">
+                                        <div className="space-y-1">
                                             <div className="flex flex-col gap-1">
                                                 <button
                                                     onClick={() => setShowTruthfulnessLegend(!showTruthfulnessLegend)}
-                                                    className="flex items-center justify-between w-full hover:bg-white/5 py-2 px-1 rounded-lg transition-all group"
+                                                    className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                                 >
-                                                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                         {language === 'nl' ? 'Betrouwbaarheid' : 'Truthfulness'}
                                                     </label>
                                                     <svg
                                                         xmlns="http://www.w3.org/2000/svg"
-                                                        className={`h-3.5 w-3.5 text-slate-500 transition-transform duration-300 ${showTruthfulnessLegend ? 'rotate-180' : ''}`}
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showTruthfulnessLegend ? 'rotate-180' : ''}`}
                                                         fill="none" viewBox="0 0 24 24" stroke="currentColor"
                                                     >
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
@@ -2062,6 +2037,7 @@ const ItinerarySidebar = ({
                                                 )}
                                             </div>
                                         </div>
+
                                     </div>
                                 )}
 
@@ -2254,20 +2230,7 @@ const ItinerarySidebar = ({
                                                                         </button>
                                                                     )}
 
-                                                                    {searchMode !== 'prompt' && (
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                setIsAddingMode(true);
-                                                                                setExpandedPoi(null);
-                                                                            }}
-                                                                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-black tracking-wider transition-all border border-primary/20 shadow-sm active:scale-95"
-                                                                            title={language === 'nl' ? "Voeg meer toe aan je route" : "Add more to your route"}
-                                                                        >
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-                                                                            {language === 'nl' ? 'TOEVOEGEN' : 'ADD'}
-                                                                        </button>
-                                                                    )}
+
 
                                                                     <button
                                                                         onClick={(e) => {
@@ -2386,18 +2349,7 @@ const ItinerarySidebar = ({
                                     <span className="truncate">{autoAudio ? "Audio aan" : "Audio uit"}</span>
                                 </button>
 
-                                {!isAiViewActive && (
-                                    <button
-                                        onClick={() => {
-                                            setSearchMode('prompt');
-                                            setIsAiViewActive(true);
-                                        }}
-                                        className="flex-1 h-full text-[9px] uppercase tracking-wider font-bold rounded-lg bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-all flex items-center justify-center gap-1.5 shadow-lg"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                                        <span className="truncate">{language === 'nl' ? "gids" : "guide"}</span>
-                                    </button>
-                                )}
+
 
                                 <button
                                     onClick={() => {

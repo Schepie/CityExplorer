@@ -752,7 +752,61 @@ function CityExplorerApp() {
         return;
       }
 
-      const cityData = results;
+      let cityData = results;
+
+      // Robust Deduplication: Filter out candidates that are geographically identical (< 5km) and have similar names
+      const uniqueData = [];
+      for (const item of cityData) {
+        const isDuplicate = uniqueData.some(existing => {
+          // 1. Check Name Similarity (contains)
+          const nameMatch = existing.display_name.includes(item.name) || item.display_name.includes(existing.name);
+
+          // 2. Check Distance (if coordinates available)
+          let dist = 9999;
+          if (item.lat && existing.lat) {
+            dist = getDistance(parseFloat(item.lat), parseFloat(item.lon), parseFloat(existing.lat), parseFloat(existing.lon));
+          }
+
+          // Treat as duplicate if very close (< 5km) AND name matches is robust enough
+          // Or if display_name is identical (already covered by logic but good to receive)
+          return (dist < 5) || (existing.display_name === item.display_name);
+        });
+
+        if (!isDuplicate) {
+          uniqueData.push(item);
+        }
+      }
+      cityData = uniqueData;
+
+      console.log("[CityValidation] User Location:", userLocation);
+
+      // Smart Selection: If user location is known, sort by distance
+      if (userLocation && userLocation.lat) {
+        if (cityData.length > 1) {
+          try {
+            // Calculate distance for each candidate
+            cityData.forEach(r => {
+              r._dist = getDistance(userLocation.lat, userLocation.lng, parseFloat(r.lat), parseFloat(r.lon));
+            });
+
+            // Sort by distance (closest first)
+            cityData.sort((a, b) => a._dist - b._dist);
+
+            console.log("[CityValidation] Sorted Candidates:", cityData.map(c => `${c.name} (${c._dist.toFixed(1)}km)`));
+
+            // Heuristic: If closest candidate is within 100km, auto-select it
+            if (cityData[0]._dist < 100) {
+              console.log(`[Smart Selection] Auto-picking closest: ${cityData[0].name} (${cityData[0]._dist.toFixed(1)}km)`);
+              cityData = [cityData[0]];
+            }
+          } catch (err) {
+            console.warn("Smart selection failed", err);
+          }
+        }
+      } else {
+        console.warn("[CityValidation] User location missing. Skipping smart selection.");
+        // Fallback: If deduplication left only 1 result, we are good.
+      }
 
       if (cityData.length > 1 && searchMode !== 'prompt') {
         setDisambiguationOptions(cityData);
@@ -2795,6 +2849,41 @@ function CityExplorerApp() {
 
   useEffect(() => localStorage.setItem('app_auto_audio', autoAudio), [autoAudio]);
 
+  // Autosave State
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => localStorage.getItem('app_autosave_enabled') !== 'false'); // Default true
+
+  useEffect(() => localStorage.setItem('app_autosave_enabled', autoSaveEnabled), [autoSaveEnabled]);
+
+  // Autosave Logic
+  useEffect(() => {
+    if (autoSaveEnabled && routeData) {
+      localStorage.setItem('app_saved_route', JSON.stringify(routeData));
+    } else if (!autoSaveEnabled) {
+      localStorage.removeItem('app_saved_route');
+    }
+  }, [routeData, autoSaveEnabled]);
+
+  // Autoload Logic
+  useEffect(() => {
+    if (autoSaveEnabled) {
+      const saved = localStorage.getItem('app_saved_route');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.pois && parsed.pois.length > 0) {
+            console.log("Restoring autosaved route...");
+            setRouteData(parsed);
+            if (parsed.cityName) setCity(parsed.cityName); // Assuming cityName is in routeData or needs to be added
+            // setNavPhase(NAV_PHASES.PRE_ROUTE); // Default on load
+            setIsAiViewActive(false); // Jump to itinerary
+          }
+        } catch (e) {
+          console.error("Failed to load autosaved route", e);
+        }
+      }
+    }
+  }, []); // Run once on mount
+
   const [voiceSettings, setVoiceSettings] = useState(() => {
     const saved = localStorage.getItem('app_voice_settings');
     return saved ? JSON.parse(saved) : { variant: 'nl', gender: 'female' };
@@ -3069,10 +3158,15 @@ function CityExplorerApp() {
               </a>
             </div>
             <button
-              onClick={() => window.location.href = '/'}
+              onClick={() => {
+                // Force logout to allow trying a different code (like master code)
+                localStorage.removeItem('city_explorer_token');
+                localStorage.removeItem('city_explorer_user');
+                window.location.href = '/';
+              }}
               className="px-6 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all border border-white/10"
             >
-              Go back
+              Log out & Try again
             </button>
           </div>
         </div>
@@ -3185,6 +3279,8 @@ function CityExplorerApp() {
         onStopSpeech={stopSpeech}
         autoAudio={autoAudio}
         setAutoAudio={setAutoAudio}
+        autoSaveEnabled={autoSaveEnabled}
+        setAutoSaveEnabled={setAutoSaveEnabled}
         focusedLocation={focusedLocation}
 
         isSimulating={isSimulating}
