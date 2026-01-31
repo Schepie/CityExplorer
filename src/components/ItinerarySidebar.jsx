@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { PoiIntelligence } from '../services/PoiIntelligence';
 import { SmartAutoScroller } from '../utils/AutoScroller';
 import ConfirmationModal from './ConfirmationModal';
+import RouteRefiner from './RouteRefiner';
 
 const SidebarInput = ({
     city, setCity,
@@ -311,14 +312,14 @@ const SidebarInput = ({
                         {/* 2. Start Location */}
                         <div className="space-y-2">
                             <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
-                                {language === 'nl' ? 'Vertrekpunt' : 'Start Point'}
+                                {language === 'nl' ? 'Vertrekpunt (optioneel)' : 'Start Point (optional)'}
                             </label>
                             <div className="relative group">
                                 <input
                                     type="text"
                                     value={startPoint}
                                     onChange={(e) => setStartPoint(e.target.value)}
-                                    placeholder={language === 'nl' ? "Bijv. Grote Markt..." : "E.g. Central Park..."}
+                                    placeholder={language === 'nl' ? "Bv. Markt ( leeg = gids kiest vertrekpunt)" : "E.g. Market (empty = guide chooses start)"}
                                     className="w-full bg-[var(--input-bg)] border border-[var(--panel-border)] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[var(--text-main)] focus:outline-none focus:ring-2 ring-primary/50 transition-all shadow-md"
                                 />
                                 <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
@@ -330,7 +331,7 @@ const SidebarInput = ({
                         {/* 3. Interests Selection */}
                         <div className="space-y-2">
                             <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
-                                {language === 'nl' ? 'Wat zijn je interesses?' : 'What are your interests?'}
+                                {language === 'nl' ? 'Wat zijn je interesses? (optioneel)' : 'What are your interests? (optional)'}
                             </label>
                             <div className="relative group">
                                 <input
@@ -338,7 +339,7 @@ const SidebarInput = ({
                                     type="text"
                                     value={interests}
                                     onChange={(e) => setInterests(e.target.value)}
-                                    placeholder={language === 'nl' ? "Bijv. Musea... (leeg = toeristische plekken)" : "E.g. Museums... (empty = tourist highlights)"}
+                                    placeholder={language === 'nl' ? "Bv. Musea... (leeg = toeristische plekken)" : "E.g. Museums... (empty = tourist highlights)"}
                                     className="w-full bg-[var(--input-bg)] border border-[var(--panel-border)] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[var(--text-main)] focus:outline-none focus:ring-2 ring-primary/50 transition-all shadow-md"
                                 />
                                 <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
@@ -347,8 +348,8 @@ const SidebarInput = ({
                             </div>
                         </div>
 
-                        {/* 3. Travel Mode & Trip Type */}
-                        <div className="grid grid-cols-2 gap-3">
+                        {/* 3. Travel Mode */}
+                        <div className="grid grid-cols-1 gap-3">
                             <div className="space-y-2">
                                 <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
                                     {language === 'nl' ? 'Tripwijze' : 'Travel Mode'}
@@ -368,94 +369,53 @@ const SidebarInput = ({
                                     </button>
                                 </div>
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
-                                    {language === 'nl' ? 'Type' : 'Type'}
-                                </label>
-                                <div className="flex bg-[var(--input-bg)] p-1 rounded-xl border border-[var(--panel-border)]">
-                                    <button
-                                        onClick={() => setIsRoundtrip(true)}
-                                        className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold transition-all ${isRoundtrip ? 'bg-white/10 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                                    >
-                                        {language === 'nl' ? 'Lus' : 'Loop'}
-                                    </button>
-                                    <button
-                                        onClick={() => setIsRoundtrip(false)}
-                                        className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold transition-all ${!isRoundtrip ? 'bg-white/10 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                                    >
-                                        {language === 'nl' ? 'Enkel' : 'Point'}
-                                    </button>
-                                </div>
-                            </div>
                         </div>
 
-                        {/* 4. Constraints (Conditionals) */}
+                        {/* 4. Constraints (Always Roundtrip) */}
                         <div className="space-y-4 pt-1 animate-in fade-in slide-in-from-top-1 duration-300">
-                            {isRoundtrip ? (
-                                <>
-                                    {/* Unified Distance/Time Slider for Roundtrip */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center justify-between px-1">
-                                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-                                                {language === 'nl' ? 'Bereik' : 'Range'}
-                                            </label>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[10px] text-primary/80 font-bold">
-                                                    {travelMode === 'walking' ? (language === 'nl' ? 'Wandelen' : 'Walking') : (language === 'nl' ? 'Fietsen' : 'Cycling')}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-4 px-1">
-                                            <input
-                                                type="range"
-                                                min={1}
-                                                max={60}
-                                                step={1}
-                                                value={constraintType === 'duration' ? Math.round(constraintValue / (travelMode === 'walking' ? 12 : 3)) : constraintValue}
-                                                onChange={(e) => {
-                                                    const km = parseInt(e.target.value);
-                                                    setConstraintType('distance');
-                                                    setConstraintValue(km);
-                                                }}
-                                                className="w-full accent-primary"
-                                            />
-                                            <div className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5 shadow-inner">
-                                                <div className="flex items-baseline gap-1">
-                                                    <span className="text-xl font-black text-white">
-                                                        {constraintType === 'duration' ? Math.round(constraintValue / (travelMode === 'walking' ? 12 : 3)) : constraintValue}
-                                                    </span>
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">km</span>
-                                                </div>
-                                                <div className="flex items-baseline gap-1 bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
-                                                    <span className="text-sm font-bold text-primary">
-                                                        ~{constraintType === 'duration' ? constraintValue : (constraintValue * (travelMode === 'walking' ? 12 : 3))}
-                                                    </span>
-                                                    <span className="text-[9px] font-bold text-primary/70 uppercase">min</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
-                                        {language === 'nl' ? 'Eindpunt' : 'End Point'}
+                            {/* Unified Distance/Time Slider for Roundtrip */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between px-1">
+                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                                        {language === 'nl' ? 'Bereik' : 'Range'}
                                     </label>
-                                    <div className="relative group">
-                                        <input
-                                            type="text"
-                                            value={stopPoint}
-                                            onChange={(e) => setStopPoint(e.target.value)}
-                                            placeholder={language === 'nl' ? "Waar stop je?" : "Where do you end?"}
-                                            className="w-full bg-[var(--input-bg)] border border-[var(--panel-border)] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[var(--text-main)] focus:outline-none focus:ring-2 ring-primary/50 transition-all shadow-md"
-                                        />
-                                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m12 14 4-4 4 4" /><path d="M16 10v11" /><path d="M22 21H10" /><path d="M2 21h4" /><path d="M7 21a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2" /><path d="M12 11V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" /></svg>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-primary/80 font-bold">
+                                            {travelMode === 'walking' ? (language === 'nl' ? 'Wandelen' : 'Walking') : (language === 'nl' ? 'Fietsen' : 'Cycling')}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4 px-1">
+                                    <input
+                                        type="range"
+                                        min={1}
+                                        max={60}
+                                        step={1}
+                                        value={constraintType === 'duration' ? Math.round(constraintValue / (travelMode === 'walking' ? 12 : 3)) : constraintValue}
+                                        onChange={(e) => {
+                                            const km = parseInt(e.target.value);
+                                            setConstraintType('distance');
+                                            setConstraintValue(km);
+                                        }}
+                                        className="w-full accent-primary"
+                                    />
+                                    <div className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5 shadow-inner">
+                                        <div className="flex items-baseline gap-1">
+                                            <span className="text-xl font-black text-white">
+                                                {constraintType === 'duration' ? Math.round(constraintValue / (travelMode === 'walking' ? 12 : 3)) : constraintValue}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">km</span>
+                                        </div>
+                                        <div className="flex items-baseline gap-1 bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
+                                            <span className="text-sm font-bold text-primary">
+                                                ~{constraintType === 'duration' ? constraintValue : (constraintValue * (travelMode === 'walking' ? 12 : 3))}
+                                            </span>
+                                            <span className="text-[9px] font-bold text-primary/70 uppercase">min</span>
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                            </div>
                         </div>
 
                         {/* Submit Button */}
@@ -514,7 +474,7 @@ const SidebarInput = ({
                                         ? 'bg-red-500 text-white animate-pulse'
                                         : 'bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-600'
                                         }`}
-                                    title={language === 'nl' ? "Praat met gids" : "Talk to guide"}
+                                    title={language === 'nl' ? "Vraag de gids" : "Ask the guide"}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
@@ -1173,7 +1133,7 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                 className="w-full py-2 px-3 rounded-xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider group"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                                {language === 'nl' ? 'Praat met je gids' : 'Talk to your guide'}
+                                {language === 'nl' ? 'Vraag de gids' : 'Ask the guide'}
                             </button>
                         </div>
                     )}
@@ -1190,13 +1150,14 @@ const ItinerarySidebar = ({
     voiceSettings, setVoiceSettings,
     city, setCity, interests, setInterests,
     constraintType, setConstraintType,
-    constraintValue, setConstraintValue,
+    constraintValue, onConstraintValueChange,
+    onConstraintValueFinal,
     isRoundtrip, setIsRoundtrip,
     startPoint, setStartPoint,
     stopPoint, setStopPoint,
     searchSources, setSearchSources,
     onJourneyStart, onAddToJourney,
-    isLoading, loadingText, onCityValidation,
+    isLoading, setIsLoading, loadingText, setLoadingText, onCityValidation,
     onUseCurrentLocation,
     disambiguationOptions, onDisambiguationSelect, onDisambiguationCancel,
     searchMode, setSearchMode,
@@ -1218,8 +1179,10 @@ const ItinerarySidebar = ({
     aiChatHistory,
     isAiViewActive,
     setIsAiViewActive,
+    activePoiIndex,
 
     onRemovePoi,
+    onStopsCountChange,
     onUpdateStartLocation,
     setViewAction
 }) => {
@@ -1302,7 +1265,7 @@ const ItinerarySidebar = ({
             reset: "Restart",
             save: "Save",
             adjust: "Adjust Plan",
-            guide: "Talk to guide"
+            guide: "Ask the guide"
         },
         nl: {
             journey: "CityExplorer",
@@ -1318,7 +1281,7 @@ const ItinerarySidebar = ({
             reset: "Herstarten",
             save: "Opslaan",
             adjust: "Wijzig Plan",
-            guide: "Praat met gids"
+            guide: "Vraag de gids"
         }
     };
     const text = t[language || 'en'];
@@ -1455,129 +1418,184 @@ const ItinerarySidebar = ({
             >
                 <div className="flex flex-col h-full bg-gradient-to-b from-[var(--bg-gradient-start)]/50 to-transparent">
                     {/* Header */}
-                    <div className="p-4 pb-3 border-b border-white/10">
-                        <div className="flex justify-between items-center mb-2">
-                            <div className="flex items-center gap-3">
-                                <img src="/logo.jpg" alt="App Icon" className="w-10 h-10 rounded-xl shadow-md border border-white/20" />
-                                <h2 className="text-2xl font-bold text-white tracking-tight leading-none">{text.journey}</h2>
-                            </div>
-                            {/* Lang and Close Controls */}
-                            <div className="flex items-center gap-1">
-                                {/* Load Journey Icon - Only in Search View */}
-                                {!showItinerary && (
-                                    <div className="relative group">
-                                        <input
-                                            type="file"
-                                            accept=".json"
-                                            onChange={(e) => {
-                                                if (e.target.files?.[0]) {
-                                                    if (onLoad) onLoad(e.target.files[0]);
-                                                    e.target.value = null;
-                                                }
-                                            }}
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                                        />
+                    <div className="px-4 pt-4 pb-3 border-b border-white/10">
+                        {!isAiViewActive || !routeData ? (
+                            <div className="flex justify-between items-center mb-2">
+                                <div className="flex items-center gap-3">
+                                    <img src="/logo.jpg" alt="App Icon" className="w-10 h-10 rounded-xl shadow-md border border-white/20" />
+                                    <h2 className="text-2xl font-bold text-white tracking-tight leading-none">{text.journey}</h2>
+                                </div>
+                                {/* Lang and Close Controls */}
+                                <div className="flex items-center gap-1">
+                                    {/* Load Journey Icon - Only in Search View */}
+                                    {!showItinerary && (
+                                        <div className="relative group">
+                                            <input
+                                                type="file"
+                                                accept=".json"
+                                                onChange={(e) => {
+                                                    if (e.target.files?.[0]) {
+                                                        if (onLoad) onLoad(e.target.files[0]);
+                                                        e.target.value = null;
+                                                    }
+                                                }}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                            />
+                                            <button
+                                                type="button"
+                                                className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5"
+                                                title={language === 'nl' ? 'Laad Trip' : 'Load Journey'}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Guide Icon - Return to AI Chat */}
+                                    {showItinerary && !isAiViewActive && (
                                         <button
-                                            type="button"
+                                            onClick={() => {
+                                                setSearchMode('prompt');
+                                                setIsAiViewActive(true);
+                                                setShowSettings(false);
+                                            }}
                                             className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5"
-                                            title={language === 'nl' ? 'Laad Trip' : 'Load Journey'}
+                                            title={language === 'nl' ? 'Vraag de gids' : 'Ask the guide'}
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                                             </svg>
                                         </button>
-                                    </div>
-                                )}
+                                    )}
 
-                                {/* Guide Icon - Return to AI Chat */}
-                                {showItinerary && !isAiViewActive && (
                                     <button
                                         onClick={() => {
-                                            setSearchMode('prompt');
-                                            setIsAiViewActive(true);
-                                            setShowSettings(false);
+                                            const nextValue = !showSettings;
+                                            setShowSettings(nextValue);
+                                            if (nextValue) setSettingsOpenedFromMap(false);
                                         }}
-                                        className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5"
-                                        title={language === 'nl' ? 'Vraag de gids' : 'Ask the guide'}
+                                        className={`p-2 rounded-full transition-all mt-1 ${showSettings ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                                        title="Settings"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
                                         </svg>
                                     </button>
-                                )}
 
-                                <button
-                                    onClick={() => {
-                                        const nextValue = !showSettings;
-                                        setShowSettings(nextValue);
-                                        if (nextValue) setSettingsOpenedFromMap(false);
-                                    }}
-                                    className={`p-2 rounded-full transition-all mt-1 ${showSettings ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                                    title="Settings"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                                    </svg>
-                                </button>
+                                    {(showItinerary || showSettings) && (
+                                        <>
+                                            <button
+                                                onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
+                                                className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5 md:hidden"
+                                                title={language === 'nl' ? 'Inklappen' : 'Collapse'}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                                </svg>
+                                            </button>
 
-                                {(showItinerary || showSettings) && (
-                                    <>
-                                        <button
-                                            onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
-                                            className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5 md:hidden"
-                                            title={language === 'nl' ? 'Inklappen' : 'Collapse'}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                                            </svg>
-                                        </button>
-
-                                        <button
-                                            onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
-                                            className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5 hidden md:block"
-                                            title={language === 'nl' ? 'Inklappen' : 'Collapse'}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                                            </svg>
-                                        </button>
-                                    </>
-                                )}
+                                            <button
+                                                onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
+                                                className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5 hidden md:block"
+                                                title={language === 'nl' ? 'Inklappen' : 'Collapse'}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                                                </svg>
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        ) : (
+                            /* Guide Active Header - Icon, Title and Settings Button */
+                            <div className="flex items-center justify-between w-full">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full border-2 border-primary overflow-hidden shrink-0 shadow-lg shadow-primary/20">
+                                        <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-[1.6]" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-bold text-white leading-tight">
+                                            {language === 'nl' ? "Je Persoonlijke Gids" : "Your Personal Guide"}
+                                        </h2>
+                                        <p className="text-[10px] text-slate-400 font-medium leading-tight max-w-[200px]">
+                                            {language === 'nl'
+                                                ? "pas je route aan"
+                                                : "adjust your route"}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1 mt-1">
+                                    <button
+                                        onClick={() => {
+                                            const nextValue = !showSettings;
+                                            setShowSettings(nextValue);
+                                            if (nextValue) setSettingsOpenedFromMap(false);
+                                        }}
+                                        className={`p-2 rounded-full transition-all ${showSettings ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                                        title="Settings"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
 
-                        {/* City Welcome Card (Replaces Stats Summary) */}
-                        {showItinerary && (
-                            <div className="mt-4">
-                                <CityWelcomeCard
-                                    city={city}
-                                    center={routeData.center}
-                                    stats={routeData.stats}
-                                    language={language}
-                                    pois={routeData.pois}
-                                    speakingId={speakingId}
-                                    onSpeak={onSpeak}
-                                    autoAudio={autoAudio}
-                                    interests={interests}
-                                    searchMode={searchMode}
-                                    constraintValue={constraintValue}
-                                    constraintType={constraintType}
-                                    isRoundtrip={isRoundtrip}
-                                    activeTheme={availableThemes?.[activeTheme]}
-                                    travelMode={travelMode}
-                                    userLocation={focusedLocation}
-                                    onStopSpeech={onStopSpeech}
-                                    spokenCharCount={spokenCharCount}
-                                    isSpeechPaused={isSpeechPaused}
-                                    scroller={scrollerRef.current}
-                                    isAiViewActive={isAiViewActive}
+                                    <button
+                                        onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
+                                        className="p-2 rounded-full transition-all text-slate-400 hover:text-white hover:bg-white/5 md:hidden"
+                                        title={language === 'nl' ? 'Inklappen' : 'Collapse'}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                        </svg>
+                                    </button>
 
-                                    setIsAiViewActive={setIsAiViewActive}
-                                    onUpdateStartLocation={onUpdateStartLocation}
-                                />
+                                    <button
+                                        onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
+                                        className="p-2 rounded-full transition-all text-slate-400 hover:text-white hover:bg-white/5 hidden md:block"
+                                        title={language === 'nl' ? 'Inklappen' : 'Collapse'}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
+                    {/* City Welcome Card (Replaces Stats Summary) */}
+                    {!isAiViewActive && showItinerary && (
+                        <div className="mt-4">
+                            <CityWelcomeCard
+                                city={city}
+                                center={routeData.center}
+                                stats={routeData.stats}
+                                language={language}
+                                pois={routeData.pois}
+                                speakingId={speakingId}
+                                onSpeak={onSpeak}
+                                autoAudio={autoAudio}
+                                interests={interests}
+                                searchMode={searchMode}
+                                constraintValue={constraintValue}
+                                constraintType={constraintType}
+                                isRoundtrip={isRoundtrip}
+                                activeTheme={availableThemes?.[activeTheme]}
+                                travelMode={travelMode}
+                                userLocation={focusedLocation}
+                                onStopSpeech={onStopSpeech}
+                                spokenCharCount={spokenCharCount}
+                                isSpeechPaused={isSpeechPaused}
+                                scroller={scrollerRef.current}
+                                isAiViewActive={isAiViewActive}
+
+                                setIsAiViewActive={setIsAiViewActive}
+                                onUpdateStartLocation={onUpdateStartLocation}
+                            />
+                        </div>
+                    )}
 
 
                     {/* Settings Overlay */}
@@ -1629,6 +1647,19 @@ const ItinerarySidebar = ({
                                     /* Changelog View */
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
+                                            {
+                                                date: "31 Jan 2026",
+                                                version: "v1.7.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Gemakkelijk Inloggen", desc: "Je blijft nu 7 dagen ingelogd zodat je niet elke keer een nieuwe code nodig hebt." },
+                                                    { title: "Autosave Fix", desc: "De autosave knop werkt nu correct en onthoudt je voorkeur." },
+                                                    { title: "Herstarten Verbeterd", desc: "De herstartknop opent nu direct de vragenlijst om snel een nieuwe trip te plannen." }
+                                                ] : [
+                                                    { title: "Easy Sign-in", desc: "You now stay signed in for 7 days, so you don't need a new code every time." },
+                                                    { title: "Autosave Fix", desc: "The autosave button now correctly respects your preference." },
+                                                    { title: "Restart Improved", desc: "The restart button now directly opens the questionnaire for quick planning." }
+                                                ]
+                                            },
                                             {
                                                 date: "29 Jan 2026",
                                                 version: "v1.6.0",
@@ -2054,7 +2085,7 @@ const ItinerarySidebar = ({
                                                 >
                                                     {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                                 </button>
-                                                <span className="text-slate-300 text-sm font-medium">v1.6.0</span>
+                                                <span className="text-slate-300 text-sm font-medium">v1.7.0</span>
                                             </div>
                                         </div>
                                         <div className="flex justify-between items-center">
@@ -2063,7 +2094,7 @@ const ItinerarySidebar = ({
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                            <span className="text-[var(--text-muted)] text-sm font-medium">29 Jan 2026</span>
+                                            <span className="text-[var(--text-muted)] text-sm font-medium">31 Jan 2026</span>
                                         </div>
                                     </div>
                                 </div>
@@ -2072,270 +2103,292 @@ const ItinerarySidebar = ({
                     )}
 
                     {/* Content Area */}
-                    <div
-                        ref={scrollContainerRef}
-                        onScroll={handleScroll}
-                        className="flex-1 overflow-y-auto p-4 custom-scrollbar"
-                    >
-                        {/* VIEW 1: Disambiguation */}
-                        {showDisambiguation ? (
-                            <div className="space-y-3">
-                                <h3 className="font-bold text-[var(--text-main)]">{text.disambig_title} {city}?</h3>
-                                {disambiguationOptions.map((option, idx) => (
-                                    <button
-                                        key={idx}
-                                        onClick={() => {
-                                            onDisambiguationSelect(option);
-                                            if (!interests || !interests.trim()) {
-                                                setShouldAutoFocusInterests(true);
-                                            }
-                                        }}
-                                        className="w-full text-left bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-3 rounded-lg border border-[var(--panel-border)] text-sm"
-                                    >
-                                        <div className="font-bold text-[var(--text-main)]">{option.name}</div>
-                                        <div className="text-xs text-[var(--text-muted)]">{option.display_name}</div>
-                                    </button>
-                                ))}
-                                <button onClick={onDisambiguationCancel} className="text-[var(--text-muted)] text-sm w-full text-center mt-2 hover:text-[var(--text-main)]">{text.back}</button>
-                            </div>
-                        ) : showItinerary ? (
-                            /* VIEW 2: Itinerary List */
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between mb-1 px-1">
-                                    <h3 className="text-[10px] font-black tracking-widest text-[var(--text-muted)] uppercase">
-                                        {language === 'nl' ? 'Jouw Dagplanning' : 'Your Schedule'}
-                                    </h3>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (onReverseDirection) onReverseDirection();
-                                        }}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-extrabold transition-all border border-primary/20 shadow-sm"
-                                        title={language === 'nl' ? "Draai de looprichting om" : "Reverse walking direction"}
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m21 7-3-3-3 3"></path><path d="M18 16V4"></path><path d="m3 17 3 3 3-3"></path><path d="M6 8v12"></path></svg>
-                                        {language === 'nl' ? 'OMKEREN' : 'REVERSE'}
-                                    </button>
+                    {(isAiViewActive && routeData) ? (
+                        /* VIEW 3: Route Refiner (The Guide) - Now takes full space */
+                        <RouteRefiner
+                            routeData={routeData}
+                            language={language}
+                            travelMode={travelMode}
+                            onStyleChange={onStyleChange}
+                            constraintValue={constraintValue}
+                            onConstraintValueChange={onConstraintValueChange}
+                            onConstraintValueFinal={onConstraintValueFinal}
+                            onRemovePoi={onRemovePoi}
+                            onAddToJourney={onAddToJourney}
+                            onStopsCountChange={onStopsCountChange}
+                            activePoiIndex={activePoiIndex}
+                            onClose={() => setIsAiViewActive(false)}
+                            setIsLoading={setIsLoading}
+                            setLoadingText={setLoadingText}
+                            primaryColor={availableThemes?.[activeTheme]?.colors?.primary || '#3b82f6'}
+                            onSpeak={onSpeak}
+                        />
+                    ) : (
+                        <div
+                            ref={scrollContainerRef}
+                            onScroll={handleScroll}
+                            className="flex-1 overflow-y-auto p-4 custom-scrollbar"
+                        >
+                            {/* VIEW 1: Disambiguation */}
+                            {showDisambiguation ? (
+                                <div className="space-y-3">
+                                    <h3 className="font-bold text-[var(--text-main)]">{text.disambig_title} {city}?</h3>
+                                    {disambiguationOptions.map((option, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => {
+                                                onDisambiguationSelect(option);
+                                                if (!interests || !interests.trim()) {
+                                                    setShouldAutoFocusInterests(true);
+                                                }
+                                            }}
+                                            className="w-full text-left bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-3 rounded-lg border border-[var(--panel-border)] text-sm"
+                                        >
+                                            <div className="font-bold text-[var(--text-main)]">{option.name}</div>
+                                            <div className="text-xs text-[var(--text-muted)]">{option.display_name}</div>
+                                        </button>
+                                    ))}
+                                    <button onClick={onDisambiguationCancel} className="text-[var(--text-muted)] text-sm w-full text-center mt-2 hover:text-[var(--text-main)]">{text.back}</button>
                                 </div>
-                                {(() => {
-                                    const items = [...routeData.pois];
-                                    const startPoint = {
-                                        // Spread rich POI data if this start point is a POI
-                                        ...(routeData.startIsPoi ? routeData.startPoi : {}),
-                                        id: 'sidebar-start',
-                                        name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
-                                        isSpecial: true,
-                                        specialType: 'start',
-                                        // Use rich description if available, otherwise fallback to accessibility info
-                                        // If it IS a POI, we prioritize its own description. 
-                                        // If we have both, we can show both in the detailed view.
-                                        description: (routeData.startIsPoi && (routeData.startPoi?.description || routeData.startPoi?.structured_info?.short_description))
-                                            ? (routeData.startPoi.description || routeData.startPoi?.structured_info?.short_description)
-                                            : (routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info...")),
-                                        arrivalInfo: routeData.startInfo,
-                                        isFullyEnriched: routeData.startIsPoi ? (routeData.startPoi?.isFullyEnriched) : (!!routeData.startInfo)
-                                    };
+                            ) : showItinerary ? (
+                                /* VIEW 2: Itinerary List */
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between mb-1 px-1">
+                                        <h3 className="text-[10px] font-black tracking-widest text-[var(--text-muted)] uppercase">
+                                            {language === 'nl' ? 'Jouw Dagplanning' : 'Your Schedule'}
+                                        </h3>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (onReverseDirection) onReverseDirection();
+                                            }}
+                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-extrabold transition-all border border-primary/20 shadow-sm"
+                                            title={language === 'nl' ? "Draai de looprichting om" : "Reverse walking direction"}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m21 7-3-3-3 3"></path><path d="M18 16V4"></path><path d="m3 17 3 3 3-3"></path><path d="M6 8v12"></path></svg>
+                                            {language === 'nl' ? 'OMKEREN' : 'REVERSE'}
+                                        </button>
+                                    </div>
+                                    {(() => {
+                                        const items = [...routeData.pois];
+                                        const startPoint = {
+                                            // Spread rich POI data if this start point is a POI
+                                            ...(routeData.startIsPoi ? routeData.startPoi : {}),
+                                            id: 'sidebar-start',
+                                            name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
+                                            isSpecial: true,
+                                            specialType: 'start',
+                                            // Use rich description if available, otherwise fallback to accessibility info
+                                            // If it IS a POI, we prioritize its own description.
+                                            // If we have both, we can show both in the detailed view.
+                                            description: (routeData.startIsPoi && (routeData.startPoi?.description || routeData.startPoi?.structured_info?.short_description))
+                                                ? (routeData.startPoi.description || routeData.startPoi?.structured_info?.short_description)
+                                                : (routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info...")),
+                                            arrivalInfo: routeData.startInfo,
+                                            isFullyEnriched: routeData.startIsPoi ? (routeData.startPoi?.isFullyEnriched) : (!!routeData.startInfo)
+                                        };
 
-                                    const finalItems = [startPoint, ...items];
+                                        const finalItems = [startPoint, ...items];
 
-                                    return finalItems.map((poi, index) => {
-                                        const isExpanded = expandedPoi === poi.id;
-                                        // Adjust index for display numbering (skipped for special nodes)
-                                        const displayNum = poi.isSpecial ? null : (finalItems.slice(0, index).filter(i => !i.isSpecial).length + 1);
+                                        return finalItems.map((poi, index) => {
+                                            const isExpanded = expandedPoi === poi.id;
+                                            // Adjust index for display numbering (skipped for special nodes)
+                                            const displayNum = poi.isSpecial ? null : (finalItems.slice(0, index).filter(i => !i.isSpecial).length + 1);
 
-                                        return (
-                                            <div
-                                                key={poi.id}
-                                                ref={el => poiRefs.current[poi.id] = el}
-                                                onClick={() => {
-                                                    const newExpanded = isExpanded ? null : poi.id;
-                                                    setExpandedPoi(newExpanded);
+                                            return (
+                                                <div
+                                                    key={poi.id}
+                                                    ref={el => poiRefs.current[poi.id] = el}
+                                                    onClick={() => {
+                                                        const newExpanded = isExpanded ? null : poi.id;
+                                                        setExpandedPoi(newExpanded);
 
-                                                    if (!isExpanded) {
-                                                        // Expanding: Focus on Map
-                                                        if (poi.isSpecial) {
-                                                            // Center on Start/End
-                                                            if (poi.specialType === 'start') {
-                                                                if (typeof setViewAction === 'function') setViewAction('ROUTE');
-                                                            } else onPoiClick(items[items.length - 1], 'medium'); // Focus last poi for end
+                                                        if (!isExpanded) {
+                                                            // Expanding: Focus on Map
+                                                            if (poi.isSpecial) {
+                                                                // Center on Start/End
+                                                                if (poi.specialType === 'start') {
+                                                                    if (typeof setViewAction === 'function') setViewAction('ROUTE');
+                                                                } else onPoiClick(items[items.length - 1], 'medium'); // Focus last poi for end
+                                                            } else {
+                                                                onPoiClick(poi, descriptionLength || 'medium');
+                                                            }
                                                         } else {
-                                                            onPoiClick(poi, descriptionLength || 'medium');
+                                                            if (onPopupClose) onPopupClose();
                                                         }
-                                                    } else {
-                                                        if (onPopupClose) onPopupClose();
-                                                    }
-                                                }}
-                                                className={`group relative bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-[var(--input-bg)]' : 'border-[var(--panel-border)] hover:border-primary/30'}`}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border transition-colors 
+                                                    }}
+                                                    className={`group relative bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-[var(--input-bg)]' : 'border-[var(--panel-border)] hover:border-primary/30'}`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border transition-colors
                                                         ${poi.isSpecial
-                                                            ? (poi.specialType === 'start' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30')
-                                                            : (poi.isFullyEnriched
-                                                                ? (isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white')
-                                                                : (poi.short_description
-                                                                    ? 'bg-primary/40 text-blue-200 border-primary/40 animate-pulse'
-                                                                    : 'bg-slate-700 text-slate-400 border-slate-600 animate-pulse'
-                                                                ))
-                                                        }`}>
+                                                                ? (poi.specialType === 'start' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30')
+                                                                : (poi.isFullyEnriched
+                                                                    ? (isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white')
+                                                                    : (poi.short_description
+                                                                        ? 'bg-primary/40 text-blue-200 border-primary/40 animate-pulse'
+                                                                        : 'bg-slate-700 text-slate-400 border-slate-600 animate-pulse'
+                                                                    ))
+                                                            }`}>
 
-                                                        {poi.isSpecial ? (
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                                                        ) : (
-                                                            searchMode === 'radius' ? (
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
-                                                            ) : displayNum
-                                                        )}
+                                                            {poi.isSpecial ? (
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                                                            ) : (
+                                                                searchMode === 'radius' ? (
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
+                                                                ) : displayNum
+                                                            )}
+                                                        </div>
+                                                        <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-[var(--text-main)] group-hover:text-primary'} pr-16`}>
+                                                            {poi.name}
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                {getPoiCategoryIcon(poi)}
+                                                            </svg>
+                                                        </h3>
                                                     </div>
-                                                    <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-[var(--text-main)] group-hover:text-primary'} pr-16`}>
-                                                        {poi.name}
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                            {getPoiCategoryIcon(poi)}
-                                                        </svg>
-                                                    </h3>
-                                                </div>
 
-                                                {!poi.isSpecial && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setPoiToDelete(poi);
-                                                        }}
-                                                        className="absolute top-4 right-3 p-1.5 rounded-full text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-all focus:opacity-100"
-                                                        title={language === 'nl' ? "Verwijder" : "Remove"}
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                    </button>
-                                                )}
+                                                    {!poi.isSpecial && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setPoiToDelete(poi);
+                                                            }}
+                                                            className="absolute top-4 right-3 p-1.5 rounded-full text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-all focus:opacity-100"
+                                                            title={language === 'nl' ? "Verwijder" : "Remove"}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                        </button>
+                                                    )}
 
-                                                {/* Expandable Content */}
-                                                {
-                                                    isExpanded && (
-                                                        <div className="mt-3 pl-9 animate-in slide-in-from-top-2 fade-in duration-200">
+                                                    {/* Expandable Content */}
+                                                    {
+                                                        isExpanded && (
+                                                            <div className="mt-3 pl-9 animate-in slide-in-from-top-2 fade-in duration-200">
 
-                                                            <div className="space-y-4 pr-8">
-                                                                {/* Action Buttons */}
-                                                                <div className="flex flex-wrap gap-2">
-                                                                    {!poi.isSpecial && (
+                                                                <div className="space-y-4 pr-8">
+                                                                    {/* Action Buttons */}
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {!poi.isSpecial && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    if (onCycleStart) onCycleStart(poi.id);
+                                                                                }}
+                                                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-[10px] font-black tracking-wider transition-all border border-emerald-500/20 shadow-sm active:scale-95"
+                                                                                title={language === 'nl' ? "Maak dit het nieuwe startpunt" : "Make this the new start point"}
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                                                                {language === 'nl' ? 'STARTPUNT' : 'START POINT'}
+                                                                            </button>
+                                                                        )}
+
+
+
                                                                         <button
                                                                             onClick={(e) => {
                                                                                 e.stopPropagation();
-                                                                                if (onCycleStart) onCycleStart(poi.id);
+                                                                                setSearchMode('prompt');
+                                                                                setIsAiViewActive(true);
+                                                                                setExpandedPoi(null);
                                                                             }}
-                                                                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-[10px] font-black tracking-wider transition-all border border-emerald-500/20 shadow-sm active:scale-95"
-                                                                            title={language === 'nl' ? "Maak dit het nieuwe startpunt" : "Make this the new start point"}
+                                                                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-black tracking-wider transition-all border border-primary/20 shadow-sm active:scale-95"
+                                                                            title={language === 'nl' ? "Vraag de gids" : "Ask the guide"}
                                                                         >
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                                                                            {language === 'nl' ? 'STARTPUNT' : 'START POINT'}
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                                                                            {language === 'nl' ? 'GIDS' : 'GUIDE'}
                                                                         </button>
-                                                                    )}
+                                                                    </div>
 
-
-
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            setSearchMode('prompt');
-                                                                            setIsAiViewActive(true);
-                                                                            setExpandedPoi(null);
-                                                                        }}
-                                                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-black tracking-wider transition-all border border-primary/20 shadow-sm active:scale-95"
-                                                                        title={language === 'nl' ? "Praat met je gids" : "Talk to your guide"}
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                                                                        {language === 'nl' ? 'GIDS' : 'GUIDE'}
-                                                                    </button>
+                                                                    <PoiDetailContent
+                                                                        poi={poi}
+                                                                        language={language}
+                                                                        speakingId={speakingId}
+                                                                        spokenCharCount={spokenCharCount}
+                                                                        highlightRef={poiHighlightedWordRef}
+                                                                        isDark={true}
+                                                                        primaryColor={activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6'}
+                                                                    />
                                                                 </div>
 
-                                                                <PoiDetailContent
-                                                                    poi={poi}
-                                                                    language={language}
-                                                                    speakingId={speakingId}
-                                                                    spokenCharCount={spokenCharCount}
-                                                                    highlightRef={poiHighlightedWordRef}
-                                                                    isDark={true}
-                                                                    primaryColor={activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6'}
-                                                                />
-                                                            </div>
-
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
-                                                                className={`absolute top-4 right-12 p-2 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
-                                                                title="Read Aloud"
-                                                            >
-                                                                {speakingId === poi.id ? (
-                                                                    isSpeechPaused ? (
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
+                                                                    className={`absolute top-4 right-12 p-2 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
+                                                                    title="Read Aloud"
+                                                                >
+                                                                    {speakingId === poi.id ? (
+                                                                        isSpeechPaused ? (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                                                        ) : (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                                                        )
                                                                     ) : (
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                                                                    )
-                                                                ) : (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                                                                )}
-                                                            </button>
-                                                        </div>
-                                                    )
-                                                }
-                                            </div>
-                                        );
-                                    })
-                                })()}
-                            </div>
-                        ) : (
-                            /* VIEW 3: Input Form (Start or Add) */
-                            <div className="relative">
-                                {isAddingMode && (
-                                    <button
-                                        onClick={() => setIsAddingMode(false)}
-                                        className="mb-2 text-xs text-blue-400 hover:text-white flex items-center gap-1"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                                        {text.back}
-                                    </button>
-                                )}
-                                <SidebarInput
-                                    city={city} setCity={setCity}
-                                    interests={interests} setInterests={setInterests}
-                                    constraintType={constraintType} setConstraintType={setConstraintType}
-                                    constraintValue={constraintValue} setConstraintValue={setConstraintValue}
-                                    isRoundtrip={isRoundtrip} setIsRoundtrip={setIsRoundtrip}
-                                    startPoint={startPoint} setStartPoint={setStartPoint}
-                                    stopPoint={stopPoint} setStopPoint={setStopPoint}
-                                    searchSources={searchSources} setSearchSources={setSearchSources}
-                                    onJourneyStart={isAddingMode ? (e) => { onAddToJourney(e); setIsAddingMode(false); } : onJourneyStart}
-                                    onCityValidation={onCityValidation}
-                                    onUseCurrentLocation={onUseCurrentLocation}
-                                    language={language}
-                                    nearbyCities={nearbyCities}
-                                    isAddingMode={isAddingMode}
-                                    searchMode={searchMode}
-                                    setSearchMode={setSearchMode}
-                                    shouldAutoFocusInterests={shouldAutoFocusInterests}
-                                    setShouldAutoFocusInterests={setShouldAutoFocusInterests}
-                                    onLoad={onLoad}
-                                    travelMode={travelMode}
-                                    onStyleChange={onStyleChange}
-                                    aiPrompt={aiPrompt}
-                                    setAiPrompt={setAiPrompt}
-                                    aiChatHistory={aiChatHistory}
-                                    isAiViewActive={isAiViewActive}
-                                    setIsAiViewActive={setIsAiViewActive}
-                                    routeData={routeData}
-                                    onSpeak={onSpeak}
-                                    voiceSettings={voiceSettings}
-                                    speakingId={speakingId}
-                                    spokenCharCount={spokenCharCount}
-                                    isLoading={isLoading}
-                                    loadingText={loadingText}
-                                    onStopSpeech={onStopSpeech}
-                                    onRemovePoi={onRemovePoi}
-                                    onAddToJourney={onAddToJourney}
-                                    activeTheme={activeTheme}
-                                    availableThemes={availableThemes}
-                                />
-                            </div>
-                        )}
-                    </div>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                                                    )}
+                                                                </button>
+                                                            </div>
+                                                        )
+                                                    }
+                                                </div>
+                                            );
+                                        })
+                                    })()}
+                                </div>
+                            ) : (
+                                /* VIEW 4: Input Form (Start or Add) */
+                                <div className="relative">
+                                    {isAddingMode && (
+                                        <button
+                                            onClick={() => setIsAddingMode(false)}
+                                            className="mb-2 text-xs text-blue-400 hover:text-white flex items-center gap-1"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                                            {text.back}
+                                        </button>
+                                    )}
+                                    <SidebarInput
+                                        city={city} setCity={setCity}
+                                        interests={interests} setInterests={setInterests}
+                                        constraintType={constraintType} setConstraintType={setConstraintType}
+                                        constraintValue={constraintValue} setConstraintValue={onConstraintValueChange}
+                                        isRoundtrip={isRoundtrip} setIsRoundtrip={setIsRoundtrip}
+                                        startPoint={startPoint} setStartPoint={setStartPoint}
+                                        stopPoint={stopPoint} setStopPoint={setStopPoint}
+                                        searchSources={searchSources} setSearchSources={setSearchSources}
+                                        onJourneyStart={isAddingMode ? (e) => { onAddToJourney(e); setIsAddingMode(false); } : onJourneyStart}
+                                        onCityValidation={onCityValidation}
+                                        onUseCurrentLocation={onUseCurrentLocation}
+                                        language={language}
+                                        nearbyCities={nearbyCities}
+                                        isAddingMode={isAddingMode}
+                                        searchMode={searchMode}
+                                        setSearchMode={setSearchMode}
+                                        shouldAutoFocusInterests={shouldAutoFocusInterests}
+                                        setShouldAutoFocusInterests={setShouldAutoFocusInterests}
+                                        onLoad={onLoad}
+                                        travelMode={travelMode}
+                                        onStyleChange={onStyleChange}
+                                        aiPrompt={aiPrompt}
+                                        setAiPrompt={setAiPrompt}
+                                        aiChatHistory={aiChatHistory}
+                                        isAiViewActive={isAiViewActive}
+                                        setIsAiViewActive={setIsAiViewActive}
+                                        routeData={routeData}
+                                        onSpeak={onSpeak}
+                                        voiceSettings={voiceSettings}
+                                        speakingId={speakingId}
+                                        spokenCharCount={spokenCharCount}
+                                        isLoading={isLoading}
+                                        loadingText={loadingText}
+                                        onStopSpeech={onStopSpeech}
+                                        onRemovePoi={onRemovePoi}
+                                        onAddToJourney={onAddToJourney}
+                                        activeTheme={activeTheme}
+                                        availableThemes={availableThemes}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Footer Actions (Only show when in Itinerary mode) */}
                     {showItinerary && !showDisambiguation && (

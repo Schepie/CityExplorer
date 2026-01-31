@@ -243,8 +243,21 @@ DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'En
      * Extracts structured trip parameters from a natural language prompt.
      * Support interactive conversation by maintaining context.
      */
-    async parseNaturalLanguageInput(userInput, language = 'nl', history = [], isRouteActive = false) {
+    async parseNaturalLanguageInput(userInput, language = 'nl', history = [], routeContext = null) {
         const historyContext = history.map(msg => `${msg.role === 'user' ? 'Gebuiker' : 'Gids'}: ${msg.text}`).join('\n');
+
+        const isRouteActive = !!routeContext;
+
+        let routeSummary = '';
+        if (isRouteActive && typeof routeContext === 'object') {
+            routeSummary = `
+### HUIDIGE ROUTE STATUS (GEBRUIKER IS HIER NU)
+- **Actieve Stad**: ${routeContext.city || 'Onbekend'}
+- **Route Lengte**: ${routeContext.stats?.totalDistance || '?'} km (${routeContext.stats?.limitKm ? 'Limiet: ' + routeContext.stats.limitKm + 'km' : ''})
+- **Huidige POI's in Trip**: ${routeContext.poiNames || ''}
+- **Startpunt**: ${routeContext.startName || '?'}
+            `;
+        }
 
         const prompt = `
 Je bent een "City Trip Planner" gespecialiseerd in toeristische bezienswaardigheden.
@@ -259,10 +272,12 @@ Je helpt de gebruiker om een stad te verkennen met de focus op CULTUUR, HISTORIE
 
 ### CONTEXTUELE LOGICA (BELANGRIJK)
 **Is er al een route actief? ${isRouteActive ? 'JA' : 'NEE'}**
+${routeSummary}
 
 - **INDIEN JA (Route Actief):**
   - Je bent een routeplanner-assistent. De gebruiker is AL onderweg.
-  - Vraag NIET om de stad, reiswijze, startpunt of rondtrip-status.
+  - De gebruiker heeft REEDS een route gegenereerd (zie HUIDIGE ROUTE STATUS).
+  - Vraag NIET om de stad, reiswijze, startpunt of rondtrip-status, want die is er al.
   - Verwerk vragen om op elk moment een extra stop/POI toe te voegen.
   - **CRITIEKE REGEL**: Als de gebruiker vraagt om een SPECIFIEKE plek toe te voegen (bijv. "Voeg het Atomium toe"), gebruik dan ALTIJD de tag: [[SEARCH: <naam van de plek>]]. (De app zoekt automatisch in de buurt van de route).
   - Je mag NOOIT een plek direct toevoegen via 'params' als er al een route actief is. Zet de status ALTIJD op "interactive".

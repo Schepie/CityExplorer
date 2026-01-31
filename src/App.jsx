@@ -9,6 +9,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import LoginModal from './components/auth/LoginModal';
 import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle } from './utils/routeUtils';
+import PoiProposalModal from './components/PoiProposalModal';
+import DistanceRefineConfirmation from './components/DistanceRefineConfirmation';
 
 // Theme Definitions
 // Theme Definitions
@@ -75,6 +77,8 @@ function CityExplorerApp() {
   const [loadingText, setLoadingText] = useState('Exploring...');
   const [foundPoisCount, setFoundPoisCount] = useState(0);
   const [spokenCharCount, setSpokenCharCount] = useState(0);
+  const [poiProposals, setPoiProposals] = useState(null);
+  const [pendingDistanceRefinement, setPendingDistanceRefinement] = useState(null);
 
   // Settings: Load from LocalStorage or Default
   const [language, setLanguage] = useState(() => localStorage.getItem('app_language') || 'nl');
@@ -134,7 +138,7 @@ function CityExplorerApp() {
   const [startPoint, setStartPoint] = useState('');
   const [stopPoint, setStopPoint] = useState('');
   // Default to Google only as requested
-  const [searchMode, setSearchMode] = useState('prompt'); // 'radius', 'journey', or 'prompt'
+  const [searchMode, setSearchMode] = useState('journey'); // 'radius', 'journey', or 'prompt'
   const [searchSources, setSearchSources] = useState({ osm: false, foursquare: false, google: true });
   const [travelMode, setTravelMode] = useState('walking'); // 'walking' or 'cycling'
   const [aiPrompt, setAiPrompt] = useState('');
@@ -437,8 +441,13 @@ function CityExplorerApp() {
           lastAutoSavedKeyRef.current = currentKey;
         }
 
-        setRouteData(data.routeData);
+        setRouteData({
+          ...data.routeData,
+          originalPois: data.routeData.originalPois || data.routeData.pois
+        });
         setFoundPoisCount(data.routeData.pois ? data.routeData.pois.length : 0);
+        setIsAiViewActive(false); // Switch to map view
+        setIsSidebarOpen(true);   // Ensure sidebar is open
         setIsLoading(false);
       } else {
         alert("Invalid file format");
@@ -649,7 +658,7 @@ function CityExplorerApp() {
     // Only ignore cache if we have an explicit override or new params
     if (!queryOverride && validatedCityData && !paramsOverride) {
       if (context === 'submit') {
-        loadMapWithCity(validatedCityData, interestOverride, paramsOverride);
+        await loadMapWithCity(validatedCityData, interestOverride, paramsOverride);
       }
       return;
     }
@@ -1167,9 +1176,17 @@ function CityExplorerApp() {
       const updatedHistory = [...aiChatHistory, newUserMsg];
       const engine = new PoiIntelligence({ language });
       // Pass isRouteActive = true if routeData exists
-      const isRouteActive = !!routeData;
-      console.log("Processing AI Prompt with isRouteActive:", isRouteActive);
-      const result = await engine.parseNaturalLanguageInput(promptText, language, updatedHistory, isRouteActive);
+      // Construct Context Object
+      const routeContext = routeData ? {
+        isActive: true,
+        city: validatedCityData?.name || city,
+        stats: routeData.stats,
+        poiNames: routeData.pois ? routeData.pois.map(p => p.name).join(', ') : '',
+        startName: routeData.startName || startPoint
+      } : null;
+
+      console.log("Processing AI Prompt with Context:", routeContext);
+      const result = await engine.parseNaturalLanguageInput(promptText, language, updatedHistory, routeContext);
 
       console.log("AI Result:", result);
 
@@ -1427,11 +1444,11 @@ function CityExplorerApp() {
       const robustSources = { osm: true, foursquare: true, google: true };
 
       console.log(`[AI Search #${searchId}] Fetching for "${query}" at ${center} (Sources: All)`);
-      let candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, robustSources);
+      let candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, robustSources, language);
 
       if ((!candidates || candidates.length === 0) && radius < 15) {
         console.log(`[AI Search #${searchId}] Retrying broader (15km) search...`);
-        candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", 15, robustSources);
+        candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", 15, robustSources, language);
       }
 
       if (candidates && candidates.length > 0) {
@@ -1627,7 +1644,7 @@ function CityExplorerApp() {
         console.log("AddJourney: Using direct candidates", newCandidates);
       } else {
         // FETCH NORMAL
-        newCandidates = await getCombinedPOIs(targetCityData, activeInterest, city, searchRadiusKm, searchSources);
+        newCandidates = await getCombinedPOIs(targetCityData, activeInterest, city, searchRadiusKm, searchSources, language);
       }
 
       console.log(`AddJourney: Found ${newCandidates.length} candidates for ${activeInterest}`);
@@ -1676,9 +1693,33 @@ function CityExplorerApp() {
         return;
       }
 
-      // 3. Smart Insertion Logic
-      // Instead of completely reshuffling, we want to insert the new POIs into the route
-      // specifically AFTER the current active POI (where the user is or heading to).
+      // 3. PROPOSAL SELECTION STEP
+      // If we are NOT already in "direct add" mode (where we already picked a POI),
+      // we show proposals first.
+      if (!activeParams.directCandidates) {
+        console.log("AddJourney: Showing proposals for", activeInterest);
+
+        const activeIdx = activePoiIndex || 0;
+        const proposalsWithDetour = uniqueNew.slice(0, 5).map(cand => {
+          const detourResult = smartPoiUtils.added_detour_if_inserted_after(
+            { center: routeData.center, pois: currentPois },
+            activeIdx,
+            cand,
+            effectiveTravelMode
+          );
+          return { ...cand, detour_km: detourResult.added_distance_m / 1000 };
+        });
+
+        setPoiProposals({
+          candidates: proposalsWithDetour,
+          activeInterest,
+          params: activeParams
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // 4. Smart Insertion Logic
 
       const candidatePool = [...uniqueNew.slice(0, 3)];
       let optimizedPois = [];
@@ -1848,6 +1889,7 @@ function CityExplorerApp() {
         ...routeData,
         center: cityCenter,
         pois: fullyEnriched,
+        originalPois: fullyEnriched,
         routePath: finalPath,
         navigationSteps: finalSteps,
         legs: finalLegs,
@@ -1908,6 +1950,22 @@ function CityExplorerApp() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSelectProposal = (poi) => {
+    if (!poiProposals) return;
+    const { activeInterest, params } = poiProposals;
+    setPoiProposals(null);
+
+    // Call handleAddToJourney with the specific chosen POI
+    handleAddToJourney(null, activeInterest, {
+      ...params,
+      directCandidates: [poi]
+    });
+  };
+
+  const handleCancelProposal = () => {
+    setPoiProposals(null);
   };
 
   const handleConfirmLimit = (proceed) => {
@@ -2233,7 +2291,7 @@ function CityExplorerApp() {
         searchRadiusKm = (constraints.value / 60) * speed;
       }
 
-      const candidates = await getCombinedPOIs(cityData, activeInterest, searchCityName, searchRadiusKm, searchSources);
+      const candidates = await getCombinedPOIs(cityData, activeInterest, searchCityName, searchRadiusKm, searchSources, language);
       setFoundPoisCount(candidates.length);
 
       if (candidates.length === 0) {
@@ -2470,6 +2528,7 @@ function CityExplorerApp() {
         startIsPoi: false,
         startPoi: null, // Initial start from address is not a POI
         pois: initialPois,
+        originalPois: initialPois,
         routePath: routeCoordinates,
         navigationSteps: navigationSteps,
         legs: finalRouteResult ? finalRouteResult.legs : [],
@@ -2526,6 +2585,7 @@ function CityExplorerApp() {
       setRouteData(prev => ({
         ...prev,
         pois: updatedPois,
+        originalPois: updatedPois,
         routePath: routeResult.path,
         navigationSteps: routeResult.steps,
         stats: {
@@ -2550,10 +2610,97 @@ function CityExplorerApp() {
     }
   };
 
+  const handleStopsCountChange = async (newCount) => {
+    if (!routeData || !routeData.pois || routeData.pois.length === 0) return;
+
+    // Use originalPois if available, fallback to current pois and fix them as the new original set
+    const sourcePois = routeData.originalPois || routeData.pois;
+    const currentCount = routeData.pois.length;
+
+    if (newCount === currentCount && routeData.originalPois) return;
+
+    // spread calculation: Select 'newCount' items from 'sourcePois'
+    const N = sourcePois.length;
+    const K = newCount;
+
+    if (K > N) return;
+
+    const updatedPois = [];
+    if (K <= 1) {
+      updatedPois.push(sourcePois[0]);
+    } else {
+      for (let j = 0; j < K; j++) {
+        const index = Math.round(j * (N - 1) / (K - 1));
+        updatedPois.push(sourcePois[index]);
+      }
+    }
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? `Route aanpassen naar ${K} stops...` : `Adjusting route to ${K} stops...`);
+
+    try {
+      const cityCenter = routeData.center;
+      const routeResult = await calculateRoutePath(updatedPois, cityCenter, travelMode, routeData.stopCenter);
+
+      setRouteData(prev => ({
+        ...prev,
+        pois: updatedPois,
+        originalPois: sourcePois, // Preserve the larger set
+        routePath: routeResult.path,
+        navigationSteps: routeResult.steps,
+        legs: routeResult.legs || [],
+        stats: {
+          ...prev.stats,
+          totalDistance: routeResult.dist.toFixed(1),
+          walkDistance: (routeResult.walkDist || 0).toFixed(1)
+        }
+      }));
+    } catch (err) {
+      console.warn("Stops count change failed", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleConstraintValueFinal = (finalValue) => {
+    if (!routeData) return;
+    setPendingDistanceRefinement(finalValue);
+  };
+
+  const handleExecuteDistanceRefinement = async (finalValue) => {
+    if (!routeData) return;
+    setPendingDistanceRefinement(null);
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Nieuwe route berekenen...' : 'Calculating new route...');
+
+    try {
+      // Sync state and define override params
+      setConstraintValue(finalValue);
+      const paramsOverride = { constraintValue: finalValue };
+
+      // Trigger recalculation using validated city data (cache) if available
+      if (validatedCityData) {
+        await loadMapWithCity(validatedCityData, interests, paramsOverride);
+      } else {
+        // Fallback to validation but ensure queryOverride is null to trigger cache check
+        await handleCityValidation('submit', null, interests, paramsOverride);
+      }
+
+      // Return to map view
+      setIsAiViewActive(false);
+    } catch (err) {
+      console.error("Distance refinement execution failed", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
   /**
-   * Cyclically rotates the entire route so that a selected POI becomes the new start point.
-   * POI-namen zijn immutable; startpunt is een rol, geen naam.
-   */
+ * Cyclically rotates the entire route so that a selected POI becomes the new start point.
+ * POI-namen zijn immutable; startpunt is een rol, geen naam.
+ */
   const handleCycleStart = async (selectedPoiId) => {
     if (!routeData || !routeData.pois || !isRoundtrip) return;
 
@@ -2797,6 +2944,7 @@ function CityExplorerApp() {
           : 'Hi! I am your guide from CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. What are your **interests**? (If left empty, I will show you the main tourist highlights).'
       }
     ]);
+    setSearchMode('journey');
     setIsAiViewActive(true);
     setIsSidebarOpen(true);
     setNavPhase(NAV_PHASES.PRE_ROUTE);
@@ -2876,6 +3024,7 @@ function CityExplorerApp() {
             if (parsed.cityName) setCity(parsed.cityName); // Assuming cityName is in routeData or needs to be added
             // setNavPhase(NAV_PHASES.PRE_ROUTE); // Default on load
             setIsAiViewActive(false); // Jump to itinerary
+            setIsSidebarOpen(true);   // Ensure sidebar is open
           }
         } catch (e) {
           console.error("Failed to load autosaved route", e);
@@ -3261,6 +3410,8 @@ function CityExplorerApp() {
         routeData={routeData}
         onPoiClick={handlePoiClick}
         onRemovePoi={handleRemovePoi}
+        onStopsCountChange={handleStopsCountChange}
+        activePoiIndex={activePoiIndex}
         onUpdateStartLocation={handleUpdateStartLocation}
         onCycleStart={handleCycleStart}
         onReverseDirection={handleReverseDirection}
@@ -3292,7 +3443,8 @@ function CityExplorerApp() {
         city={city} setCity={handleSetCity}
         interests={interests} setInterests={setInterests}
         constraintType={constraintType} setConstraintType={setConstraintType}
-        constraintValue={constraintValue} setConstraintValue={setConstraintValue}
+        constraintValue={constraintValue} onConstraintValueChange={setConstraintValue}
+        onConstraintValueFinal={handleConstraintValueFinal}
         isRoundtrip={isRoundtrip} setIsRoundtrip={setIsRoundtrip}
         startPoint={startPoint} setStartPoint={setStartPoint}
         stopPoint={stopPoint} setStopPoint={setStopPoint}
@@ -3300,7 +3452,9 @@ function CityExplorerApp() {
         onJourneyStart={handleJourneyStart}
         onAddToJourney={handleAddToJourney}
         isLoading={isLoading}
+        setIsLoading={setIsLoading}
         loadingText={loadingText}
+        setLoadingText={setLoadingText}
         onCityValidation={handleCityValidation}
         disambiguationOptions={disambiguationOptions}
         onDisambiguationSelect={handleDisambiguationSelect}
@@ -3394,6 +3548,29 @@ function CityExplorerApp() {
           </div>
         </div>
       )}
+
+      {/* Spot Selection Proposal */}
+      <PoiProposalModal
+        isOpen={!!poiProposals}
+        onClose={handleCancelProposal}
+        proposals={poiProposals?.candidates}
+        onSelect={handleSelectProposal}
+        language={language}
+        primaryColor={APP_THEMES[activeTheme]?.colors?.primary}
+      />
+
+      {/* Distance Refinement Confirmation */}
+      <DistanceRefineConfirmation
+        isOpen={!!pendingDistanceRefinement}
+        onClose={() => setPendingDistanceRefinement(null)}
+        onConfirm={() => handleExecuteDistanceRefinement(pendingDistanceRefinement)}
+        currentStats={routeData?.stats}
+        currentPoisCount={routeData?.pois?.length}
+        newTargetValue={pendingDistanceRefinement}
+        constraintType={constraintType}
+        language={language}
+        primaryColor={APP_THEMES[activeTheme]?.colors?.primary}
+      />
 
       {/* City Picker Overlay */}
       {showCitySelector && (

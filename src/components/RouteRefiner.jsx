@@ -1,0 +1,458 @@
+import React, { useState } from 'react';
+
+/**
+ * RouteRefiner - A premium sub-view for adjusting existing routes.
+ * Replaces or enhances the traditional AI Chat for route modification.
+ */
+const RouteRefiner = ({
+    routeData,
+    language,
+    travelMode,
+    onStyleChange,
+    constraintValue,
+    onConstraintValueChange,
+    onConstraintValueFinal,
+    onRemovePoi,
+    onAddToJourney,
+    onStopsCountChange,
+    onClose,
+    setIsLoading,
+    setLoadingText,
+    primaryColor = '#3b82f6',
+    onSpeak,
+    activePoiIndex = 0
+}) => {
+    const [interestInput, setInterestInput] = useState('');
+    const [specificPoiInput, setSpecificPoiInput] = useState('');
+    const [showInterestInput, setShowInterestInput] = useState(false);
+    const [localStopsCount, setLocalStopsCount] = useState(routeData?.pois?.length || 0);
+    const [localDistance, setLocalDistance] = useState(constraintValue);
+
+    // Sync local count with actual data when it changes externally
+    React.useEffect(() => {
+        setLocalStopsCount(routeData?.pois?.length || 0);
+    }, [routeData?.pois?.length]);
+
+    // Sync local distance when it changes externally
+    React.useEffect(() => {
+        setLocalDistance(constraintValue);
+    }, [constraintValue]);
+    const [showSpecificInput, setShowSpecificInput] = useState(false);
+    const [showStopSelector, setShowStopSelector] = useState(false);
+    const [pendingStopType, setPendingStopType] = useState('drink'); // 'drink' | 'food'
+    const [pendingStopLocation, setPendingStopLocation] = useState(null); // original index
+
+    const t = {
+        nl: {
+            title: "Je Persoonlijke Gids",
+            subtitle: "pas je route aan",
+            stopWizardTitle: "Extra stop toevoegen",
+            stopWizardSubtitle: "Selecteer of je een eet of drankstop wil toevoegen en selecteer de stopplaats waar de gids zal zoeken naar een café of restaurant",
+            travelMode: "Reiswijze",
+            walking: "Wandelen",
+            cycling: "Fietsen",
+            distance: "Max Afstand",
+            addInterest: "Nieuwe interesse toevoegen",
+            addSpecific: "Specifieke plek toevoegen",
+            halfwayBeer: "Extra eet of drink stop",
+            currentRoute: "Huidige Stops",
+            remove: "Verwijder",
+            back: "Terug naar route",
+            interestPlaceholder: "Bijv. Musea, Parken...",
+            specificPlaceholder: "Bijv. Atomium, Eiffeltoren...",
+            adding: "Laden...",
+            stops: "Aantal stops",
+            stopsSub: "Minder stops voor een vlottere route",
+            stopWizardTypePrompt: "Wat wil je doen?",
+            stopWizardWhenPrompt: "Wanneer wil je stoppen?",
+            stopEat: "Iets eten",
+            stopDrink: "Iets drinken",
+            stopHalfway: "Ongeveer halverwege",
+            stopAfter: "Na stop",
+            stopAdd: "Stop zoeken"
+        },
+        en: {
+            title: "Your Personal Guide",
+            subtitle: "adjust your route",
+            stopWizardTitle: "Add extra stop",
+            stopWizardSubtitle: "Select whether you want to add a food or drink stop and choose the location where the guide will search for a café or restaurant",
+            travelMode: "Travel Mode",
+            walking: "Walking",
+            cycling: "Cycling",
+            distance: "Max Distance",
+            addInterest: "Add new interests",
+            addSpecific: "Add specific place",
+            halfwayBeer: "Extra food or drink stop",
+            currentRoute: "Current Stops",
+            remove: "Remove",
+            back: "Back to itinerary",
+            interestPlaceholder: "e.g. Museums, Parks...",
+            specificPlaceholder: "e.g. Atomium, Eiffel Tower...",
+            adding: "Loading...",
+            stops: "Number of stops",
+            stopsSub: "Fewer stops for a faster route",
+            stopWizardTypePrompt: "What would you like to do?",
+            stopWizardWhenPrompt: "When do you want to stop?",
+            stopEat: "Something to eat",
+            stopDrink: "Something to drink",
+            stopHalfway: "Approximately halfway",
+            stopAfter: "After stop",
+            stopAdd: "Search stop"
+        }
+    };
+
+    const text = t[language === 'nl' ? 'nl' : 'en'];
+
+    const handleHalfwayBeer = () => {
+        setShowStopSelector(true);
+    };
+
+    const handleExecuteStopAdd = () => {
+        if (pendingStopLocation === null) return;
+
+        if (setIsLoading) setIsLoading(true);
+        if (setLoadingText) setLoadingText(language === 'nl' ? 'Leuke opties zoeken...' : 'Finding nice options...');
+
+        const typeStr = pendingStopType === 'food'
+            ? (language === 'nl' ? "een leuke plek om iets te eten" : "a nice place to eat")
+            : (language === 'nl' ? "een gezellige plek voor een drankje" : "a cozy place for a drink");
+
+        const stopIndex = parseInt(pendingStopLocation);
+        const targetPoi = routeData?.pois?.[stopIndex];
+        const whenStr = language === 'nl'
+            ? `na stop ${stopIndex + 1}${targetPoi ? ` (${targetPoi.name})` : ''}`
+            : `after stop ${stopIndex + 1}${targetPoi ? ` (${targetPoi.name})` : ''}`;
+
+        const context = {
+            locationContext: '@AFTER_STOP_INDEX',
+            targetStopIndex: stopIndex,
+            referencePoiId: targetPoi?.id
+        };
+
+        const query = language === 'nl'
+            ? `Zoek naar 5 leuke opties voor ${typeStr} ${whenStr}. Laat me kiezen.`
+            : `Find 5 nice options for ${typeStr} ${whenStr}. Let me choose.`;
+
+        onAddToJourney(new Event('submit'), query, context);
+        onClose();
+    };
+
+    const handleInterestSubmit = (e) => {
+        if (e.key === 'Enter' && interestInput.trim()) {
+            if (setIsLoading) setIsLoading(true);
+            onAddToJourney(new Event('submit'), interestInput.trim());
+            setInterestInput('');
+            setShowInterestInput(false);
+            onClose();
+        }
+    };
+
+    const handleSpecificSubmit = (e) => {
+        if (e.key === 'Enter' && specificPoiInput.trim()) {
+            if (setIsLoading) setIsLoading(true);
+            onAddToJourney(new Event('submit'), `Voeg ${specificPoiInput.trim()} toe aan de route`);
+            setSpecificPoiInput('');
+            setShowSpecificInput(false);
+            onClose();
+        }
+    };
+
+    const hexToRgba = (hex, alpha) => {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+
+    return (
+        <div className="flex flex-col flex-1 min-h-0 animate-in slide-in-from-right duration-300">
+            {showStopSelector ? (
+                /* WIZARD VIEW: Extra Stop Selection */
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    <div className="flex-1 flex flex-col min-h-0 p-6 space-y-6">
+                        <div>
+                            <h3 className="text-lg font-bold text-white mb-1">{text.stopWizardTitle}</h3>
+                            <p className="text-xs text-slate-400">{text.stopWizardSubtitle}</p>
+                        </div>
+
+                        {/* Question 1: What? */}
+                        <div className="space-y-4">
+                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                {text.stopWizardTypePrompt}
+                            </label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    onClick={() => setPendingStopType('food')}
+                                    className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-3 ${pendingStopType === 'food' ? 'bg-primary/20 border-primary text-white' : 'bg-slate-900/40 border-white/5 text-slate-400 hover:border-white/10'}`}
+                                >
+                                    <div className={`p-3 rounded-full ${pendingStopType === 'food' ? 'bg-primary text-white' : 'bg-slate-800 text-slate-500'}`}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2M7 2v20m14-7V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm-3 0v7" />
+                                        </svg>
+                                    </div>
+                                    <span className={`text-xs font-bold ${pendingStopType === 'food' ? 'text-white' : 'text-slate-500'}`}>{text.stopEat}</span>
+                                </button>
+                                <button
+                                    onClick={() => setPendingStopType('drink')}
+                                    className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-3 ${pendingStopType === 'drink' ? 'bg-primary/20 border-primary text-white' : 'bg-slate-900/40 border-white/5 text-slate-400 hover:border-white/10'}`}
+                                >
+                                    <div className={`p-3 rounded-full ${pendingStopType === 'drink' ? 'bg-primary text-white' : 'bg-slate-800 text-slate-500'}`}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8Zm3-6v2m4-2v2m4-2v2" />
+                                        </svg>
+                                    </div>
+                                    <span className={`text-xs font-bold ${pendingStopType === 'drink' ? 'text-white' : 'text-slate-500'}`}>{text.stopDrink}</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Question 2: When? - Flex to fill remainder */}
+                        <div className="flex-1 flex flex-col min-h-0 space-y-4">
+                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                {text.stopWizardWhenPrompt}
+                            </label>
+                            <div className="flex-1 flex flex-col min-h-0">
+                                <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
+                                    <div className="space-y-2 pb-2">
+                                        {routeData?.pois?.slice(0, -1).map((poi, idx) => {
+                                            if (idx < activePoiIndex) return null;
+                                            return (
+                                                <button
+                                                    key={poi.id}
+                                                    onClick={() => setPendingStopLocation(idx.toString())}
+                                                    className={`p-3 rounded-lg border-2 transition-all flex items-center gap-3 text-left ${pendingStopLocation === idx.toString() ? 'bg-primary/20 border-primary text-white' : 'bg-slate-950/30 border-white/5 text-slate-500 hover:border-white/10'}`}
+                                                >
+                                                    <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/10 flex items-center justify-center text-[10px] font-black shrink-0">
+                                                        {idx + 1}
+                                                    </div>
+                                                    <span className="text-xs font-bold truncate">
+                                                        {text.stopAfter} <span className="text-white/80">{poi.name}</span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Wizard Footer */}
+                    <div className="p-6 bg-slate-950/80 border-t border-white/5 flex gap-3">
+                        <button
+                            onClick={() => setShowStopSelector(false)}
+                            className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all text-xs uppercase tracking-widest"
+                        >
+                            {text.back}
+                        </button>
+                        <button
+                            onClick={handleExecuteStopAdd}
+                            className="flex-1 py-3.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
+                        >
+                            {text.stopAdd}
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                /* MAIN REFINER VIEW */
+                <>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-2 space-y-8">
+                        {/* 1. Travel Mode Toggle */}
+                        <div className="space-y-3">
+                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                {text.travelMode}
+                            </label>
+                            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950/50 rounded-xl border border-white/5">
+                                <button
+                                    onClick={() => onStyleChange('walking')}
+                                    className={`py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${travelMode === 'walking' ? 'bg-primary text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="4" r="2" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v-4l-2-2 1-3h-2M12 9l2 2-1 6" /></svg>
+                                    {text.walking}
+                                </button>
+                                <button
+                                    onClick={() => onStyleChange('cycling')}
+                                    className={`py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${travelMode === 'cycling' ? 'bg-primary text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="5.5" cy="17.5" r="3.5" strokeWidth={2} /><circle cx="18.5" cy="17.5" r="3.5" strokeWidth={2} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-5 5-3-3 2-2M12 17.5V14l-3-3 4-3 2 3h2" /></svg>
+                                    {text.cycling}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* 1b. Stops Slider */}
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-end ml-1">
+                                <div>
+                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                                        {text.stops}
+                                    </label>
+                                    <p className="text-[9px] text-slate-500/60 font-medium">{text.stopsSub}</p>
+                                </div>
+                                <div className="bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
+                                    <span className="text-sm font-black text-primary">{localStopsCount}</span>
+                                </div>
+                            </div>
+                            <input
+                                type="range"
+                                min={2}
+                                max={routeData?.originalPois?.length || Math.max(localStopsCount, routeData?.pois?.length || 0)}
+                                value={localStopsCount}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setLocalStopsCount(val);
+                                }}
+                                onMouseUp={(e) => onStopsCountChange(parseInt(e.target.value))}
+                                onTouchEnd={(e) => onStopsCountChange(parseInt(e.target.value))}
+                                disabled={(routeData?.originalPois?.length || routeData?.pois?.length || 0) <= 2}
+                                className="w-full accent-primary h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            />
+                        </div>
+
+                        {/* 2. Distance Slider */}
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-end ml-1">
+                                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                                    {text.distance}
+                                </label>
+                                <div className="bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
+                                    <span className="text-sm font-black text-primary">{localDistance}</span>
+                                    <span className="text-[10px] font-bold text-primary/70 uppercase ml-1">km</span>
+                                </div>
+                            </div>
+                            <input
+                                type="range"
+                                min={1}
+                                max={60}
+                                value={localDistance}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setLocalDistance(val);
+                                    onConstraintValueChange(val);
+                                }}
+                                onMouseUp={(e) => onConstraintValueFinal(parseInt(e.target.value))}
+                                onTouchEnd={(e) => onConstraintValueFinal(parseInt(e.target.value))}
+                                className="w-full accent-primary h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                            />
+                        </div>
+
+                        {/* 3. Smart Actions */}
+                        <div className="space-y-3">
+                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                Snel Toevoegen
+                            </label>
+                            <div className="grid gap-2">
+                                {/* Halfway Beer */}
+                                <button
+                                    onClick={handleHalfwayBeer}
+                                    className="w-full p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all flex items-center gap-3 text-left group"
+                                >
+                                    <div className="p-2 bg-amber-500/20 rounded-lg group-hover:scale-110 transition-transform">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 11h1a3 3 0 0 1 0 6h-1"></path><path d="M9 12v6"></path><path d="M13 12v6"></path><path d="M14 7.5c-1 0-1.44.5-3 .5s-2-.5-3-.5-1.72.5-2.5.5a.5.5 0 0 1-.5-.5V8a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1a.5.5 0 0 1-.5.5c-.78 0-1.5-.5-2.5-.5z"></path><path d="M5 8v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8"></path></svg>
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="text-xs font-black uppercase tracking-tight">{text.halfwayBeer}</div>
+                                        <div className="text-[10px] opacity-60 font-medium">
+                                            {language === 'nl' ? "Ik zoek een leuke plek om te pauzeren voor je." : "I'll find a nice spot for a break."}
+                                        </div>
+                                    </div>
+                                </button>
+
+                                {/* Interest Search */}
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowInterestInput(!showInterestInput)}
+                                        className={`w-full p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all flex items-center gap-3 text-left group ${showInterestInput ? 'rounded-b-none border-b-0' : ''}`}
+                                    >
+                                        <div className="p-2 bg-blue-500/20 rounded-lg group-hover:scale-110 transition-transform">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v8"></path><path d="m4.93 4.93 5.66 5.66"></path><path d="M2 12h8"></path><path d="m4.93 19.07 5.66-5.66"></path><path d="M12 22v-8"></path><path d="m19.07 19.07-5.66-5.66"></path><path d="M22 12h-8"></path><path d="m19.07 4.93-5.66 5.66"></path></svg>
+                                        </div>
+                                        <div className="text-xs font-black uppercase tracking-tight">{text.addInterest}</div>
+                                    </button>
+                                    {showInterestInput && (
+                                        <div className="bg-blue-500/5 border-x border-b border-blue-500/20 rounded-b-xl p-3 animate-in fade-in slide-in-from-top-1">
+                                            <input
+                                                autoFocus
+                                                type="text"
+                                                value={interestInput}
+                                                onChange={(e) => setInterestInput(e.target.value)}
+                                                onKeyDown={handleInterestSubmit}
+                                                placeholder={text.interestPlaceholder}
+                                                className="w-full bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Specific POI */}
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowSpecificInput(!showSpecificInput)}
+                                        className={`w-full p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-all flex items-center gap-3 text-left group ${showSpecificInput ? 'rounded-b-none border-b-0' : ''}`}
+                                    >
+                                        <div className="p-2 bg-purple-500/20 rounded-lg group-hover:scale-110 transition-transform">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                                        </div>
+                                        <div className="text-xs font-black uppercase tracking-tight">{text.addSpecific}</div>
+                                    </button>
+                                    {showSpecificInput && (
+                                        <div className="bg-purple-500/5 border-x border-b border-purple-500/20 rounded-b-xl p-3 animate-in fade-in slide-in-from-top-1">
+                                            <input
+                                                autoFocus
+                                                type="text"
+                                                value={specificPoiInput}
+                                                onChange={(e) => setSpecificPoiInput(e.target.value)}
+                                                onKeyDown={handleSpecificSubmit}
+                                                placeholder={text.specificPlaceholder}
+                                                className="w-full bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500/50"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 4. Current Stops (Modification Section) */}
+                        <div className="space-y-3">
+                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                {text.currentRoute}
+                            </label>
+                            <div className="space-y-2">
+                                {routeData?.pois?.map((poi, idx) => (
+                                    <div key={poi.id} className="flex items-center justify-between p-3 bg-slate-900/40 border border-white/5 rounded-xl group hover:bg-slate-900/60 transition-all">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400 group-hover:bg-primary group-hover:text-white transition-all shrink-0">
+                                                {idx + 1}
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-200 truncate pr-2">{poi.name}</span>
+                                        </div>
+                                        <button
+                                            onClick={() => onRemovePoi(poi.id)}
+                                            className="p-1.5 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all"
+                                            title={text.remove}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-6 bg-slate-950/80 border-t border-white/5">
+                        <button
+                            onClick={onClose}
+                            className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-widest"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
+                            {text.back}
+                        </button>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
+export default RouteRefiner;

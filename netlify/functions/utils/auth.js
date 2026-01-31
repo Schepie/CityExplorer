@@ -40,7 +40,7 @@ export const verifyAccessCode = (email, code) => {
 };
 
 // 2. Constants
-const TOKEN_EXPIRY = '2h';
+const TOKEN_EXPIRY = '7d';
 const MAGIC_LINK_EXPIRY = '15m';
 
 // 3. Helpers

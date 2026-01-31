@@ -3,7 +3,7 @@
 
 import { apiFetch } from './api.js';
 
-export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) => {
+export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, language = 'en') => {
     let poiData = [];
 
     // Helper: Calculate bounding box if missing (for current location)
@@ -76,6 +76,9 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) =
             url += `&q=${encodeURIComponent(params.q)}&viewbox=${params.viewbox}&bounded=${params.bounded}`;
         }
 
+        // Add language parameter
+        url += `&accept-language=${language}`;
+
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
@@ -120,10 +123,10 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5) =
 // ... (other functions)
 
 
-export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => {
+export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000, language = 'en') => {
     // Proxy call
     // Proxy call
-    const url = `/api/foursquare?query=${encodeURIComponent(interest)}&ll=${lat},${lng}&radius=${radius}&limit=30`;
+    const url = `/api/foursquare?query=${encodeURIComponent(interest)}&ll=${lat},${lng}&radius=${radius}&limit=30&locale=${language}`;
 
     try {
         const controller = new AbortController();
@@ -155,7 +158,7 @@ export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000) => 
     return [];
 };
 
-export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
+export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000, language = 'en') => {
     // Proxy call
     const maxRadius = Math.min(radius, 50000); // Google Places Limit is 50,000 meters
     const url = '/api/google-places';
@@ -169,7 +172,8 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
             body: JSON.stringify({
                 textQuery: interest,
                 center: { lat, lng },
-                radius: maxRadius
+                radius: maxRadius,
+                languageCode: language
             }),
             signal: controller.signal
         });
@@ -202,7 +206,7 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000) => {
 }
 
 
-export const getCombinedPOIs = async (cityData, interestLine, cityName, constrainValueKm, sources) => {
+export const getCombinedPOIs = async (cityData, interestLine, cityName, constrainValueKm, sources, language = 'en') => {
     // Determine Radius in Meters
     const radiusMeters = (constrainValueKm || 5) * 1000;
     const radiusKm = constrainValueKm || 5;
@@ -230,9 +234,9 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
     // Helper: Fetch for a SINGLE keyword
     const fetchForKeyword = async (keyword) => {
         const [osm, fs, google] = await Promise.all([
-            useOsm ? fetchOsmPOIs(cityData, keyword, cityName, radiusKm) : Promise.resolve([]),
-            useFs ? fetchFoursquarePOIs(cityData.lat, cityData.lon, keyword, radiusMeters) : Promise.resolve([]),
-            useGoogle ? fetchGooglePOIs(cityData.lat, cityData.lon, keyword, radiusMeters) : Promise.resolve([])
+            useOsm ? fetchOsmPOIs(cityData, keyword, cityName, radiusKm, language) : Promise.resolve([]),
+            useFs ? fetchFoursquarePOIs(cityData.lat, cityData.lon, keyword, radiusMeters, language) : Promise.resolve([]),
+            useGoogle ? fetchGooglePOIs(cityData.lat, cityData.lon, keyword, radiusMeters, language) : Promise.resolve([])
         ]);
         return [...google, ...fs, ...osm];
     };
