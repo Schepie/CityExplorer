@@ -3351,21 +3351,36 @@ function CityExplorerApp() {
         type: poi.type || (poi.category || 'Café')
       });
 
-      // Update route data with new POI list
+      // Recalculate the route with the new POI list
+      const cityCenter = routeData.center;
+      const routeResult = await calculateRoutePath(newPois, cityCenter, travelMode, routeData.stopCenter);
+
+      // Update route data with new POI list and recalculated route
       setRouteData(prev => ({
         ...prev,
         pois: newPois,
-        // Mark for route recalculation if needed
-        needsRouteUpdate: true
+        originalPois: newPois,
+        routePath: routeResult.path,
+        navigationSteps: routeResult.steps,
+        legs: routeResult.legs || prev.legs,
+        stats: {
+          ...prev.stats,
+          totalDistance: routeResult.dist.toFixed(1),
+          walkDistance: (routeResult.walkDist || 0).toFixed(1)
+        }
       }));
 
       // Add chat message about the addition
       setAiChatHistory(prev => [...prev, {
         role: 'brain',
         text: language === 'nl'
-          ? `**${poi.name}** is toegevoegd aan je route na stop ${afterStopIndex + 1}. Genieten!`
-          : `**${poi.name}** has been added to your route after stop ${afterStopIndex + 1}. Enjoy!`
+          ? `**${poi.name}** is toegevoegd aan je route na stop ${afterStopIndex + 1}. De route is herberekend!`
+          : `**${poi.name}** has been added to your route after stop ${afterStopIndex + 1}. Route recalculated!`
       }]);
+
+      // Navigate to map view to show the updated route
+      setIsAiViewActive(false);
+      setIsSidebarOpen(true);
 
     } catch (err) {
       console.error('Failed to add stop:', err);

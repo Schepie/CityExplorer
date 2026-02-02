@@ -1649,6 +1649,15 @@ const ItinerarySidebar = ({
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
                                             {
+                                                date: "02 Feb 2026",
+                                                version: "v1.7.1",
+                                                items: language === 'nl' ? [
+                                                    { title: "Route Herberekening", desc: "Wanneer je een POI toevoegt via 'SNEL TOEVOEGEN' wordt de route nu automatisch herberekend en op de kaart getoond." }
+                                                ] : [
+                                                    { title: "Route Recalculation", desc: "When adding a POI via 'Quick Add', the route is now automatically recalculated and displayed on the map." }
+                                                ]
+                                            },
+                                            {
                                                 date: "31 Jan 2026",
                                                 version: "v1.7.0",
                                                 items: language === 'nl' ? [
@@ -2086,7 +2095,7 @@ const ItinerarySidebar = ({
                                                 >
                                                     {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                                 </button>
-                                                <span className="text-slate-300 text-sm font-medium">v1.7.0</span>
+                                                <span className="text-slate-300 text-sm font-medium">v1.7.1</span>
                                             </div>
                                         </div>
                                         <div className="flex justify-between items-center">
@@ -2095,7 +2104,7 @@ const ItinerarySidebar = ({
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                            <span className="text-[var(--text-muted)] text-sm font-medium">31 Jan 2026</span>
+                                            <span className="text-[var(--text-muted)] text-sm font-medium">02 Feb 2026</span>
                                         </div>
                                     </div>
                                 </div>
