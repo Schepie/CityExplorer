@@ -14,6 +14,9 @@ const RouteRefiner = ({
     onConstraintValueFinal,
     onRemovePoi,
     onAddToJourney,
+    onSearchStopOptions, // callback to search for stop options
+    onSearchPOIs,        // callback to search for interest/specific POIs
+    onSelectStopOption,  // callback when user selects a POI from results
     onStopsCountChange,
     onClose,
     setIsLoading,
@@ -27,6 +30,13 @@ const RouteRefiner = ({
     const [showInterestInput, setShowInterestInput] = useState(false);
     const [localStopsCount, setLocalStopsCount] = useState(routeData?.pois?.length || 0);
     const [localDistance, setLocalDistance] = useState(constraintValue);
+
+    // New: Search flow states
+    const [searchPhase, setSearchPhase] = useState('wizard'); // 'wizard' | 'searching' | 'results'
+    const [searchType, setSearchType] = useState(null); // 'stop' | 'interest' | 'specific'
+    const [searchQuery, setSearchQuery] = useState(''); // The search term being searched
+    const [searchResults, setSearchResults] = useState([]);
+    const [searchError, setSearchError] = useState(null);
 
     // Sync local count with actual data when it changes externally
     React.useEffect(() => {
@@ -69,7 +79,16 @@ const RouteRefiner = ({
             stopDrink: "Iets drinken",
             stopHalfway: "Ongeveer halverwege",
             stopAfter: "Na stop",
-            stopAdd: "Stop zoeken"
+            stopAdd: "Zoeken",
+            searching: "Aan het zoeken...",
+            searchingSubtitle: "We zoeken de beste plekjes voor je",
+            resultsTitle: "Gevonden opties",
+            resultsSubtitle: "Kies een plek om toe te voegen aan je route",
+            noResults: "Geen resultaten gevonden",
+            tryAgain: "Opnieuw proberen",
+            distance: "afstand",
+            addToRoute: "Toevoegen",
+            backToWizard: "Terug"
         },
         en: {
             title: "Your Personal Guide",
@@ -97,7 +116,16 @@ const RouteRefiner = ({
             stopDrink: "Something to drink",
             stopHalfway: "Approximately halfway",
             stopAfter: "After stop",
-            stopAdd: "Search stop"
+            stopAdd: "Search",
+            searching: "Searching...",
+            searchingSubtitle: "We're finding the best spots for you",
+            resultsTitle: "Found options",
+            resultsSubtitle: "Choose a place to add to your route",
+            noResults: "No results found",
+            tryAgain: "Try again",
+            distance: "distance",
+            addToRoute: "Add",
+            backToWizard: "Back"
         }
     };
 
@@ -107,54 +135,178 @@ const RouteRefiner = ({
         setShowStopSelector(true);
     };
 
-    const handleExecuteStopAdd = () => {
+    const handleExecuteStopAdd = async () => {
         if (pendingStopLocation === null) return;
 
-        if (setIsLoading) setIsLoading(true);
-        if (setLoadingText) setLoadingText(language === 'nl' ? 'Leuke opties zoeken...' : 'Finding nice options...');
-
-        const typeStr = pendingStopType === 'food'
-            ? (language === 'nl' ? "een leuke plek om iets te eten" : "a nice place to eat")
-            : (language === 'nl' ? "een gezellige plek voor een drankje" : "a cozy place for a drink");
+        // Switch to searching phase
+        setSearchPhase('searching');
+        setSearchError(null);
+        setSearchResults([]);
 
         const stopIndex = parseInt(pendingStopLocation);
         const targetPoi = routeData?.pois?.[stopIndex];
-        const whenStr = language === 'nl'
-            ? `na stop ${stopIndex + 1}${targetPoi ? ` (${targetPoi.name})` : ''}`
-            : `after stop ${stopIndex + 1}${targetPoi ? ` (${targetPoi.name})` : ''}`;
 
-        const context = {
-            locationContext: '@AFTER_STOP_INDEX',
-            targetStopIndex: stopIndex,
-            referencePoiId: targetPoi?.id
+        const searchParams = {
+            stopType: pendingStopType,
+            afterStopIndex: stopIndex,
+            referencePoi: targetPoi
         };
 
-        const query = language === 'nl'
-            ? `Zoek naar 5 leuke opties voor ${typeStr} ${whenStr}. Laat me kiezen.`
-            : `Find 5 nice options for ${typeStr} ${whenStr}. Let me choose.`;
+        try {
+            // Call the search callback if provided
+            if (onSearchStopOptions) {
+                const results = await onSearchStopOptions(searchParams);
+                if (results && results.length > 0) {
+                    setSearchResults(results);
+                    setSearchPhase('results');
+                } else {
+                    setSearchError(text.noResults);
+                    setSearchPhase('results');
+                }
+            } else {
+                // Fallback: use old behavior
+                const typeStr = pendingStopType === 'food'
+                    ? (language === 'nl' ? "een leuke plek om iets te eten" : "a nice place to eat")
+                    : (language === 'nl' ? "een gezellige plek voor een drankje" : "a cozy place for a drink");
 
-        onAddToJourney(new Event('submit'), query, context);
+                const whenStr = language === 'nl'
+                    ? `na stop ${stopIndex + 1}${targetPoi ? ` (${targetPoi.name})` : ''}`
+                    : `after stop ${stopIndex + 1}${targetPoi ? ` (${targetPoi.name})` : ''}`;
+
+                const context = {
+                    locationContext: '@AFTER_STOP_INDEX',
+                    targetStopIndex: stopIndex,
+                    referencePoiId: targetPoi?.id
+                };
+
+                const query = language === 'nl'
+                    ? `Zoek naar 5 leuke opties voor ${typeStr} ${whenStr}. Laat me kiezen.`
+                    : `Find 5 nice options for ${typeStr} ${whenStr}. Let me choose.`;
+
+                if (setIsLoading) setIsLoading(true);
+                if (setLoadingText) setLoadingText(language === 'nl' ? 'Leuke opties zoeken...' : 'Finding nice options...');
+                onAddToJourney(new Event('submit'), query, context);
+                onClose();
+            }
+        } catch (err) {
+            console.error('Stop search failed:', err);
+            setSearchError(language === 'nl' ? 'Er ging iets mis bij het zoeken.' : 'Something went wrong while searching.');
+            setSearchPhase('results');
+        }
+    };
+
+    const handleSelectResult = (poi) => {
+        if (onSelectStopOption) {
+            const stopIndex = parseInt(pendingStopLocation);
+            onSelectStopOption(poi, stopIndex);
+        }
         onClose();
     };
 
-    const handleInterestSubmit = (e) => {
+    const handleBackToWizard = () => {
+        setSearchPhase('wizard');
+        setSearchType(null);
+        setSearchQuery('');
+        setSearchResults([]);
+        setSearchError(null);
+        // Also reset stop selector if active
+        setShowStopSelector(false);
+    };
+
+    const handleInterestSubmit = async (e) => {
         if (e.key === 'Enter' && interestInput.trim()) {
-            if (setIsLoading) setIsLoading(true);
-            onAddToJourney(new Event('submit'), interestInput.trim());
-            setInterestInput('');
+            const query = interestInput.trim();
+
+            // Start search flow - stay in RouteRefiner
+            setSearchType('interest');
+            setSearchQuery(query);
+            setSearchPhase('searching');
+            setSearchError(null);
+            setSearchResults([]);
             setShowInterestInput(false);
-            onClose();
+            setInterestInput('');
+
+            try {
+                // Call the search callback if provided
+                if (onSearchPOIs) {
+                    const results = await onSearchPOIs({ type: 'interest', query });
+                    if (results && results.length > 0) {
+                        setSearchResults(results);
+                        setSearchPhase('results');
+                    } else {
+                        setSearchError(language === 'nl' ? 'Geen resultaten gevonden' : 'No results found');
+                        setSearchPhase('results');
+                    }
+                } else {
+                    // Fallback: use old behavior
+                    if (setIsLoading) setIsLoading(true);
+                    onAddToJourney(new Event('submit'), query);
+                    onClose();
+                }
+            } catch (err) {
+                console.error('Interest search failed:', err);
+                setSearchError(language === 'nl' ? 'Er ging iets mis bij het zoeken.' : 'Something went wrong while searching.');
+                setSearchPhase('results');
+            }
         }
     };
 
-    const handleSpecificSubmit = (e) => {
+    const handleSpecificSubmit = async (e) => {
         if (e.key === 'Enter' && specificPoiInput.trim()) {
-            if (setIsLoading) setIsLoading(true);
-            onAddToJourney(new Event('submit'), `Voeg ${specificPoiInput.trim()} toe aan de route`);
-            setSpecificPoiInput('');
+            const query = specificPoiInput.trim();
+
+            // Start search flow - stay in RouteRefiner
+            setSearchType('specific');
+            setSearchQuery(query);
+            setSearchPhase('searching');
+            setSearchError(null);
+            setSearchResults([]);
             setShowSpecificInput(false);
-            onClose();
+            setSpecificPoiInput('');
+
+            try {
+                // Call the search callback if provided
+                if (onSearchPOIs) {
+                    const results = await onSearchPOIs({ type: 'specific', query });
+                    if (results && results.length > 0) {
+                        setSearchResults(results);
+                        setSearchPhase('results');
+                    } else {
+                        setSearchError(language === 'nl' ? 'Geen resultaten gevonden' : 'No results found');
+                        setSearchPhase('results');
+                    }
+                } else {
+                    // Fallback: use old behavior
+                    if (setIsLoading) setIsLoading(true);
+                    onAddToJourney(new Event('submit'), `Voeg ${query} toe aan de route`);
+                    onClose();
+                }
+            } catch (err) {
+                console.error('Specific POI search failed:', err);
+                setSearchError(language === 'nl' ? 'Er ging iets mis bij het zoeken.' : 'Something went wrong while searching.');
+                setSearchPhase('results');
+            }
         }
+    };
+
+    // Handler for selecting a POI from any search results
+    const handleSelectSearchResult = (poi) => {
+        if (searchType === 'stop') {
+            // Existing stop flow
+            if (onSelectStopOption) {
+                const stopIndex = parseInt(pendingStopLocation);
+                onSelectStopOption(poi, stopIndex);
+            }
+        } else {
+            // Interest or specific - add to journey
+            if (onSelectStopOption) {
+                // Insert after current active POI
+                onSelectStopOption(poi, activePoiIndex);
+            }
+        }
+        // Reset and close
+        handleBackToWizard();
+        onClose();
     };
 
     const hexToRgba = (hex, alpha) => {
@@ -166,92 +318,329 @@ const RouteRefiner = ({
 
     return (
         <div className="flex flex-col flex-1 min-h-0 animate-in slide-in-from-right duration-300">
-            {showStopSelector ? (
-                /* WIZARD VIEW: Extra Stop Selection */
+            {/* UNIFIED SEARCH FLOW: for interest/specific searches */}
+            {searchPhase !== 'wizard' && (searchType === 'interest' || searchType === 'specific') ? (
                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                    <div className="flex-1 flex flex-col min-h-0 p-6 space-y-6">
-                        <div>
-                            <h3 className="text-lg font-bold text-white mb-1">{text.stopWizardTitle}</h3>
-                            <p className="text-xs text-slate-400">{text.stopWizardSubtitle}</p>
-                        </div>
-
-                        {/* Question 1: What? */}
-                        <div className="space-y-4">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
-                                {text.stopWizardTypePrompt}
-                            </label>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button
-                                    onClick={() => setPendingStopType('food')}
-                                    className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-3 ${pendingStopType === 'food' ? 'bg-primary/20 border-primary text-white' : 'bg-slate-900/40 border-white/5 text-slate-400 hover:border-white/10'}`}
-                                >
-                                    <div className={`p-3 rounded-full ${pendingStopType === 'food' ? 'bg-primary text-white' : 'bg-slate-800 text-slate-500'}`}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2M7 2v20m14-7V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm-3 0v7" />
-                                        </svg>
-                                    </div>
-                                    <span className={`text-xs font-bold ${pendingStopType === 'food' ? 'text-white' : 'text-slate-500'}`}>{text.stopEat}</span>
-                                </button>
-                                <button
-                                    onClick={() => setPendingStopType('drink')}
-                                    className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-3 ${pendingStopType === 'drink' ? 'bg-primary/20 border-primary text-white' : 'bg-slate-900/40 border-white/5 text-slate-400 hover:border-white/10'}`}
-                                >
-                                    <div className={`p-3 rounded-full ${pendingStopType === 'drink' ? 'bg-primary text-white' : 'bg-slate-800 text-slate-500'}`}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8Zm3-6v2m4-2v2m4-2v2" />
-                                        </svg>
-                                    </div>
-                                    <span className={`text-xs font-bold ${pendingStopType === 'drink' ? 'text-white' : 'text-slate-500'}`}>{text.stopDrink}</span>
-                                </button>
+                    {searchPhase === 'searching' ? (
+                        /* SEARCHING PHASE */
+                        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-6">
+                            <div className="relative">
+                                <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-primary animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <h3 className="text-lg font-bold text-white mb-2">
+                                    {text.searching}
+                                </h3>
+                                <p className="text-sm text-slate-400">
+                                    {language === 'nl'
+                                        ? `Zoeken naar "${searchQuery}"...`
+                                        : `Searching for "${searchQuery}"...`}
+                                </p>
                             </div>
                         </div>
-
-                        {/* Question 2: When? - Flex to fill remainder */}
-                        <div className="flex-1 flex flex-col min-h-0 space-y-4">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
-                                {text.stopWizardWhenPrompt}
-                            </label>
-                            <div className="flex-1 flex flex-col min-h-0">
-                                <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
-                                    <div className="space-y-2 pb-2">
-                                        {routeData?.pois?.slice(0, -1).map((poi, idx) => {
-                                            if (idx < activePoiIndex) return null;
-                                            return (
-                                                <button
-                                                    key={poi.id}
-                                                    onClick={() => setPendingStopLocation(idx.toString())}
-                                                    className={`p-3 rounded-lg border-2 transition-all flex items-center gap-3 text-left ${pendingStopLocation === idx.toString() ? 'bg-primary/20 border-primary text-white' : 'bg-slate-950/30 border-white/5 text-slate-500 hover:border-white/10'}`}
-                                                >
-                                                    <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/10 flex items-center justify-center text-[10px] font-black shrink-0">
-                                                        {idx + 1}
-                                                    </div>
-                                                    <span className="text-xs font-bold truncate">
-                                                        {text.stopAfter} <span className="text-white/80">{poi.name}</span>
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
+                    ) : searchPhase === 'results' ? (
+                        /* RESULTS PHASE */
+                        <>
+                            {/* Header */}
+                            <div className="p-6 border-b border-white/5 shrink-0">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <button
+                                        onClick={handleBackToWizard}
+                                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                                        </svg>
+                                    </button>
+                                    <div>
+                                        <h3 className="text-lg font-bold text-white">
+                                            {searchType === 'interest'
+                                                ? (language === 'nl' ? 'Kies een plek' : 'Choose a spot')
+                                                : (language === 'nl' ? 'Gevonden resultaten' : 'Found results')}
+                                        </h3>
+                                        <p className="text-xs text-slate-400">
+                                            {language === 'nl'
+                                                ? `Resultaten voor "${searchQuery}"`
+                                                : `Results for "${searchQuery}"`}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    {/* Wizard Footer */}
-                    <div className="p-6 bg-slate-950/80 border-t border-white/5 flex gap-3">
-                        <button
-                            onClick={() => setShowStopSelector(false)}
-                            className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all text-xs uppercase tracking-widest"
-                        >
-                            {text.back}
-                        </button>
-                        <button
-                            onClick={handleExecuteStopAdd}
-                            className="flex-1 py-3.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
-                        >
-                            {text.stopAdd}
-                        </button>
-                    </div>
+                            {/* Results list or error */}
+                            {searchError ? (
+                                <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
+                                    <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </div>
+                                    <p className="text-sm text-slate-400 text-center">{searchError}</p>
+                                    <button
+                                        onClick={handleBackToWizard}
+                                        className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        {text.tryAgain}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 space-y-3">
+                                    {searchResults.map((poi, idx) => {
+                                        // Calculate distance from route center if available
+                                        const center = routeData?.center;
+                                        let distanceKm = null;
+                                        if (center && poi.lat && (poi.lng || poi.lon)) {
+                                            const R = 6371;
+                                            const poiLng = poi.lng || poi.lon;
+                                            const dLat = (poi.lat - center[0]) * Math.PI / 180;
+                                            const dLon = (poiLng - center[1]) * Math.PI / 180;
+                                            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                                                Math.cos(center[0] * Math.PI / 180) * Math.cos(poi.lat * Math.PI / 180) *
+                                                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                                            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                                            distanceKm = R * c;
+                                        }
+
+                                        return (
+                                            <button
+                                                key={poi.id || idx}
+                                                onClick={() => handleSelectSearchResult(poi)}
+                                                className="w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-400 group-hover:bg-primary group-hover:text-white transition-all shrink-0 mt-0.5">
+                                                        {idx + 1}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className="text-sm font-bold text-white mb-1.5">{poi.name}</h4>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                                                                {poi.type || poi.category || (searchType === 'interest' ? 'POI' : 'Locatie')}
+                                                            </span>
+                                                            {distanceKm !== null && (
+                                                                <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                                    {distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `${distanceKm.toFixed(1)}km`}
+                                                                </span>
+                                                            )}
+                                                            {poi.detour_km > 0 && (
+                                                                <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                                    +{poi.detour_km.toFixed(1)}km {language === 'nl' ? 'omweg' : 'detour'}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </>
+                    ) : null}
+                </div>
+            ) : showStopSelector ? (
+                /* STOP SELECTOR WITH PHASES: wizard | searching | results */
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    {searchPhase === 'searching' ? (
+                        /* SEARCHING PHASE */
+                        <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-6">
+                            <div className="relative">
+                                <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-primary animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                </div>
+                                <div className="absolute inset-0 rounded-full border-2 border-primary/30 animate-ping"></div>
+                            </div>
+                            <div className="text-center">
+                                <h3 className="text-xl font-bold text-white mb-2">{text.searching}</h3>
+                                <p className="text-sm text-slate-400">{text.searchingSubtitle}</p>
+                            </div>
+                            <div className="flex gap-1">
+                                <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                            </div>
+                        </div>
+                    ) : searchPhase === 'results' ? (
+                        /* RESULTS PHASE */
+                        <div className="flex-1 flex flex-col min-h-0">
+                            <div className="p-6 pb-4">
+                                <h3 className="text-lg font-bold text-white mb-1">{text.resultsTitle}</h3>
+                                <p className="text-xs text-slate-400">{text.resultsSubtitle}</p>
+                            </div>
+
+                            {searchError ? (
+                                <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
+                                    <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <p className="text-sm text-slate-400 text-center">{searchError}</p>
+                                    <button
+                                        onClick={handleBackToWizard}
+                                        className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        {text.tryAgain}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex-1 overflow-y-auto custom-scrollbar px-6 space-y-3">
+                                    {searchResults.map((poi, idx) => {
+                                        const referencePoi = routeData?.pois?.[parseInt(pendingStopLocation)];
+                                        let distanceKm = null;
+                                        if (referencePoi && poi.lat && (poi.lng || poi.lon) && referencePoi.lat && (referencePoi.lng || referencePoi.lon)) {
+                                            const R = 6371; // Earth radius in km
+                                            const poiLng = poi.lng || poi.lon;
+                                            const refLng = referencePoi.lng || referencePoi.lon;
+                                            const dLat = (poi.lat - referencePoi.lat) * Math.PI / 180;
+                                            const dLon = (poiLng - refLng) * Math.PI / 180;
+                                            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                                                Math.cos(referencePoi.lat * Math.PI / 180) * Math.cos(poi.lat * Math.PI / 180) *
+                                                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                                            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                                            distanceKm = R * c;
+                                        }
+
+                                        return (
+                                            <button
+                                                key={poi.id || idx}
+                                                onClick={() => handleSelectResult(poi)}
+                                                className="w-full p-4 rounded-xl bg-white/5 border border-white/5 hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    {/* Number badge */}
+                                                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-400 group-hover:bg-primary group-hover:text-white transition-all shrink-0 mt-0.5">
+                                                        {idx + 1}
+                                                    </div>
+
+                                                    {/* Content */}
+                                                    <div className="flex-1 min-w-0">
+                                                        {/* Name - full width */}
+                                                        <h4 className="text-sm font-bold text-white mb-1.5 pr-2">{poi.name}</h4>
+
+                                                        {/* Type and distance row */}
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                                                                {poi.type || poi.category || (pendingStopType === 'food' ? 'Restaurant' : 'Café')}
+                                                            </span>
+                                                            {distanceKm !== null && (
+                                                                <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                                    +{distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `${distanceKm.toFixed(1)}km`} {text.distance}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Results Footer */}
+                            <div className="p-6 bg-slate-950/80 border-t border-white/5">
+                                <button
+                                    onClick={handleBackToWizard}
+                                    className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all text-xs uppercase tracking-widest"
+                                >
+                                    {text.backToWizard}
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        /* WIZARD PHASE (default) */
+                        <>
+                            <div className="flex-1 flex flex-col min-h-0 p-6 space-y-6">
+                                <div>
+                                    <h3 className="text-lg font-bold text-white mb-1">{text.stopWizardTitle}</h3>
+                                    <p className="text-xs text-slate-400">{text.stopWizardSubtitle}</p>
+                                </div>
+
+                                {/* Question 1: What? */}
+                                <div className="space-y-4">
+                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                        {text.stopWizardTypePrompt}
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            onClick={() => setPendingStopType('food')}
+                                            className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-3 ${pendingStopType === 'food' ? 'bg-primary/20 border-primary text-white' : 'bg-slate-900/40 border-white/5 text-slate-400 hover:border-white/10'}`}
+                                        >
+                                            <div className={`p-3 rounded-full ${pendingStopType === 'food' ? 'bg-primary text-white' : 'bg-slate-800 text-slate-500'}`}>
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2M7 2v20m14-7V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm-3 0v7" />
+                                                </svg>
+                                            </div>
+                                            <span className={`text-xs font-bold ${pendingStopType === 'food' ? 'text-white' : 'text-slate-500'}`}>{text.stopEat}</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setPendingStopType('drink')}
+                                            className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-3 ${pendingStopType === 'drink' ? 'bg-primary/20 border-primary text-white' : 'bg-slate-900/40 border-white/5 text-slate-400 hover:border-white/10'}`}
+                                        >
+                                            <div className={`p-3 rounded-full ${pendingStopType === 'drink' ? 'bg-primary text-white' : 'bg-slate-800 text-slate-500'}`}>
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8Zm3-6v2m4-2v2m4-2v2" />
+                                                </svg>
+                                            </div>
+                                            <span className={`text-xs font-bold ${pendingStopType === 'drink' ? 'text-white' : 'text-slate-500'}`}>{text.stopDrink}</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Question 2: When? - Flex to fill remainder */}
+                                <div className="flex-1 flex flex-col min-h-0 space-y-4">
+                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                        {text.stopWizardWhenPrompt}
+                                    </label>
+                                    <div className="flex-1 flex flex-col min-h-0">
+                                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
+                                            <div className="space-y-2 pb-2">
+                                                {routeData?.pois?.slice(0, -1).map((poi, idx) => {
+                                                    if (idx < activePoiIndex) return null;
+                                                    return (
+                                                        <button
+                                                            key={poi.id}
+                                                            onClick={() => setPendingStopLocation(idx.toString())}
+                                                            className={`p-3 rounded-lg border-2 transition-all flex items-center gap-3 text-left ${pendingStopLocation === idx.toString() ? 'bg-primary/20 border-primary text-white' : 'bg-slate-950/30 border-white/5 text-slate-500 hover:border-white/10'}`}
+                                                        >
+                                                            <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/10 flex items-center justify-center text-[10px] font-black shrink-0">
+                                                                {idx + 1}
+                                                            </div>
+                                                            <span className="text-xs font-bold truncate">
+                                                                {text.stopAfter} <span className="text-white/80">{poi.name}</span>
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Wizard Footer */}
+                            <div className="p-6 bg-slate-950/80 border-t border-white/5 flex gap-3">
+                                <button
+                                    onClick={() => setShowStopSelector(false)}
+                                    className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all text-xs uppercase tracking-widest"
+                                >
+                                    {text.back}
+                                </button>
+                                <button
+                                    onClick={handleExecuteStopAdd}
+                                    className="flex-1 py-3.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
+                                >
+                                    {text.stopAdd}
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
             ) : (
                 /* MAIN REFINER VIEW */
@@ -371,15 +760,31 @@ const RouteRefiner = ({
                                     </button>
                                     {showInterestInput && (
                                         <div className="bg-blue-500/5 border-x border-b border-blue-500/20 rounded-b-xl p-3 animate-in fade-in slide-in-from-top-1">
-                                            <input
-                                                autoFocus
-                                                type="text"
-                                                value={interestInput}
-                                                onChange={(e) => setInterestInput(e.target.value)}
-                                                onKeyDown={handleInterestSubmit}
-                                                placeholder={text.interestPlaceholder}
-                                                className="w-full bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50"
-                                            />
+                                            <div className="flex gap-2">
+                                                <input
+                                                    autoFocus
+                                                    type="text"
+                                                    value={interestInput}
+                                                    onChange={(e) => setInterestInput(e.target.value)}
+                                                    onKeyDown={handleInterestSubmit}
+                                                    placeholder={text.interestPlaceholder}
+                                                    className="flex-1 bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50"
+                                                />
+                                                <button
+                                                    onClick={() => {
+                                                        if (interestInput.trim()) {
+                                                            handleInterestSubmit({ key: 'Enter' });
+                                                        }
+                                                    }}
+                                                    disabled={!interestInput.trim()}
+                                                    className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shrink-0 ${interestInput.trim()
+                                                        ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-500/20'
+                                                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                                                        }`}
+                                                >
+                                                    {language === 'nl' ? 'Zoeken' : 'Search'}
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -397,15 +802,31 @@ const RouteRefiner = ({
                                     </button>
                                     {showSpecificInput && (
                                         <div className="bg-purple-500/5 border-x border-b border-purple-500/20 rounded-b-xl p-3 animate-in fade-in slide-in-from-top-1">
-                                            <input
-                                                autoFocus
-                                                type="text"
-                                                value={specificPoiInput}
-                                                onChange={(e) => setSpecificPoiInput(e.target.value)}
-                                                onKeyDown={handleSpecificSubmit}
-                                                placeholder={text.specificPlaceholder}
-                                                className="w-full bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500/50"
-                                            />
+                                            <div className="flex gap-2">
+                                                <input
+                                                    autoFocus
+                                                    type="text"
+                                                    value={specificPoiInput}
+                                                    onChange={(e) => setSpecificPoiInput(e.target.value)}
+                                                    onKeyDown={handleSpecificSubmit}
+                                                    placeholder={text.specificPlaceholder}
+                                                    className="flex-1 bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500/50"
+                                                />
+                                                <button
+                                                    onClick={() => {
+                                                        if (specificPoiInput.trim()) {
+                                                            handleSpecificSubmit({ key: 'Enter' });
+                                                        }
+                                                    }}
+                                                    disabled={!specificPoiInput.trim()}
+                                                    className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shrink-0 ${specificPoiInput.trim()
+                                                        ? 'bg-purple-500 text-white hover:bg-purple-600 shadow-lg shadow-purple-500/20'
+                                                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                                                        }`}
+                                                >
+                                                    {language === 'nl' ? 'Zoeken' : 'Search'}
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

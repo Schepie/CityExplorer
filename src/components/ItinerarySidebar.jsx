@@ -1157,6 +1157,7 @@ const ItinerarySidebar = ({
     stopPoint, setStopPoint,
     searchSources, setSearchSources,
     onJourneyStart, onAddToJourney,
+    onSearchStopOptions, onSearchPOIs, onSelectStopOption,
     isLoading, setIsLoading, loadingText, setLoadingText, onCityValidation,
     onUseCurrentLocation,
     disambiguationOptions, onDisambiguationSelect, onDisambiguationCancel,
@@ -2115,6 +2116,9 @@ const ItinerarySidebar = ({
                             onConstraintValueFinal={onConstraintValueFinal}
                             onRemovePoi={onRemovePoi}
                             onAddToJourney={onAddToJourney}
+                            onSearchStopOptions={onSearchStopOptions}
+                            onSearchPOIs={onSearchPOIs}
+                            onSelectStopOption={onSelectStopOption}
                             onStopsCountChange={onStopsCountChange}
                             activePoiIndex={activePoiIndex}
                             onClose={() => setIsAiViewActive(false)}

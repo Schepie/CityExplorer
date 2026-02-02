@@ -46,34 +46,44 @@ const PoiProposalModal = ({
                     {proposals.map((poi, idx) => (
                         <div
                             key={poi.id || idx}
-                            className="group p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer flex items-center gap-4"
+                            className="group p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer"
                             onClick={() => onSelect(poi)}
                         >
-                            <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-400 group-hover:bg-primary group-hover:text-white transition-all shrink-0">
-                                {idx + 1}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <h4 className="text-sm font-bold text-white truncate">{poi.name}</h4>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500 line-clamp-1">
-                                        {poi.type || 'Interesse'}
-                                    </span>
-                                    {poi.detour_km > 0 && (
-                                        <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                                            +{poi.detour_km.toFixed(1)} km {text.detour}
-                                        </span>
-                                    )}
+                            <div className="flex items-start gap-3">
+                                {/* Number badge */}
+                                <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-400 group-hover:bg-primary group-hover:text-white transition-all shrink-0 mt-0.5">
+                                    {idx + 1}
                                 </div>
+
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                    {/* Name - full width */}
+                                    <h4 className="text-sm font-bold text-white mb-1.5">{poi.name}</h4>
+
+                                    {/* Type and detour row */}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                                            {poi.type || poi.category || 'Interesse'}
+                                        </span>
+                                        {poi.detour_km > 0 && (
+                                            <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                +{poi.detour_km.toFixed(1)} km {text.detour}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Add button */}
+                                <button
+                                    className="px-3 py-1.5 rounded-lg bg-primary text-white text-[10px] font-bold shadow-lg shadow-primary/20 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSelect(poi);
+                                    }}
+                                >
+                                    {text.add}
+                                </button>
                             </div>
-                            <button
-                                className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-bold shadow-lg shadow-primary/20 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onSelect(poi);
-                                }}
-                            >
-                                {text.add}
-                            </button>
                         </div>
                     ))}
                 </div>

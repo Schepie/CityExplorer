@@ -3276,6 +3276,171 @@ function CityExplorerApp() {
     // setIsNavigationOpen(true);
   };
 
+  /**
+   * Search for food/drink stop options near a specific POI
+   * Used by RouteRefiner's extra stop wizard
+   */
+  const handleSearchStopOptions = async (searchParams) => {
+    const { stopType, afterStopIndex, referencePoi } = searchParams;
+
+    if (!referencePoi || !routeData) {
+      console.warn('Missing reference POI or route data for stop search');
+      return [];
+    }
+
+    try {
+      // Build search query based on stop type
+      const query = stopType === 'food'
+        ? (language === 'nl' ? 'restaurant eetcafé bistro' : 'restaurant bistro eatery')
+        : (language === 'nl' ? 'café bar kroeg terras' : 'café bar pub terrace');
+
+      // Use the reference POI's location as search center
+      const searchCenter = {
+        lat: referencePoi.lat,
+        lon: referencePoi.lng || referencePoi.lon,
+        name: referencePoi.name
+      };
+
+      // Search within ~500m of the reference POI
+      const searchRadiusKm = 0.5;
+
+      const candidates = await getCombinedPOIs(
+        searchCenter,
+        query,
+        city || 'Nearby',
+        searchRadiusKm,
+        searchSources,
+        language
+      );
+
+      // Filter out POIs already in the route
+      const existingIds = new Set(routeData.pois.map(p => p.id || p.name));
+      const uniqueCandidates = candidates.filter(p => !existingIds.has(p.id || p.name));
+
+      // Sort by distance to reference POI
+      const sortedCandidates = uniqueCandidates.sort((a, b) => {
+        const distA = Math.sqrt(Math.pow(a.lat - searchCenter.lat, 2) + Math.pow((a.lng || a.lon) - searchCenter.lon, 2));
+        const distB = Math.sqrt(Math.pow(b.lat - searchCenter.lat, 2) + Math.pow((b.lng || b.lon) - searchCenter.lon, 2));
+        return distA - distB;
+      });
+
+      // Return top 5 results
+      return sortedCandidates.slice(0, 5);
+    } catch (err) {
+      console.error('Stop search failed:', err);
+      return [];
+    }
+  };
+
+  /**
+   * Handle selection of a stop option from the search results
+   */
+  const handleSelectStopOption = async (poi, afterStopIndex) => {
+    if (!poi || !routeData) return;
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Stop toevoegen aan route...' : 'Adding stop to route...');
+
+    try {
+      // Insert the POI after the specified index
+      const newPois = [...routeData.pois];
+      newPois.splice(afterStopIndex + 1, 0, {
+        ...poi,
+        id: poi.id || `stop-${Date.now()}`,
+        isExtraStop: true,
+        type: poi.type || (poi.category || 'Café')
+      });
+
+      // Update route data with new POI list
+      setRouteData(prev => ({
+        ...prev,
+        pois: newPois,
+        // Mark for route recalculation if needed
+        needsRouteUpdate: true
+      }));
+
+      // Add chat message about the addition
+      setAiChatHistory(prev => [...prev, {
+        role: 'brain',
+        text: language === 'nl'
+          ? `**${poi.name}** is toegevoegd aan je route na stop ${afterStopIndex + 1}. Genieten!`
+          : `**${poi.name}** has been added to your route after stop ${afterStopIndex + 1}. Enjoy!`
+      }]);
+
+    } catch (err) {
+      console.error('Failed to add stop:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Search for POIs based on interest or specific place name
+   * Used by RouteRefiner's inline search flow
+   */
+  const handleSearchPOIs = async (searchParams) => {
+    const { type, query } = searchParams;
+
+    if (!query || !routeData) {
+      console.warn('Missing query or route data for POI search');
+      return [];
+    }
+
+    try {
+      // Use route center as search location
+      const searchCenter = {
+        lat: routeData.center[0],
+        lon: routeData.center[1],
+        name: city || 'Nearby'
+      };
+
+      // Determine search radius based on current constraint
+      let searchRadiusKm = constraintValue;
+      if (constraintType === 'duration') {
+        const speed = travelMode === 'cycling' ? 15 : 5;
+        searchRadiusKm = (constraintValue / 60) * speed;
+      }
+
+      const candidates = await getCombinedPOIs(
+        searchCenter,
+        query,
+        city || 'Nearby',
+        searchRadiusKm,
+        searchSources,
+        language
+      );
+
+      // Filter out POIs already in the route
+      const existingIds = new Set(routeData.pois.map(p => p.id || p.name));
+      const uniqueCandidates = candidates.filter(p => !existingIds.has(p.id || p.name));
+
+      // Calculate detour for each candidate
+      const activeIdx = activePoiIndex || 0;
+      const withDetour = uniqueCandidates.slice(0, 8).map(cand => {
+        try {
+          const detourResult = smartPoiUtils.added_detour_if_inserted_after(
+            { center: routeData.center, pois: routeData.pois },
+            activeIdx,
+            cand,
+            travelMode
+          );
+          return { ...cand, detour_km: detourResult.added_distance_m / 1000 };
+        } catch {
+          return { ...cand, detour_km: 0 };
+        }
+      });
+
+      // Sort by detour (smallest first)
+      withDetour.sort((a, b) => (a.detour_km || 0) - (b.detour_km || 0));
+
+      console.log(`SearchPOIs: Found ${withDetour.length} results for "${query}" (type: ${type})`);
+      return withDetour.slice(0, 5);
+    } catch (err) {
+      console.error('POI search failed:', err);
+      return [];
+    }
+  };
+
   // Auth Guard (Moved here to obey Rules of Hooks)
   if (authLoading) return <div className="fixed inset-0 bg-slate-900 flex items-center justify-center text-white">Loading...</div>;
 
@@ -3451,6 +3616,9 @@ function CityExplorerApp() {
         searchSources={searchSources} setSearchSources={setSearchSources}
         onJourneyStart={handleJourneyStart}
         onAddToJourney={handleAddToJourney}
+        onSearchStopOptions={handleSearchStopOptions}
+        onSearchPOIs={handleSearchPOIs}
+        onSelectStopOption={handleSelectStopOption}
         isLoading={isLoading}
         setIsLoading={setIsLoading}
         loadingText={loadingText}
