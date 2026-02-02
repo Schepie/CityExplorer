@@ -23,7 +23,8 @@ const RouteRefiner = ({
     setLoadingText,
     primaryColor = '#3b82f6',
     onSpeak,
-    activePoiIndex = 0
+    activePoiIndex = 0,
+    onStartMapPick // New prop
 }) => {
     const [interestInput, setInterestInput] = useState('');
     const [specificPoiInput, setSpecificPoiInput] = useState('');
@@ -830,6 +831,19 @@ const RouteRefiner = ({
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Map Pick */}
+                                <button
+                                    onClick={() => onStartMapPick && onStartMapPick()}
+                                    className="w-full p-4 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 hover:bg-teal-500/20 transition-all flex items-center gap-3 text-left group"
+                                >
+                                    <div className="p-2 bg-teal-500/20 rounded-lg group-hover:scale-110 transition-transform">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                                    </div>
+                                    <div className="text-xs font-black uppercase tracking-tight">
+                                        {language === 'nl' ? 'Kies op kaart' : 'Pick on Map'}
+                                    </div>
+                                </button>
                             </div>
                         </div>
 

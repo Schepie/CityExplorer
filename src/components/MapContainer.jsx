@@ -357,11 +357,37 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
         container.style.setProperty('--map-scale', '1.0');
 
     }, [map, isNavigating, effectiveHeading]);
+    return null;
+};
+
+// New Component for handling map clicks in Pick Mode
+const MapClickHandler = ({ isMapPickMode, onMapPick }) => {
+    const map = useMap();
+
+    useMapEvents({
+        click(e) {
+            if (isMapPickMode && onMapPick) {
+                onMapPick(e.latlng);
+            }
+        },
+    });
+
+    useEffect(() => {
+        if (isMapPickMode) {
+            const container = map.getContainer();
+            container.style.cursor = 'crosshair';
+            // Disable dragging if we really want to force a pick? 
+            // Probably better to keep dragging allowed so user can pan to correct spot.
+            // But maybe disable default click behaviors?
+        } else {
+            map.getContainer().style.cursor = '';
+        }
+    }, [isMapPickMode, map]);
 
     return null;
 };
 
-const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction, navPhase, setNavPhase, routeStart }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction, navPhase, setNavPhase, routeStart, isMapPickMode, onMapPick }) => {
     const { pois = [], center, routePath } = routeData || {};
     const isInputMode = !routeData;
 
@@ -1025,6 +1051,8 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                     effectiveHeading={effectiveHeading}
                     isPopupOpen={isPopupOpen}
                 />
+
+                <MapClickHandler isMapPickMode={isMapPickMode} onMapPick={onMapPick} />
 
                 {/* User Location Marker */}
                 {userLocation && (

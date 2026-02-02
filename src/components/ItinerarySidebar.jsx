@@ -1185,7 +1185,8 @@ const ItinerarySidebar = ({
     onRemovePoi,
     onStopsCountChange,
     onUpdateStartLocation,
-    setViewAction
+    setViewAction,
+    onStartMapPick
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -1650,6 +1651,17 @@ const ItinerarySidebar = ({
                                         {[
                                             {
                                                 date: "02 Feb 2026",
+                                                version: "v1.7.2",
+                                                items: language === 'nl' ? [
+                                                    { title: "Kies op Kaart", desc: "Voeg eenvoudig nieuwe stops toe door direct op de kaart te klikken." },
+                                                    { title: "Automatische Info", desc: "Nieuwe stops worden nu automatisch voorzien van beschrijvingen en foto's." }
+                                                ] : [
+                                                    { title: "Pick on Map", desc: "Easily add new stops by clicking directly on the map." },
+                                                    { title: "Automatic Info", desc: "New stops are now automatically enriched with descriptions and photos." }
+                                                ]
+                                            },
+                                            {
+                                                date: "02 Feb 2026",
                                                 version: "v1.7.1",
                                                 items: language === 'nl' ? [
                                                     { title: "Route Herberekening", desc: "Wanneer je een POI toevoegt via 'SNEL TOEVOEGEN' wordt de route nu automatisch herberekend en op de kaart getoond." }
@@ -2095,7 +2107,7 @@ const ItinerarySidebar = ({
                                                 >
                                                     {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                                 </button>
-                                                <span className="text-slate-300 text-sm font-medium">v1.7.1</span>
+                                                <span className="text-slate-300 text-sm font-medium">v1.7.2</span>
                                             </div>
                                         </div>
                                         <div className="flex justify-between items-center">
@@ -2130,6 +2142,7 @@ const ItinerarySidebar = ({
                             onSelectStopOption={onSelectStopOption}
                             onStopsCountChange={onStopsCountChange}
                             activePoiIndex={activePoiIndex}
+                            onStartMapPick={onStartMapPick}
                             onClose={() => setIsAiViewActive(false)}
                             setIsLoading={setIsLoading}
                             setLoadingText={setLoadingText}

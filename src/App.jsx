@@ -73,6 +73,10 @@ function CityExplorerApp() {
 
   const [routeData, setRouteData] = useState(null);
   const [isNavigationOpen, setIsNavigationOpen] = useState(false); // Navigation UI State
+  // Map Pick Mode State
+  const [isMapPickMode, setIsMapPickMode] = useState(false);
+  const [mapPickContext, setMapPickContext] = useState(null); // To store callback or context if needed
+
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Exploring...');
   const [foundPoisCount, setFoundPoisCount] = useState(0);
@@ -3370,6 +3374,10 @@ function CityExplorerApp() {
         }
       }));
 
+      // TRIGGER ENRICHMENT FOR NEW POIS
+      const cityName = validatedCityData?.name || city;
+      enrichBackground(newPois, cityName, language, descriptionLength, interests, "Added Stop Enrichment");
+
       // Add chat message about the addition
       setAiChatHistory(prev => [...prev, {
         role: 'brain',
@@ -3453,6 +3461,64 @@ function CityExplorerApp() {
     } catch (err) {
       console.error('POI search failed:', err);
       return [];
+    }
+  };
+
+
+
+  /**
+   * Enter Map Pick Mode
+   */
+  const handleStartMapPick = () => {
+    setIsMapPickMode(true);
+    setIsSidebarOpen(false); // Close sidebar to see map
+    // You might want to show a toast/notification here instructing the user
+  };
+
+  /**
+   * Handle Click on Map in Pick Mode
+   */
+  const handleMapPick = async (latlng) => {
+    setIsMapPickMode(false);
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Locatie details ophalen...' : 'Fetching location details...');
+    setIsSidebarOpen(true); // Re-open sidebar to show progress/results
+
+    try {
+      // 1. Reverse Geocode (Simple OpenStreetMap Nominatim request or similar via internal API if available, 
+      // but let's use a standard fetch for now or reuse existing utils if possible)
+      // Usually we want to use our backend proxy to avoid CORS/Rate limits if possible, but for now direct fetch with fetch/catch
+
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`, {
+        headers: { 'Accept-Language': language }
+      });
+      const data = await response.json();
+
+      const name = data.name ||
+        (data.address && (data.address.amenity || data.address.shop || data.address.tourism || data.address.road)) ||
+        'Gekozen locatie';
+
+      const poi = {
+        id: `pick-${Date.now()}`,
+        name: name,
+        lat: parseFloat(latlng.lat),
+        lng: parseFloat(latlng.lng), // Leaflet uses lng
+        type: data.type || 'custom',
+        description: data.display_name
+      };
+
+      // 2. Add to route (using existing logic, e.g. handleSelectStopOption)
+      // We need to know WHERE to add it. For "Quick Add", usually it is added after the active POI or at a smart location.
+      // RouteRefiner usually passes an index. If we don't have one, we might defaults to activePoiIndex.
+
+      // Let's assume we want to insert it after the current active POI
+      const targetIndex = activePoiIndex || 0;
+      handleSelectStopOption(poi, targetIndex);
+
+    } catch (err) {
+      console.error("Map pick failed:", err);
+      alert(language === 'nl' ? 'Kon locatie niet ophalen.' : 'Could not fetch location.');
+      setIsLoading(false);
     }
   };
 
@@ -3567,6 +3633,8 @@ function CityExplorerApp() {
           navPhase={navPhase}
           setNavPhase={setNavPhase}
           routeStart={routeData?.center}
+          isMapPickMode={isMapPickMode}
+          onMapPick={handleMapPick}
         />
       </div>
 
@@ -3666,7 +3734,28 @@ function CityExplorerApp() {
         aiPrompt={aiPrompt}
         setAiPrompt={setAiPrompt}
         aiChatHistory={aiChatHistory}
+        onStartMapPick={handleStartMapPick}
       />
+
+      {/* Map Pick Instruction Overlay */}
+      {isMapPickMode && (
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[2000] animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="bg-slate-900/90 backdrop-blur border border-teal-500/50 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+              <span className="font-bold text-sm">
+                {language === 'nl' ? 'Kies een punt op de kaart' : 'Pick a point on the map'}
+              </span>
+            </div>
+            <button
+              onClick={() => { setIsMapPickMode(false); setIsSidebarOpen(true); }}
+              className="bg-white/10 hover:bg-white/20 p-1 rounded-full transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Refinement Modal */}
       {refinementProposals && (
