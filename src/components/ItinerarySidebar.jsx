@@ -3,6 +3,7 @@ import { PoiIntelligence } from '../services/PoiIntelligence';
 import { SmartAutoScroller } from '../utils/AutoScroller';
 import ConfirmationModal from './ConfirmationModal';
 import RouteRefiner from './RouteRefiner';
+import PoiDetailContent from './PoiDetailContent';
 
 const SidebarInput = ({
     city, setCity,
@@ -23,8 +24,10 @@ const SidebarInput = ({
     onSpeak, voiceSettings,
     speakingId, spokenCharCount,
     isLoading, loadingText, onRemovePoi, onStopSpeech,
+
     routeData, onAddToJourney,
-    activeTheme, availableThemes
+    activeTheme, availableThemes,
+    onStartMapPick
 }) => {
     const primaryColor = availableThemes?.[activeTheme]?.colors?.primary || '#3b82f6';
     const [isListening, setIsListening] = useState(false);
@@ -266,6 +269,20 @@ const SidebarInput = ({
                     </svg>
                     {language === 'nl' ? 'Vragenlijst' : 'Classic'}
                 </button>
+                <button
+                    onClick={() => setSearchMode('manual')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${searchMode === 'manual'
+                        ? 'bg-primary text-white shadow-md'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-white/5'
+                        }`}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0-6 0Z" />
+                        <path d="M20 11a8 8 0 1 0-16 0 8 8 0 0 0 16 0Z" />
+                        <path d="M12 2a3 3 0 0 1 3 3v2a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+                    </svg>
+                    {language === 'nl' ? 'Zelf Kiezen' : 'Map Pick'}
+                </button>
             </div>
 
 
@@ -429,7 +446,104 @@ const SidebarInput = ({
                             ) : (
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
                             )}
+
+
                             {language === 'nl' ? 'Trip Genereren' : 'Generate Trip'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+
+            {/* Manual Map Picker Interface */}
+            {searchMode === 'manual' && (
+                <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-2 px-1">
+                        <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+                            {language === 'nl' ? 'Kies op de kaart' : 'Pick on Map'}
+                        </h2>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                {language === 'nl' ? 'Welke stad?' : 'Which city?'}
+                            </label>
+                            <div className="relative group">
+                                <input
+                                    type="text"
+                                    value={city}
+                                    onChange={(e) => setCity(e.target.value)}
+                                    onBlur={() => onCityValidation('blur')}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            // In manual mode, Enter only validates the city, doesn't start journey
+                                            e.target.blur();
+                                        }
+                                    }}
+                                    placeholder={language === 'nl' ? "Stad zoeken..." : "Search city..."}
+                                    className="w-full bg-[var(--input-bg)] border border-[var(--panel-border)] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[var(--text-main)] focus:outline-none focus:ring-2 ring-primary/50 transition-all shadow-md"
+                                />
+                                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                                </div>
+                                <button
+                                    onClick={onUseCurrentLocation}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-primary transition-all"
+                                    title={language === 'nl' ? "Gebruik mijn locatie" : "Use my location"}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Travel Mode Selector */}
+                        <div className="grid grid-cols-1 gap-3">
+                            <div className="space-y-2">
+                                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                    {language === 'nl' ? 'Tripwijze' : 'Travel Mode'}
+                                </label>
+                                <div className="flex bg-[var(--input-bg)] p-1 rounded-xl border border-[var(--panel-border)]">
+                                    <button
+                                        onClick={() => onStyleChange('walking')}
+                                        className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold transition-all ${travelMode === 'walking' ? 'bg-white/10 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                                    >
+                                        {language === 'nl' ? 'Wandelen' : 'Walk'}
+                                    </button>
+                                    <button
+                                        onClick={() => onStyleChange('cycling')}
+                                        className={`flex-1 flex items-center justify-center py-1.5 rounded-lg text-[10px] font-bold transition-all ${travelMode === 'cycling' ? 'bg-white/10 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                                    >
+                                        {language === 'nl' ? 'Fietsen' : 'Cycle'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-slate-800/50 rounded-xl border border-white/5 space-y-3">
+                            <p className="text-xs text-slate-300 leading-relaxed text-center">
+                                {language === 'nl'
+                                    ? 'Klik op de knop hieronder en duid vervolgens een punt aan op de kaart om het toe te voegen aan je route.'
+                                    : 'Click the button below, then tap a location on the map to add it to your route.'}
+                            </p>
+                        </div>
+
+                        {/* Start Picking Button */}
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (onStartMapPick) onStartMapPick(city);
+                            }}
+                            className="w-full bg-primary text-white font-bold py-3.5 px-4 rounded-xl shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-2"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                <circle cx="12" cy="10" r="3"></circle>
+                            </svg>
+                            {language === 'nl' ? 'Duid aan op Kaart' : 'Pick on Map'}
                         </button>
                     </div>
                 </div>
@@ -495,6 +609,8 @@ const SidebarInput = ({
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg>
                                 </button>
                             )}
+
+
                         </div>
                     </div>
 
@@ -508,6 +624,8 @@ const SidebarInput = ({
                             {language === 'nl' ? "Bekijk je trip" : "View your trip"}
                         </button>
                     )}
+
+
 
                     {/* Chat History Area - Now below the input, showing newest first */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-1 scroll-smooth">
@@ -526,6 +644,8 @@ const SidebarInput = ({
                                 </div>
                             </div>
                         )}
+
+
                         {(aiChatHistory || []).map((msg, i) => ({ ...msg, originalIdx: i })).reverse().map((msg, idx) => {
                             const originalIdx = msg.originalIdx;
 
@@ -557,6 +677,8 @@ const SidebarInput = ({
                                                                         </span>
                                                                     </div>
                                                                 )}
+
+
                                                             </div>
                                                             <button
                                                                 onClick={() => onAddToJourney && onAddToJourney(null, msg.query, { directCandidates: [poi], referencePoiId: msg.context?.referencePoiId })}
@@ -592,6 +714,8 @@ const SidebarInput = ({
                                                                 </div>
                                                             </div>
                                                         )}
+
+
                                                     </div>
                                                 ))}
                                             </div>
@@ -622,6 +746,8 @@ const SidebarInput = ({
                                                     return part;
                                                 })
                                             )}
+
+
                                         </div>
                                         {msg.role === 'brain' && (
                                             <div className="mt-2 flex items-center justify-between gap-1">
@@ -639,6 +765,8 @@ const SidebarInput = ({
                                                 </button>
                                             </div>
                                         )}
+
+
                                     </div>
                                 </div>
                             );
@@ -657,8 +785,10 @@ const SidebarInput = ({
 
 
 
-            {/* Primary Action Button - Hidden in prompt mode as chat has its own interaction */}
-            {((searchMode !== 'prompt' && searchMode !== 'journey') || isAddingMode) ? (
+
+
+            {/* Primary Action Button - Hidden in prompt, journey, and manual mode */}
+            {((searchMode !== 'prompt' && searchMode !== 'journey' && searchMode !== 'manual') || isAddingMode) ? (
                 <button
                     type="button"
                     onClick={(e) => {
@@ -684,6 +814,8 @@ const SidebarInput = ({
                                 </svg>
                             )
                         )}
+
+
                         {isAddingMode || (onJourneyStart && onJourneyStart.name === 'handleAddToJourney')
                             ? (searchMode === 'prompt'
                                 ? (language === 'nl' ? 'Praat met gids' : 'Talk to guide')
@@ -702,7 +834,7 @@ const SidebarInput = ({
 
 
 
-import PoiDetailContent from './PoiDetailContent';
+
 
 const hexToRgba = (hex, alpha) => {
     if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return `rgba(0,0,0,${alpha})`;
@@ -930,6 +1062,8 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                             {language === 'nl' ? 'KLIK VOOR INFO' : 'CLICK FOR INFO'}
                         </p>
                     )}
+
+
                 </div>
 
                 {/* Audio Control */}
@@ -960,8 +1094,12 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                         ) : (
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                         )}
+
+
                     </button>
                 )}
+
+
 
                 <div
                     className="shrink-0 transition-colors"
@@ -1017,7 +1155,15 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 space-y-2">
                             <div className="flex justify-between items-center text-[10px]">
                                 <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Totaal' : 'Total'}</span>
-                                <span className="text-slate-200 font-bold">{stats.walkDistance || stats.totalDistance} km</span>
+                                <span className="text-slate-200 font-bold">
+                                    {(() => {
+                                        const dist = stats.walkDistance || stats.totalDistance || 0;
+                                        if (dist < 1) {
+                                            return `${Math.round(dist * 1000)} m`;
+                                        }
+                                        return `${dist.toFixed(2)} km`;
+                                    })()}
+                                </span>
                             </div>
                             {pois && pois.length > 0 && (
                                 <div>
@@ -1033,6 +1179,8 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
                                                 </button>
                                             )}
+
+
                                         </div>
                                         <span className="text-slate-200 font-bold">
                                             {(() => {
@@ -1057,8 +1205,9 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                                     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
                                                     Math.sin(dLon / 2) * Math.sin(dLon / 2);
                                                 const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                                                return (R * c).toFixed(1);
-                                            })()} km
+                                                const dist = R * c;
+                                                return dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(2)} km`;
+                                            })()}
                                         </span>
                                     </div>
                                     {isEditingStart && (
@@ -1087,8 +1236,12 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                             </button>
                                         </div>
                                     )}
+
+
                                 </div>
                             )}
+
+
 
 
                             <div className="flex justify-between items-center text-[10px]">
@@ -1122,8 +1275,12 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                     </div>
                                 </div>
                             )}
+
+
                         </div>
                     )}
+
+
 
                     {/* AI Planner Quick Access */}
                     {!isAiViewActive && (
@@ -1137,8 +1294,12 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                             </button>
                         </div>
                     )}
+
+
                 </div>
             )}
+
+
         </div>
     );
 };
@@ -1186,7 +1347,8 @@ const ItinerarySidebar = ({
     onStopsCountChange,
     onUpdateStartLocation,
     setViewAction,
-    onStartMapPick
+    onStartMapPick,
+    isRouteEditMode
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -1289,7 +1451,8 @@ const ItinerarySidebar = ({
     const text = t[language || 'en'];
 
     // Determine View Mode
-    const showItinerary = !isAddingMode && routeData && routeData.pois && routeData.pois.length > 0 && !isAiViewActive;
+    // Hide itinerary when in route edit mode to prevent showing stale POIs
+    const showItinerary = !isAddingMode && !isRouteEditMode && routeData && routeData.pois && routeData.pois.length > 0 && !isAiViewActive;
     const showDisambiguation = disambiguationOptions && disambiguationOptions.length > 0;
 
     const [touchStart, setTouchStart] = useState(null);
@@ -1368,7 +1531,7 @@ const ItinerarySidebar = ({
 
     return (
         <>
-            {!isOpen && (
+            {!isOpen && !isRouteEditMode && (
                 <>
                     {/* Invisible Edge Swipe Area for Mobile Opening */}
                     <div
@@ -1400,6 +1563,8 @@ const ItinerarySidebar = ({
                 </>
             )}
 
+
+
             <div
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
@@ -1416,7 +1581,7 @@ const ItinerarySidebar = ({
                             return `${r}, ${g}, ${b}`;
                         })() : '59, 130, 246'
                 }}
-                className={`absolute top-0 left-0 h-full z-[500] w-full md:w-[400px] max-w-full bg-[var(--bg-gradient-end)]/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                className={`absolute top-0 left-0 h-full z-[500] w-full md:w-[400px] max-w-full bg-[var(--bg-gradient-end)]/95 backdrop-blur-xl border-r border-white/10 shadow-2xl transition-transform duration-300 ease-in-out transform ${isOpen && !isRouteEditMode ? 'translate-x-0' : '-translate-x-full'}`}
             >
                 <div className="flex flex-col h-full bg-gradient-to-b from-[var(--bg-gradient-start)]/50 to-transparent">
                     {/* Header */}
@@ -1455,6 +1620,8 @@ const ItinerarySidebar = ({
                                         </div>
                                     )}
 
+
+
                                     {/* Guide Icon - Return to AI Chat */}
                                     {showItinerary && !isAiViewActive && (
                                         <button
@@ -1471,6 +1638,8 @@ const ItinerarySidebar = ({
                                             </svg>
                                         </button>
                                     )}
+
+
 
                                     <button
                                         onClick={() => {
@@ -1509,6 +1678,8 @@ const ItinerarySidebar = ({
                                             </button>
                                         </>
                                     )}
+
+
                                 </div>
                             </div>
                         ) : (
@@ -1566,6 +1737,8 @@ const ItinerarySidebar = ({
                                 </div>
                             </div>
                         )}
+
+
                     </div>
                     {/* City Welcome Card (Replaces Stats Summary) */}
                     {!isAiViewActive && showItinerary && (
@@ -1600,6 +1773,8 @@ const ItinerarySidebar = ({
                     )}
 
 
+
+
                     {/* Settings Overlay */}
                     {/* Settings Overlay - Full Screen Modal */}
                     {/* Settings Overlay - Full Sidebar Cover */}
@@ -1623,6 +1798,8 @@ const ItinerarySidebar = ({
                                             {language === 'nl' ? 'TERUG' : 'BACK'}
                                         </button>
                                     )}
+
+
                                     {showChangelog
                                         ? (language === 'nl' ? 'Wat is nieuw' : "What's New")
                                         : (language === 'nl' ? 'Instellingen' : 'Settings')
@@ -1649,6 +1826,19 @@ const ItinerarySidebar = ({
                                     /* Changelog View */
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
+                                            {
+                                                date: "04 Feb 2026",
+                                                version: "v1.8.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Route Verfijning", desc: "Nieuwe tool om routes aan te passen, inclusief reiswijze en afstand." },
+                                                    { title: "Kies op Kaart", desc: "Klik op de kaart om direct een punt aan de route toe te voegen." },
+                                                    { title: "Vereenvoudigde Instellingen", desc: "Instellingen zoals Simulatie en Audio zijn nu direct aan/uit te zetten." }
+                                                ] : [
+                                                    { title: "Route Refinement", desc: "New tool to modify routes, including travel mode and distance." },
+                                                    { title: "Pick on Map", desc: "Click on the map to add a point directly to the route." },
+                                                    { title: "Simplified Settings", desc: "Settings like Simulation and Audio are now direct toggles." }
+                                                ]
+                                            },
                                             {
                                                 date: "02 Feb 2026",
                                                 version: "v1.7.2",
@@ -1766,6 +1956,8 @@ const ItinerarySidebar = ({
                                                             {language === 'en' ? 'English' : 'Nederlands'}
                                                         </span>
                                                     )}
+
+
                                                     <svg
                                                         xmlns="http://www.w3.org/2000/svg"
                                                         className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showLanguageSettings ? 'rotate-180' : ''}`}
@@ -1800,10 +1992,14 @@ const ItinerarySidebar = ({
                                                                     </svg>
                                                                 </div>
                                                             )}
+
+
                                                         </button>
                                                     ))}
                                                 </div>
                                             )}
+
+
                                         </div>
 
                                         {/* 2. Voice Preference */}
@@ -1821,6 +2017,8 @@ const ItinerarySidebar = ({
                                                             {voiceSettings?.gender === 'female' ? (language === 'nl' ? 'Vrouw' : 'Female') : (language === 'nl' ? 'Man' : 'Male')}
                                                         </span>
                                                     )}
+
+
                                                     <svg
                                                         xmlns="http://www.w3.org/2000/svg"
                                                         className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showVoiceSettings ? 'rotate-180' : ''}`}
@@ -1856,10 +2054,14 @@ const ItinerarySidebar = ({
                                                                     </svg>
                                                                 </div>
                                                             )}
+
+
                                                         </button>
                                                     ))}
                                                 </div>
                                             )}
+
+
                                         </div>
 
                                         {/* 3. App Theme */}
@@ -1877,6 +2079,8 @@ const ItinerarySidebar = ({
                                                             {availableThemes && availableThemes[activeTheme] ? (language === 'nl' ? availableThemes[activeTheme].label.nl : availableThemes[activeTheme].label.en) : activeTheme}
                                                         </span>
                                                     )}
+
+
                                                     <svg
                                                         xmlns="http://www.w3.org/2000/svg"
                                                         className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showThemeSettings ? 'rotate-180' : ''}`}
@@ -1910,11 +2114,15 @@ const ItinerarySidebar = ({
                                                                         </svg>
                                                                     </div>
                                                                 )}
+
+
                                                             </button>
                                                         ))}
                                                     </div>
                                                 </div>
                                             )}
+
+
                                         </div>
 
                                         {/* Travel Mode */}
@@ -1932,6 +2140,8 @@ const ItinerarySidebar = ({
                                                             {travelMode === 'walking' ? (language === 'nl' ? 'Wandelen' : 'Walking') : (language === 'nl' ? 'Fietsen' : 'Cycling')}
                                                         </span>
                                                     )}
+
+
                                                     <svg
                                                         xmlns="http://www.w3.org/2000/svg"
                                                         className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showTravelSettings ? 'rotate-180' : ''}`}
@@ -1967,10 +2177,14 @@ const ItinerarySidebar = ({
                                                                     </svg>
                                                                 </div>
                                                             )}
+
+
                                                         </button>
                                                     ))}
                                                 </div>
                                             )}
+
+
                                         </div>
 
 
@@ -2088,41 +2302,48 @@ const ItinerarySidebar = ({
                                                         </div>
                                                     </div>
                                                 )}
+
+
                                             </div>
                                         </div>
 
                                     </div>
                                 )}
 
-                                {/* About Section (Visible in both Settings & Changelog) */}
-                                <div className="mt-8 pt-4 border-t border-[var(--panel-border)]">
-                                    <h4 className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-3">{language === 'nl' ? 'Over' : 'About'}</h4>
-                                    <div className="bg-[var(--input-bg)] rounded-xl p-4 border border-[var(--panel-border)] space-y-3">
-                                        <div className="flex justify-between items-center py-1">
-                                            <span className="text-slate-400 text-sm">Version</span>
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => setShowChangelog(true)}
-                                                    className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded font-bold hover:bg-primary/30 transition-colors"
-                                                >
-                                                    {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
-                                                </button>
-                                                <span className="text-slate-300 text-sm font-medium">v1.7.2</span>
-                                            </div>
+
+
+                            </div>
+
+                            {/* About Section (Static at bottom) */}
+                            <div className="p-6 pt-4 border-t border-[var(--panel-border)] bg-slate-900 shrink-0">
+                                <h4 className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-3">{language === 'nl' ? 'Over' : 'About'}</h4>
+                                <div className="bg-[var(--input-bg)] rounded-xl p-4 border border-[var(--panel-border)] space-y-3">
+                                    <div className="flex justify-between items-center py-1">
+                                        <span className="text-slate-400 text-sm">Version</span>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => setShowChangelog(true)}
+                                                className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded font-bold hover:bg-primary/30 transition-colors"
+                                            >
+                                                {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
+                                            </button>
+                                            <span className="text-slate-300 text-sm font-medium">v1.8.0</span>
                                         </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-slate-400 text-sm">Author</span>
-                                            <span className="text-slate-300 text-sm font-medium">Geert Schepers</span>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                            <span className="text-[var(--text-muted)] text-sm font-medium">02 Feb 2026</span>
-                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400 text-sm">Author</span>
+                                        <span className="text-slate-300 text-sm font-medium">Geert Schepers</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
+                                        <span className="text-[var(--text-muted)] text-sm font-medium">04 Feb 2026</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     )}
+
+
 
                     {/* Content Area */}
                     {(isAiViewActive && routeData) ? (
@@ -2264,6 +2485,8 @@ const ItinerarySidebar = ({
                                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
                                                                 ) : displayNum
                                                             )}
+
+
                                                         </div>
                                                         <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-[var(--text-main)] group-hover:text-primary'} pr-16`}>
                                                             {poi.name}
@@ -2286,6 +2509,8 @@ const ItinerarySidebar = ({
                                                         </button>
                                                     )}
 
+
+
                                                     {/* Expandable Content */}
                                                     {
                                                         isExpanded && (
@@ -2307,6 +2532,8 @@ const ItinerarySidebar = ({
                                                                                 {language === 'nl' ? 'STARTPUNT' : 'START POINT'}
                                                                             </button>
                                                                         )}
+
+
 
 
 
@@ -2350,6 +2577,8 @@ const ItinerarySidebar = ({
                                                                     ) : (
                                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                                                                     )}
+
+
                                                                 </button>
                                                             </div>
                                                         )
@@ -2371,6 +2600,8 @@ const ItinerarySidebar = ({
                                             {text.back}
                                         </button>
                                     )}
+
+
                                     <SidebarInput
                                         city={city} setCity={setCity}
                                         interests={interests} setInterests={setInterests}
@@ -2398,6 +2629,7 @@ const ItinerarySidebar = ({
                                         aiChatHistory={aiChatHistory}
                                         isAiViewActive={isAiViewActive}
                                         setIsAiViewActive={setIsAiViewActive}
+                                        onStartMapPick={onStartMapPick}
                                         routeData={routeData}
                                         onSpeak={onSpeak}
                                         voiceSettings={voiceSettings}
@@ -2413,8 +2645,12 @@ const ItinerarySidebar = ({
                                     />
                                 </div>
                             )}
+
+
                         </div>
                     )}
+
+
 
                     {/* Footer Actions (Only show when in Itinerary mode) */}
                     {showItinerary && !showDisambiguation && (
@@ -2451,6 +2687,8 @@ const ItinerarySidebar = ({
                             </div>
                         </div>
                     )}
+
+
                 </div>
                 {/* Themed Confirmation Modal */}
                 <ConfirmationModal
@@ -2468,7 +2706,7 @@ const ItinerarySidebar = ({
                     }}
                     onCancel={() => setPoiToDelete(null)}
                 />
-            </div>
+            </div >
         </>
     );
 };

@@ -87,7 +87,7 @@ const RouteRefiner = ({
             resultsSubtitle: "Kies een plek om toe te voegen aan je route",
             noResults: "Geen resultaten gevonden",
             tryAgain: "Opnieuw proberen",
-            distance: "afstand",
+            distanceLabel: "afstand",
             addToRoute: "Toevoegen",
             backToWizard: "Terug"
         },
@@ -124,7 +124,7 @@ const RouteRefiner = ({
             resultsSubtitle: "Choose a place to add to your route",
             noResults: "No results found",
             tryAgain: "Try again",
-            distance: "distance",
+            distanceLabel: "distance",
             addToRoute: "Add",
             backToWizard: "Back"
         }
@@ -532,7 +532,7 @@ const RouteRefiner = ({
                                                             </span>
                                                             {distanceKm !== null && (
                                                                 <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                                                    +{distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `${distanceKm.toFixed(1)}km`} {text.distance}
+                                                                    +{distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `${distanceKm.toFixed(1)}km`} {text.distanceLabel}
                                                                 </span>
                                                             )}
                                                         </div>

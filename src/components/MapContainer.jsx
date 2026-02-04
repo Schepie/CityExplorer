@@ -231,18 +231,37 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
     const prevFocusedLocation = useRef(null);
     const isAutoFollow = useRef(true); // Default to following
 
-    // Fix: Handle map resize on window/container resize (e.g. fullscreen toggle)
+    // Fix: Handle map resize on window/container resize (e.g. fullscreen toggle, browser resize)
     useEffect(() => {
+        let resizeTimeout = null;
+
         const handleResize = () => {
-            // console.log("Window resized. Invalidating map size.");
-            map.invalidateSize();
+            // Debounce to avoid rapid-fire resize calls
+            if (resizeTimeout) clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                map.invalidateSize({ animate: false });
+            }, 100);
         };
 
+        // Window resize event
         window.addEventListener('resize', handleResize);
-        // Also trigger once on mount to be safe
-        setTimeout(handleResize, 100);
 
-        return () => window.removeEventListener('resize', handleResize);
+        // ResizeObserver for container size changes (more reliable than window resize)
+        let resizeObserver = null;
+        const container = map.getContainer();
+        if (container && window.ResizeObserver) {
+            resizeObserver = new ResizeObserver(handleResize);
+            resizeObserver.observe(container);
+        }
+
+        // Also trigger once on mount to be safe
+        setTimeout(() => map.invalidateSize({ animate: false }), 100);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            if (resizeObserver) resizeObserver.disconnect();
+            if (resizeTimeout) clearTimeout(resizeTimeout);
+        };
     }, [map]);
 
     // Disable auto-follow on user interaction
@@ -387,8 +406,11 @@ const MapClickHandler = ({ isMapPickMode, onMapPick }) => {
     return null;
 };
 
-const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction, navPhase, setNavPhase, routeStart, isMapPickMode, onMapPick }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction, navPhase, setNavPhase, routeStart, isMapPickMode, onMapPick, isRouteEditMode = false, routeEditPoints = [], cumulativeDistances = [], selectedEditPointIndex = -1, onEditPointClick }) => {
     const { pois = [], center, routePath } = routeData || {};
+    // Fix: In manual mode, we might have an empty routeData to start with.
+    // We should treat it as "valid route mode" (to show map) but simply with no POIs yet.
+    // If routeData is null, we are in true input mode (splash screen).
     const isInputMode = !routeData;
 
     // track simulation index to allow pausing
@@ -1054,6 +1076,87 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                 <MapClickHandler isMapPickMode={isMapPickMode} onMapPick={onMapPick} />
 
+                {/* Route Edit Mode - Numbered Markers */}
+                {isRouteEditMode && routeEditPoints && routeEditPoints.length > 0 && (
+                    <>
+                        {routeEditPoints.map((point, idx) => {
+                            const isStart = idx === 0;
+                            const isSelected = selectedEditPointIndex === idx;
+                            const distance = cumulativeDistances[idx] || 0;
+
+                            // Custom numbered marker icon
+                            const numberedIcon = L.divIcon({
+                                className: 'route-edit-marker',
+                                html: `
+                                    <div style="
+                                        position: relative;
+                                        display: flex;
+                                        flex-direction: column;
+                                        align-items: center;
+                                    ">
+                                        <div style="
+                                            width: ${isStart ? '40px' : '32px'};
+                                            height: ${isStart ? '40px' : '32px'};
+                                            border-radius: 50%;
+                                            background: ${isStart ? '#22c55e' : (isSelected ? '#f59e0b' : 'var(--primary)')};
+                                            border: 3px solid white;
+                                            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                                            display: flex;
+                                            align-items: center;
+                                            justify-content: center;
+                                            font-weight: bold;
+                                            font-size: ${isStart ? '10px' : '14px'};
+                                            color: white;
+                                            ${isSelected ? 'animation: pulse 1s infinite;' : ''}
+                                        ">
+                                            ${isStart ? 'START' : idx}
+                                        </div>
+                                        <div style="
+                                            margin-top: 4px;
+                                            background: rgba(0,0,0,0.75);
+                                            color: white;
+                                            padding: 2px 6px;
+                                            border-radius: 4px;
+                                            font-size: 10px;
+                                            font-weight: bold;
+                                            white-space: nowrap;
+                                        ">
+                                            ${distance.toFixed(1)} km
+                                        </div>
+                                    </div>
+                                `,
+                                iconSize: [isStart ? 40 : 32, 50],
+                                iconAnchor: [isStart ? 20 : 16, isStart ? 20 : 16]
+                            });
+
+                            return (
+                                <Marker
+                                    key={`edit-${point.id || idx}`}
+                                    position={[point.lat, point.lng]}
+                                    icon={numberedIcon}
+                                    zIndexOffset={isSelected ? 1100 : 1000}
+                                    eventHandlers={{
+                                        click: () => {
+                                            if (onEditPointClick) onEditPointClick(idx);
+                                        }
+                                    }}
+                                >
+                                    <Tooltip
+                                        permanent={false}
+                                        direction="top"
+                                        offset={[0, -20]}
+                                        className="route-edit-tooltip"
+                                    >
+                                        <div className="font-bold text-slate-900">
+                                            {isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : point.name || `Stop ${idx}`}
+                                        </div>
+                                    </Tooltip>
+                                </Marker>
+                            );
+                        })}
+                    </>
+                )}
+
                 {/* User Location Marker */}
                 {userLocation && (
                     <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon} zIndexOffset={1000}>
@@ -1272,9 +1375,9 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                         {/* --- TOP HUD & CONTROLS MOVED INSIDE MAP TO RESPECT POPUP Z-INDEX --- */}
 
-                        {/* Top Navigation HUD - Instruction Only */}
+                        {/* Top Navigation HUD - Instruction Only (Hide during Route Edit) */}
                         {
-                            pois.length > 0 && !isInputMode && (() => {
+                            pois.length > 0 && !isInputMode && !isRouteEditMode && (() => {
                                 const effectiveLocation = userLocation || (center ? { lat: center[0], lng: center[1] } : null);
                                 if (!effectiveLocation) return null;
 

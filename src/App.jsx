@@ -11,6 +11,7 @@ import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle } from './utils/routeUtils';
 import PoiProposalModal from './components/PoiProposalModal';
 import DistanceRefineConfirmation from './components/DistanceRefineConfirmation';
+import RouteEditPanel from './components/RouteEditPanel';
 
 // Theme Definitions
 // Theme Definitions
@@ -76,6 +77,12 @@ function CityExplorerApp() {
   // Map Pick Mode State
   const [isMapPickMode, setIsMapPickMode] = useState(false);
   const [mapPickContext, setMapPickContext] = useState(null); // To store callback or context if needed
+
+  // Route Edit Mode State
+  const [isRouteEditMode, setIsRouteEditMode] = useState(false);
+  const [routeEditPoints, setRouteEditPoints] = useState([]);
+  const [selectedEditPointIndex, setSelectedEditPointIndex] = useState(-1);
+  const [cumulativeDistances, setCumulativeDistances] = useState([]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Exploring...');
@@ -662,6 +669,11 @@ function CityExplorerApp() {
     // Only ignore cache if we have an explicit override or new params
     if (!queryOverride && validatedCityData && !paramsOverride) {
       if (context === 'submit') {
+        // CRITICAL GUARD: In Manual Pick Mode, validation (Enter key) should NOT trigger generic route generation
+        if (searchMode === 'manual') {
+          console.log("Manual mode active: Preventing auto-route generation on validation.");
+          return;
+        }
         await loadMapWithCity(validatedCityData, interestOverride, paramsOverride);
       }
       return;
@@ -821,7 +833,9 @@ function CityExplorerApp() {
         // Fallback: If deduplication left only 1 result, we are good.
       }
 
-      if (cityData.length > 1 && searchMode !== 'prompt') {
+      // In 'manual' and 'prompt' modes, skip disambiguation and auto-select the best match
+      // (which is already sorted by distance if userLocation is available)
+      if (cityData.length > 1 && searchMode !== 'prompt' && searchMode !== 'manual') {
         setDisambiguationOptions(cityData);
         setDisambiguationContext(context);
         setIsSidebarOpen(true); // Re-open sidebar for disambiguation
@@ -3469,57 +3483,454 @@ function CityExplorerApp() {
   /**
    * Enter Map Pick Mode
    */
-  const handleStartMapPick = () => {
+  const handleStartMapPick = async (cityQuery) => {
+    console.log("Initializing Map Pick Mode - Triggering Full Reset");
     setIsMapPickMode(true);
-    setIsSidebarOpen(false); // Close sidebar to see map
-    // You might want to show a toast/notification here instructing the user
+    setIsSidebarOpen(false);
+
+    // Enable Route Edit Mode
+    setIsRouteEditMode(true);
+    setRouteEditPoints([]);
+    setSelectedEditPointIndex(-1);
+    setCumulativeDistances([]);
+
+    // COMPLETE RESET: Create fresh routeData object without any previous state
+    // This ensures no old POIs or routes are visible
+    const defaultCenter = [52.3676, 4.9041]; // Default to Amsterdam if no city
+    setRouteData({
+      center: defaultCenter,
+      pois: [],
+      startPoi: null,
+      startIsPoi: false,
+      startName: null,
+      navigationSteps: [],
+      routePath: [],
+      legs: [],
+      originalPois: null,
+      stats: { totalDistance: 0, walkDistance: 0, limitKm: 5 }
+    });
+
+    // Clear auxiliary state
+    setPoiProposals(null);
+    setRefinementProposals(null);
+    setLimitConfirmation(null);
+    setActivePoiIndex(0);
+    setNavPhase(NAV_PHASES.PRE_ROUTE);
+    setFoundPoisCount(0);
+    setStartPoint('');
+    setStopPoint('');
+
+    // Geocode if city is provided
+    if (cityQuery && cityQuery.trim().length > 2) {
+      setIsLoading(true);
+      setLoadingText(language === 'nl' ? 'Kaart centreren...' : 'Centering map...');
+
+      try {
+        // Use proxy to avoid CORS
+        const res = await fetch(`/api/nominatim?q=${encodeURIComponent(cityQuery)}&format=json&limit=1`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('city_explorer_token')}`
+          }
+        });
+        const data = await res.json();
+        console.log("[MapPick] Geocoding response for", cityQuery, ":", data);
+        if (data && data[0]) {
+          const newCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+          console.log("[MapPick] Setting new center to:", newCenter);
+          // Update ONLY the center, keep everything else empty
+          setRouteData({
+            center: newCenter,
+            pois: [],
+            startPoi: null,
+            startIsPoi: false,
+            startName: null,
+            navigationSteps: [],
+            routePath: [],
+            legs: [],
+            originalPois: null,
+            stats: { totalDistance: 0, walkDistance: 0, limitKm: 5 }
+          });
+          // Force map to fly to new center
+          setFocusedLocation({ lat: newCenter[0], lng: newCenter[1] });
+        } else {
+          console.warn("[MapPick] No geocoding results for:", cityQuery);
+        }
+      } catch (e) {
+        console.warn("Failed to center map on pick start:", e);
+      } finally {
+        setIsLoading(false);
+      }
+    }
   };
 
   /**
    * Handle Click on Map in Pick Mode
    */
   const handleMapPick = async (latlng) => {
-    setIsMapPickMode(false);
+    // In route edit mode, we always keep picking active
+    if (searchMode !== 'manual' && !isRouteEditMode) {
+      setIsMapPickMode(false);
+    }
+
     setIsLoading(true);
     setLoadingText(language === 'nl' ? 'Locatie details ophalen...' : 'Fetching location details...');
-    setIsSidebarOpen(true); // Re-open sidebar to show progress/results
 
     try {
-      // 1. Reverse Geocode (Simple OpenStreetMap Nominatim request or similar via internal API if available, 
-      // but let's use a standard fetch for now or reuse existing utils if possible)
-      // Usually we want to use our backend proxy to avoid CORS/Rate limits if possible, but for now direct fetch with fetch/catch
-
-      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&zoom=18&addressdetails=1`, {
-        headers: { 'Accept-Language': language }
+      // 1. Reverse Geocode (use proxy to avoid CORS)
+      const response = await fetch(`/api/nominatim?lat=${latlng.lat}&lon=${latlng.lng}&format=json&zoom=18&addressdetails=1`, {
+        headers: {
+          'Accept-Language': language,
+          'Authorization': `Bearer ${localStorage.getItem('city_explorer_token')}`
+        }
       });
       const data = await response.json();
 
       const name = data.name ||
         (data.address && (data.address.amenity || data.address.shop || data.address.tourism || data.address.road)) ||
-        'Gekozen locatie';
+        (language === 'nl' ? 'Gekozen locatie' : 'Picked Location');
 
       const poi = {
         id: `pick-${Date.now()}`,
         name: name,
         lat: parseFloat(latlng.lat),
-        lng: parseFloat(latlng.lng), // Leaflet uses lng
+        lng: parseFloat(latlng.lng),
         type: data.type || 'custom',
-        description: data.display_name
+        description: data.display_name,
+        address: data.address
       };
 
-      // 2. Add to route (using existing logic, e.g. handleSelectStopOption)
-      // We need to know WHERE to add it. For "Quick Add", usually it is added after the active POI or at a smart location.
-      // RouteRefiner usually passes an index. If we don't have one, we might defaults to activePoiIndex.
+      // 2. Route Edit Mode Logic - Update routeEditPoints
+      if (isRouteEditMode) {
+        const newPoints = [...routeEditPoints, poi];
+        setRouteEditPoints(newPoints);
 
-      // Let's assume we want to insert it after the current active POI
-      const targetIndex = activePoiIndex || 0;
-      handleSelectStopOption(poi, targetIndex);
+        // Calculate cumulative distances
+        if (newPoints.length === 1) {
+          // First point (start) has 0 distance
+          setCumulativeDistances([0]);
+
+          // Set as route center - use FRESH object, not spread from prev
+          setRouteData({
+            center: [poi.lat, poi.lng],
+            pois: [],
+            startPoi: poi,
+            startName: poi.name,
+            startIsPoi: true,
+            navigationSteps: [],
+            routePath: [],
+            legs: [],
+            originalPois: null,
+            stats: { totalDistance: 0, walkDistance: 0, limitKm: 5 }
+          });
+
+          // Update city if missing
+          if (!city && data.address && (data.address.city || data.address.town)) {
+            setCity(data.address.city || data.address.town);
+          }
+        } else {
+          // Calculate route to this point
+          const startCoords = [newPoints[0].lat, newPoints[0].lng];
+          const activeMode = travelMode || 'walking';
+
+          try {
+            // Calculate full route through all points (except we don't close the loop yet)
+            const routeResult = await calculateRoutePath(
+              newPoints.slice(1), // Exclude start, it's the center
+              startCoords,
+              activeMode,
+              null // Don't close loop yet
+            );
+
+            // Calculate cumulative distances for each point
+            const newDistances = [0]; // Start is 0
+            let cumulative = 0;
+
+            if (routeResult.legs && routeResult.legs.length > 0) {
+              routeResult.legs.forEach((leg, idx) => {
+                cumulative += (leg.distance / 1000); // Convert m to km
+                newDistances.push(cumulative);
+              });
+            } else {
+              // Fallback: use total distance distributed evenly
+              const distPerPoint = routeResult.dist / (newPoints.length - 1);
+              for (let i = 1; i < newPoints.length; i++) {
+                newDistances.push(distPerPoint * i);
+              }
+            }
+
+            setCumulativeDistances(newDistances);
+
+            // Update route data for visualization - use fresh object with new data
+            setRouteData({
+              center: [newPoints[0].lat, newPoints[0].lng],
+              pois: newPoints.slice(1),
+              startPoi: newPoints[0],
+              startName: newPoints[0].name,
+              startIsPoi: true,
+              routePath: routeResult.path,
+              navigationSteps: routeResult.steps,
+              legs: routeResult.legs,
+              originalPois: null,
+              stats: {
+                totalDistance: routeResult.dist,
+                walkDistance: routeResult.walkDist || routeResult.dist,
+                limitKm: Math.ceil(routeResult.dist) || 5
+              }
+            });
+
+          } catch (calcErr) {
+            console.error("Route calculation failed:", calcErr);
+            // Still add the point, just estimate distance
+            const lastPoint = newPoints[newPoints.length - 2];
+            const dist = getDistance(lastPoint.lat, lastPoint.lng, poi.lat, poi.lng);
+            const lastDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+            setCumulativeDistances([...cumulativeDistances, lastDist + dist]);
+          }
+        }
+
+        setIsLoading(false);
+        return; // Exit early for route edit mode
+      }
+
+      // 3. Legacy mode: Add to Route Logic (for non-edit mode)
+      if (!routeData || (!routeData.startPoi && (!routeData.pois || routeData.pois.length === 0))) {
+        console.log("Map Pick: Starting new route with", poi.name);
+        setRouteData({
+          center: [poi.lat, poi.lng],
+          startPoi: poi,
+          startPoiId: poi.id,
+          startName: poi.name,
+          startIsPoi: true,
+          pois: [],
+          navigationSteps: [],
+          routePath: [],
+          legs: [],
+          stats: { totalDistance: 0, walkDistance: 0, limitKm: 5 }
+        });
+
+        if (!city && data.address && (data.address.city || data.address.town)) {
+          setCity(data.address.city || data.address.town);
+        }
+
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: language === 'nl'
+            ? `Route gestart bij **${poi.name}**. Kies nu je volgende punt.`
+            : `Route started at **${poi.name}**. Now pick your next stop.`
+        }]);
+
+      } else {
+        const currentPois = [...(routeData.pois || [])];
+        currentPois.push(poi);
+
+        const startCoords = routeData.center;
+        const activeMode = travelMode || 'walking';
+
+        try {
+          const routeResult = await calculateRoutePath(currentPois, startCoords, activeMode, null);
+
+          setRouteData(prev => ({
+            ...prev,
+            pois: currentPois,
+            routePath: routeResult.path,
+            navigationSteps: routeResult.steps,
+            legs: routeResult.legs,
+            stats: {
+              ...prev.stats,
+              totalDistance: routeResult.dist,
+              walkDistance: routeResult.walkDist || prev.stats.walkDistance
+            }
+          }));
+
+          setAiChatHistory(prev => [...prev, {
+            role: 'brain',
+            text: language === 'nl'
+              ? `**${poi.name}** toegevoegd (+${routeResult.dist.toFixed(1)} km).`
+              : `**${poi.name}** added (+${routeResult.dist.toFixed(1)} km).`
+          }]);
+
+        } catch (calcErr) {
+          console.error("Route calculation failed:", calcErr);
+          setRouteData(prev => ({
+            ...prev,
+            pois: currentPois
+          }));
+        }
+      }
 
     } catch (err) {
       console.error("Map pick failed:", err);
       alert(language === 'nl' ? 'Kon locatie niet ophalen.' : 'Could not fetch location.');
+    } finally {
       setIsLoading(false);
     }
+  };
+
+  /**
+   * Delete a point from route edit mode
+   */
+  const handleDeleteEditPoint = async (index) => {
+    if (index < 0 || index >= routeEditPoints.length) return;
+
+    const newPoints = routeEditPoints.filter((_, i) => i !== index);
+    setRouteEditPoints(newPoints);
+    setSelectedEditPointIndex(-1);
+
+    if (newPoints.length === 0) {
+      setCumulativeDistances([]);
+      setRouteData(prev => ({
+        ...prev,
+        pois: [],
+        routePath: [],
+        stats: { ...prev.stats, totalDistance: 0 }
+      }));
+      return;
+    }
+
+    // Recalculate route with remaining points
+    if (newPoints.length >= 2) {
+      const startCoords = [newPoints[0].lat, newPoints[0].lng];
+      const activeMode = travelMode || 'walking';
+
+      try {
+        setIsLoading(true);
+        setLoadingText(language === 'nl' ? 'Route herberekenen...' : 'Recalculating route...');
+
+        const routeResult = await calculateRoutePath(
+          newPoints.slice(1),
+          startCoords,
+          activeMode,
+          null
+        );
+
+        // Recalculate cumulative distances
+        const newDistances = [0];
+        let cumulative = 0;
+        if (routeResult.legs) {
+          routeResult.legs.forEach((leg) => {
+            cumulative += (leg.distance / 1000);
+            newDistances.push(cumulative);
+          });
+        }
+        setCumulativeDistances(newDistances);
+
+        setRouteData(prev => ({
+          ...prev,
+          center: [newPoints[0].lat, newPoints[0].lng],
+          pois: newPoints.slice(1),
+          routePath: routeResult.path,
+          legs: routeResult.legs,
+          stats: { ...prev.stats, totalDistance: routeResult.dist }
+        }));
+
+      } catch (err) {
+        console.error("Route recalculation failed:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Only one point left (start)
+      setCumulativeDistances([0]);
+      setRouteData(prev => ({
+        ...prev,
+        center: [newPoints[0].lat, newPoints[0].lng],
+        pois: [],
+        routePath: [],
+        stats: { ...prev.stats, totalDistance: 0 }
+      }));
+    }
+  };
+
+  /**
+   * Finalize route - close the loop and exit edit mode
+   */
+  const handleFinalizeRoute = async () => {
+    if (routeEditPoints.length < 2) {
+      alert(language === 'nl' ? 'Voeg minimaal 2 punten toe.' : 'Add at least 2 points.');
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Route afronden...' : 'Finalizing route...');
+
+    try {
+      const startCoords = [routeEditPoints[0].lat, routeEditPoints[0].lng];
+      const activeMode = travelMode || 'walking';
+
+      // Calculate route WITH loop closure (back to start)
+      const routeResult = await calculateRoutePath(
+        routeEditPoints.slice(1),
+        startCoords,
+        activeMode,
+        startCoords // Close the loop by returning to start
+      );
+
+      // Convert edit points to POIs for the main route
+      const finalPois = routeEditPoints.slice(1).map((p, idx) => ({
+        ...p,
+        order: idx + 1
+      }));
+
+      // Update route data with finalized route
+      setRouteData(prev => ({
+        ...prev,
+        center: startCoords,
+        startPoi: routeEditPoints[0],
+        startName: routeEditPoints[0].name,
+        startIsPoi: true,
+        pois: finalPois,
+        routePath: routeResult.path,
+        navigationSteps: routeResult.steps,
+        legs: routeResult.legs,
+        stats: {
+          totalDistance: routeResult.dist,
+          walkDistance: routeResult.walkDist || routeResult.dist,
+          limitKm: Math.ceil(routeResult.dist)
+        }
+      }));
+
+      // Exit edit mode
+      setIsRouteEditMode(false);
+      setIsMapPickMode(false);
+      setRouteEditPoints([]);
+      setCumulativeDistances([]);
+      setSelectedEditPointIndex(-1);
+
+      // Open sidebar to show the route
+      setIsSidebarOpen(true);
+      setViewAction(null); // Ensure we show the itinerary/POI list, not the refiner
+      setIsAiViewActive(false); // Explicitly close the Refiner/AI view
+
+
+      // Feedback
+      setAiChatHistory(prev => [...prev, {
+        role: 'brain',
+        text: language === 'nl'
+          ? `🎉 Route afgerond! Totale afstand: **${routeResult.dist.toFixed(1)} km** met ${finalPois.length} stops.`
+          : `🎉 Route finalized! Total distance: **${routeResult.dist.toFixed(1)} km** with ${finalPois.length} stops.`
+      }]);
+
+    } catch (err) {
+      console.error("Route finalization failed:", err);
+      alert(language === 'nl' ? 'Kon route niet afronden.' : 'Could not finalize route.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Cancel route edit mode
+   */
+  const handleCancelEditMode = () => {
+    setIsRouteEditMode(false);
+    setIsMapPickMode(false);
+    setRouteEditPoints([]);
+    setCumulativeDistances([]);
+    setSelectedEditPointIndex(-1);
+    setIsSidebarOpen(true);
+
+    // Clear any partial route data
+    setRouteData(null);
   };
 
   // Auth Guard (Moved here to obey Rules of Hooks)
@@ -3635,23 +4046,47 @@ function CityExplorerApp() {
           routeStart={routeData?.center}
           isMapPickMode={isMapPickMode}
           onMapPick={handleMapPick}
+          isRouteEditMode={isRouteEditMode}
+          routeEditPoints={routeEditPoints}
+          cumulativeDistances={cumulativeDistances}
+          selectedEditPointIndex={selectedEditPointIndex}
+          onEditPointClick={(idx) => setSelectedEditPointIndex(idx)}
         />
+
+        {/* Route Edit Panel - shown during route edit mode */}
+        {isRouteEditMode && (
+          <RouteEditPanel
+            points={routeEditPoints}
+            cumulativeDistances={cumulativeDistances}
+            totalDistance={routeData?.stats?.totalDistance || 0}
+            travelMode={travelMode}
+            language={language}
+            onDeletePoint={handleDeleteEditPoint}
+            onFinalize={handleFinalizeRoute}
+            onCancel={handleCancelEditMode}
+            onPointClick={(idx) => setSelectedEditPointIndex(idx)}
+            selectedPointIndex={selectedEditPointIndex}
+            isCalculating={isLoading}
+          />
+        )}
       </div>
 
-      {/* Navigation Overlay (Turn-by-Turn) */}
-      <NavigationOverlay
-        steps={routeData?.navigationSteps}
-        pois={routeData?.pois}
-        language={language}
-        userLocation={userLocation}
-        isOpen={isNavigationOpen}
-        onClose={() => setIsNavigationOpen(false)}
-        onToggle={() => setIsNavigationOpen(!isNavigationOpen)}
-        pastDistance={pastDistance}
-        totalTripDistance={routeData?.stats?.totalDistance}
-        navPhase={navPhase}
-        routeStart={routeData?.center}
-      />
+      {/* Navigation Overlay (Turn-by-Turn) - Only visible when NOT editing route */}
+      {!isRouteEditMode && (
+        <NavigationOverlay
+          steps={routeData?.navigationSteps}
+          pois={routeData?.pois}
+          language={language}
+          userLocation={userLocation}
+          isOpen={isNavigationOpen}
+          onClose={() => setIsNavigationOpen(false)}
+          onToggle={() => setIsNavigationOpen(!isNavigationOpen)}
+          pastDistance={pastDistance}
+          totalTripDistance={routeData?.stats?.totalDistance}
+          navPhase={navPhase}
+          routeStart={routeData?.center}
+        />
+      )}
 
       {/* Sidebar (Always Visible) */}
       <ItinerarySidebar
@@ -3735,27 +4170,10 @@ function CityExplorerApp() {
         setAiPrompt={setAiPrompt}
         aiChatHistory={aiChatHistory}
         onStartMapPick={handleStartMapPick}
+        isRouteEditMode={isRouteEditMode}
       />
 
-      {/* Map Pick Instruction Overlay */}
-      {isMapPickMode && (
-        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[2000] animate-in slide-in-from-top-4 fade-in duration-300">
-          <div className="bg-slate-900/90 backdrop-blur border border-teal-500/50 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-              <span className="font-bold text-sm">
-                {language === 'nl' ? 'Kies een punt op de kaart' : 'Pick a point on the map'}
-              </span>
-            </div>
-            <button
-              onClick={() => { setIsMapPickMode(false); setIsSidebarOpen(true); }}
-              className="bg-white/10 hover:bg-white/20 p-1 rounded-full transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Map Pick Instruction Overlay - REMOVED per user request */}
 
       {/* Refinement Modal */}
       {refinementProposals && (

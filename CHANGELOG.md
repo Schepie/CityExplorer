@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-02-04
+
+### Added
+- **Route Refinement Tool**: New interface for modifying existing routes, including changing travel modes and adjusting distance.
+- **Map Point Picking**: Ability to click a point on the map to add it directly to the route.
+- **Inline Search**: Integrated search for interests and specific places directly within the Route Refiner.
+
+### Changed
+- **Route Options**: Simplified planning interface to enforce loop routes throughout.
+- **Settings Menu**: Streamlined "Simulation", "Auto Audio", and "Autosave" options into direct toggles.
+- **UI/UX Improvements**: 
+    - "Quick Add" POI now auto-recalculates and shows the map.
+    - Fixed "Map Pick" mode to properly clear previous data.
+    - Route finalization now correctly returns to the itinerary view.
+    - "Restart" button now triggers the initial questionnaire.
+
+## [1.7.1] - 2026-02-03 (Estimated)
+- Various bug fixes and refinements based on user feedback (see commit history).
+
 ## [1.6.0] - 2026-01-29
 
 ### Added
