@@ -1157,7 +1157,8 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                 <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Totaal' : 'Total'}</span>
                                 <span className="text-slate-200 font-bold">
                                     {(() => {
-                                        const dist = stats.walkDistance || stats.totalDistance || 0;
+                                        const rawDist = stats.walkDistance || stats.totalDistance || 0;
+                                        const dist = parseFloat(rawDist) || 0;
                                         if (dist < 1) {
                                             return `${Math.round(dist * 1000)} m`;
                                         }
