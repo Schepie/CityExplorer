@@ -1348,7 +1348,10 @@ const ItinerarySidebar = ({
     onUpdateStartLocation,
     setViewAction,
     onStartMapPick,
-    isRouteEditMode
+    isRouteEditMode,
+    isEnriching,
+    onStartEnrichment,
+    onPauseEnrichment
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -2404,17 +2407,51 @@ const ItinerarySidebar = ({
                                         <h3 className="text-[10px] font-black tracking-widest text-[var(--text-muted)] uppercase">
                                             {language === 'nl' ? 'Jouw Dagplanning' : 'Your Schedule'}
                                         </h3>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (onReverseDirection) onReverseDirection();
-                                            }}
-                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-extrabold transition-all border border-primary/20 shadow-sm"
-                                            title={language === 'nl' ? "Draai de looprichting om" : "Reverse walking direction"}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m21 7-3-3-3 3"></path><path d="M18 16V4"></path><path d="m3 17 3 3 3-3"></path><path d="M6 8v12"></path></svg>
-                                            {language === 'nl' ? 'OMKEREN' : 'REVERSE'}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            {/* Pause/Resume Enrichment */}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (isEnriching) {
+                                                        if (onPauseEnrichment) onPauseEnrichment();
+                                                    } else {
+                                                        if (onStartEnrichment) onStartEnrichment();
+                                                    }
+                                                }}
+                                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold transition-all border shadow-sm ${isEnriching
+                                                    ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20'
+                                                    : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20'
+                                                    }`}
+                                                title={language === 'nl'
+                                                    ? (isEnriching ? "Pauzeer het ophalen van info" : "Hervat info ophalen")
+                                                    : (isEnriching ? "Pause info fetching" : "Resume info fetching")
+                                                }
+                                            >
+                                                {isEnriching ? (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                                                        {language === 'nl' ? 'PAUZE' : 'PAUSE'}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                                        {language === 'nl' ? 'HERVAT' : 'RESUME'}
+                                                    </>
+                                                )}
+                                            </button>
+
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (onReverseDirection) onReverseDirection();
+                                                }}
+                                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-extrabold transition-all border border-primary/20 shadow-sm"
+                                                title={language === 'nl' ? "Draai de looprichting om" : "Reverse walking direction"}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m21 7-3-3-3 3"></path><path d="M18 16V4"></path><path d="m3 17 3 3 3-3"></path><path d="M6 8v12"></path></svg>
+                                                {language === 'nl' ? 'OMKEREN' : 'REVERSE'}
+                                            </button>
+                                        </div>
                                     </div>
                                     {(() => {
                                         const items = [...routeData.pois];

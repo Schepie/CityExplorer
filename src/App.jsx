@@ -470,7 +470,7 @@ function CityExplorerApp() {
   };
 
   // Main Enrichment Logic (Moved to top level for reuse)
-  // Main Enrichment Logic (Two-Stage)
+  // Main Enrichment Logic (Two-Stage) - Moved to top level reference
   const enrichmentAbortController = useRef(null);
 
   // Main Enrichment Logic (Two-Stage)
@@ -501,19 +501,22 @@ function CityExplorerApp() {
       const isRound = routeCtx.toLowerCase().includes('roundtrip');
 
       // Start Info
-      const startLabel = startPoint || cityName;
-      const startInstr = await engine.fetchArrivalInstructions(startLabel, cityName, lang);
-      if (!signal.aborted) {
-        setRouteData(prev => prev ? {
-          ...prev,
-          startInfo: startInstr,
-          // Store specific name if user provided one
-          startName: startPoint
-        } : prev);
+      // Only fetch if missing
+      if (!routeData?.startInfo) {
+        const startLabel = startPoint || cityName;
+        const startInstr = await engine.fetchArrivalInstructions(startLabel, cityName, lang);
+        if (!signal.aborted) {
+          setRouteData(prev => prev ? {
+            ...prev,
+            startInfo: startInstr,
+            // Store specific name if user provided one
+            startName: startPoint
+          } : prev);
+        }
       }
 
       // End Info (Only if not roundtrip)
-      if (!isRound && pois.length > 0) {
+      if (!isRound && pois.length > 0 && !routeData?.endInfo) {
         const lastPoi = pois[pois.length - 1];
         const endInstr = await engine.fetchArrivalInstructions(lastPoi.name, cityName, lang);
         if (!signal.aborted && endInstr) {
@@ -521,7 +524,7 @@ function CityExplorerApp() {
         }
       }
     } catch (e) {
-      console.warn("Start/End Enrichment Failed:", e);
+      if (e.name !== 'AbortError') console.warn("Start/End Enrichment Failed:", e);
     }
 
     // Local cache to persist short descriptions between Stage 1 and Stage 2
@@ -538,6 +541,12 @@ function CityExplorerApp() {
 
         try {
           // Step 1: Gather Signals (Triangulation)
+          // const signals = await engine.gatherSignals(poi); -- moved to stage 1 or per poi
+
+          // Re-check abort
+          if (signal.aborted) return;
+
+          // Step 1: Gather Signals
           const signals = await engine.gatherSignals(poi);
 
           if (signal.aborted) return;
@@ -585,17 +594,7 @@ function CityExplorerApp() {
 
 
         try {
-          // Retrieve stored signals (or should we re-fetch? Stored is better)
-          // But we need to access the LATEST state to get the signals back if we didn't store them externally.
-          // Actually, we passed 'signals' into the state update, so let's try to get them if possible, 
-          // OR just rely on the engine to handle it (but engine is stateless per POI).
-          // Optimization: Let's just re-gather or pass the signals through a local map if we want to save API calls.
-          // For now, let's just re-use the engine context.
-
-          // Actually, we can't easily access the "current" state in this loop without a ref or complex logic.
-          // Let's just re-gather signals (cached by browser mostly) or better:
-          // Just assume we want to proceed. Providing signals again is best.
-          // To do this right without complex state management, let's just re-gather. It's safe.
+          // Retrieve stored signals or re-gather
           const signals = await engine.gatherSignals(poi);
 
           if (signal.aborted) return;
@@ -604,8 +603,6 @@ function CityExplorerApp() {
           const savedShortDesc = shortDescMap.get(poi.id) || null;
 
           // Get Full Details
-          // Note: We need the short description too, to avoid re-generating it? 
-          // The prompt handles "we already have short".
           const fullData = await engine.fetchGeminiFullDetails(poi, signals, savedShortDesc, signal);
 
           if (signal.aborted) return;
@@ -650,6 +647,41 @@ function CityExplorerApp() {
       }
     }
   };
+
+  const handleTriggerEnrichment = () => {
+    if (routeData && routeData.pois && routeData.pois.length > 0) {
+      // Construct Route Context for engine
+      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, roundtrip)`;
+
+      enrichBackground(routeData.pois, city, language, descriptionLength, interests, routeCtx)
+        .catch(err => console.warn("Enrichment trigger failed", err));
+    }
+  };
+
+  const handlePauseEnrichment = () => {
+    if (enrichmentAbortController.current) {
+      enrichmentAbortController.current.abort();
+      setIsBackgroundUpdating(false);
+      enrichmentAbortController.current = null;
+    }
+  };
+
+
+  // Re-enrich POIs when Description Length changes
+  useEffect(() => {
+    if (routeData && routeData.pois && routeData.pois.length > 0) {
+      console.log("Description length changed to:", descriptionLength);
+
+      // Optimistically update ALL pois to the new mode so UI (popups/sidebar) reflects change immediately
+      setRouteData(prev => ({
+        ...prev,
+        pois: prev.pois.map(p => ({ ...p, active_mode: descriptionLength }))
+      }));
+
+      // Trigger automatic enrichment
+      handleTriggerEnrichment();
+    }
+  }, [descriptionLength]); // Only trigger on length change
 
   // Wrapper for city setter to invalidate validation on edit
   const handleSetCity = (val) => {
@@ -2716,9 +2748,9 @@ function CityExplorerApp() {
 
 
   /**
- * Cyclically rotates the entire route so that a selected POI becomes the new start point.
- * POI-namen zijn immutable; startpunt is een rol, geen naam.
- */
+  * Cyclically rotates the entire route so that a selected POI becomes the new start point.
+  * POI-namen zijn immutable; startpunt is een rol, geen naam.
+  */
   const handleCycleStart = async (selectedPoiId) => {
     if (!routeData || !routeData.pois || !isRoundtrip) return;
 
@@ -4171,6 +4203,9 @@ function CityExplorerApp() {
         aiChatHistory={aiChatHistory}
         onStartMapPick={handleStartMapPick}
         isRouteEditMode={isRouteEditMode}
+        isEnriching={isBackgroundUpdating}
+        onStartEnrichment={handleTriggerEnrichment}
+        onPauseEnrichment={handlePauseEnrichment}
       />
 
       {/* Map Pick Instruction Overlay - REMOVED per user request */}
