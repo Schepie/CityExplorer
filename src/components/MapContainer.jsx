@@ -1210,7 +1210,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                     )}
 
                     {/* --- Start & End Markers --- */}
-                    {!isInputMode && routeData && (
+                    {!isInputMode && routeData && (!isMapPickMode || routeData.startPoi) && (
                         <>
                             {/* Start Marker (Always at routeData.center) */}
                             <Marker
