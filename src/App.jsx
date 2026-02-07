@@ -3159,8 +3159,10 @@ function CityExplorerApp() {
   const [currentSpeakingPoi, setCurrentSpeakingPoi] = useState(null); // Track object for auto-restart
   const [isSpeechPaused, setIsSpeechPaused] = useState(false);
   const [autoAudio, setAutoAudio] = useState(() => localStorage.getItem('app_auto_audio') === 'true');
+  const [spokenNavigationEnabled, setSpokenNavigationEnabled] = useState(() => localStorage.getItem('app_spoken_navigation') === 'true');
 
   useEffect(() => localStorage.setItem('app_auto_audio', autoAudio), [autoAudio]);
+  useEffect(() => localStorage.setItem('app_spoken_navigation', spokenNavigationEnabled), [spokenNavigationEnabled]);
 
   // Autosave State
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => localStorage.getItem('app_autosave_enabled') !== 'false'); // Default true
@@ -3258,11 +3260,20 @@ function CityExplorerApp() {
         const info = poiOrText.structured_info;
         const parts = [];
 
-        // 1. Short Description
-        if (info.short_description) parts.push(info.short_description);
+        // 1. Short Description - Skip if full description is present to avoid redundancy
+        // CRITICAL: We only skip if the full description is VALY and not a "Loading..." placeholder.
+        const full = (info.full_description || '').toLowerCase().trim().replace(/[".]/g, '');
+        const unknownTerms = ['onbekend', 'unknown', 'updating', 'bezig met bijwerken'];
+        const hasFullDesc = info.full_description && !unknownTerms.some(term => full.includes(term));
+
+        if (info.short_description && !hasFullDesc) {
+          parts.push(info.short_description);
+        }
 
         // 2. Full Description
-        if (info.full_description) parts.push(info.full_description);
+        if (info.full_description && hasFullDesc) {
+          parts.push(info.full_description);
+        }
 
         // 3. Reasons (Interest Alignment)
         if (info.matching_reasons && info.matching_reasons.length > 0) {
@@ -4220,6 +4231,8 @@ function CityExplorerApp() {
           onToggleNavigation={() => setIsNavigationOpen(prev => !prev)}
           autoAudio={autoAudio}
           setAutoAudio={setAutoAudio}
+          spokenNavigationEnabled={spokenNavigationEnabled}
+          setSpokenNavigationEnabled={setSpokenNavigationEnabled}
           isSimulating={isSimulating}
           setIsSimulating={setIsSimulating}
           isSimulationEnabled={isSimulationEnabled}
@@ -4286,6 +4299,7 @@ function CityExplorerApp() {
         onRemovePoi={handleRemovePoi}
         onStopsCountChange={handleStopsCountChange}
         activePoiIndex={activePoiIndex}
+        userLocation={userLocation}
         onUpdateStartLocation={handleUpdateStartLocation}
         onCycleStart={handleCycleStart}
         onReverseDirection={handleReverseDirection}
@@ -4304,6 +4318,8 @@ function CityExplorerApp() {
         onStopSpeech={stopSpeech}
         autoAudio={autoAudio}
         setAutoAudio={setAutoAudio}
+        spokenNavigationEnabled={spokenNavigationEnabled}
+        setSpokenNavigationEnabled={setSpokenNavigationEnabled}
         autoSaveEnabled={autoSaveEnabled}
         setAutoSaveEnabled={setAutoSaveEnabled}
         focusedLocation={focusedLocation}

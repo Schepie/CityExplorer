@@ -873,37 +873,16 @@ const getPoiCategoryIcon = (poi) => {
     return <><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></>;
 };
 
-const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSpeechPaused, onSpeak, autoAudio, interests, searchMode, constraintValue, constraintType, isRoundtrip, activeTheme, travelMode, onStopSpeech, spokenCharCount, scroller, isAiViewActive, setIsAiViewActive, onUpdateStartLocation }) => {
+const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSpeechPaused, onSpeak, autoAudio, interests, searchMode, constraintValue, constraintType, isRoundtrip, activeTheme, travelMode, onStopSpeech, spokenCharCount, scroller, isAiViewActive, setIsAiViewActive, onUpdateStartLocation, userLocation }) => {
     const [weather, setWeather] = useState(null);
     const [description, setDescription] = useState(null);
     const [cityImage, setCityImage] = useState(null);
     const [isExpanded, setIsExpanded] = useState(false);
-    const [userPos, setUserPos] = useState(null);
     const [currentTime, setCurrentTime] = useState('');
     const [showDurationInfo, setShowDurationInfo] = useState(false);
     const [activeView, setActiveView] = useState('main'); // 'main' or 'weather'
-
-    const highlightedWordRef = useRef(null);
     const [isEditingStart, setIsEditingStart] = useState(false);
-    const [editStartValue, setEditStartValue] = useState("");
-
-    // Sync highlight with SmartAutoScroller
-    useEffect(() => {
-        if (speakingId === `city-welcome-${city}` && highlightedWordRef.current) {
-            scroller?.syncHighlight(highlightedWordRef.current);
-        }
-    }, [spokenCharCount, speakingId, city, scroller]);
-
-    // Watch User Location for accurate "To 1st Stop" distance
-    useEffect(() => {
-        if (!navigator.geolocation) return;
-        const watchId = navigator.geolocation.watchPosition(
-            (pos) => setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-            (err) => console.warn("Loc error", err),
-            { enableHighAccuracy: false, timeout: 20000, maximumAge: 10000 }
-        );
-        return () => navigator.geolocation.clearWatch(watchId);
-    }, []);
+    const [editStartValue, setEditStartValue] = useState('');
 
     // Use theme colors
     const primaryColor = activeTheme?.colors?.primary || '#3b82f6';
@@ -1323,8 +1302,8 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                                 </div>
                                                 <span className="text-slate-200 font-bold">
                                                     {(() => {
-                                                        const startLat = userPos ? userPos.lat : (center ? center[0] : null);
-                                                        const startLon = userPos ? userPos.lng : (center ? center[1] : null);
+                                                        const startLat = userLocation ? userLocation.lat : (center ? center[0] : null);
+                                                        const startLon = userLocation ? userLocation.lng : (center ? center[1] : null);
 
                                                         if (!startLat || !pois[0]) return '-';
 
@@ -1435,6 +1414,8 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
 const ItinerarySidebar = ({
     routeData, onPoiClick, onReset, language, setLanguage,
     speakingId, onSpeak, autoAudio, setAutoAudio,
+    userLocation,
+    spokenNavigationEnabled, setSpokenNavigationEnabled,
     autoSaveEnabled, setAutoSaveEnabled,
     voiceSettings, setVoiceSettings,
     city, setCity, interests, setInterests,
@@ -1909,7 +1890,7 @@ const ItinerarySidebar = ({
                                 isRoundtrip={isRoundtrip}
                                 activeTheme={availableThemes?.[activeTheme]}
                                 travelMode={travelMode}
-                                userLocation={focusedLocation}
+                                userLocation={userLocation}
                                 onStopSpeech={onStopSpeech}
                                 spokenCharCount={spokenCharCount}
                                 isSpeechPaused={isSpeechPaused}
@@ -1976,6 +1957,32 @@ const ItinerarySidebar = ({
                                     /* Changelog View */
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
+                                            {
+                                                date: "07 Feb 2026",
+                                                version: "v1.10.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Gesproken Navigatie", desc: "Ontvang nu gesproken turn-by-turn aanwijzingen tijdens je route." },
+                                                    { title: "Verbeterde Stabiliteit", desc: "Diverse fixes voor locatie-tracking en stabiliteit bij het opstarten." }
+                                                ] : [
+                                                    { title: "Spoken Navigation", desc: "Get hands-free turn-by-turn voice guidance as you travel." },
+                                                    { title: "Improved Stability", desc: "Key fixes for location tracking and app reliability during startup." }
+                                                ]
+                                            },
+                                            {
+                                                date: "07 Feb 2026",
+                                                version: "v1.9.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Achtergrond Audio", desc: "De app blijft nu actief en gidsen wanneer het scherm uit staat of de app op de achtergrond draait." },
+                                                    { title: "Minder Dubbele Info", desc: "Korte beschrijvingen worden nu overgeslagen zodra de uitgebreide informatie beschikbaar is." },
+                                                    { title: "Continue Navigatie", desc: "Navigatie stopt niet meer bij tussenstops maar loopt soepel door naar het volgende punt." },
+                                                    { title: "Logische Volgorde", desc: "Plek-informatie wordt nu in een natuurlijkere volgorde getoond en voorgelezen." }
+                                                ] : [
+                                                    { title: "Background Audio", desc: "The app remains active and continues guiding even when the screen is off or backgrounded." },
+                                                    { title: "Reduced Redundancy", desc: "Short descriptions are now smartly skipped once full details are available." },
+                                                    { title: "Smooth Navigation", desc: "Navigation no longer stops at intermediate waypoints, providing a better flow." },
+                                                    { title: "Natural Order", desc: "Information about places is now displayed and read in a more logical order." }
+                                                ]
+                                            },
                                             {
                                                 date: "04 Feb 2026",
                                                 version: "v1.8.0",
@@ -2377,6 +2384,23 @@ const ItinerarySidebar = ({
                                             </button>
                                         </div>
 
+                                        {/* 6a. Spoken Navigation */}
+                                        <div className="space-y-1">
+                                            <button
+                                                onClick={() => setSpokenNavigationEnabled(!spokenNavigationEnabled)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                            >
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'Gesproken Navigatie' : 'Spoken Navigation'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] font-bold uppercase tracking-tighter ${spokenNavigationEnabled ? 'text-primary' : 'text-slate-500'}`}>
+                                                        {spokenNavigationEnabled ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        </div>
+
 
                                         {/* 6b. Autosave */}
                                         <div className="space-y-1">
@@ -2477,7 +2501,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v1.8.0</span>
+                                            <span className="text-slate-300 text-sm font-medium">v1.10.0</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -2486,7 +2510,7 @@ const ItinerarySidebar = ({
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                        <span className="text-[var(--text-muted)] text-sm font-medium">04 Feb 2026</span>
+                                        <span className="text-[var(--text-muted)] text-sm font-medium">07 Feb 2026</span>
                                     </div>
                                 </div>
                             </div>

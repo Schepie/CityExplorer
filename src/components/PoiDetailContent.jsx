@@ -35,7 +35,8 @@ const PoiDetailContent = ({
             return val.length === 0 || val.every(v => isUnknown(v));
         }
         const s = String(val).toLowerCase().trim().replace(/[".]/g, '');
-        return s === 'onbekend' || s === 'unknown';
+        const unknownTerms = ['onbekend', 'unknown', 'updating', 'bezig met bijwerken'];
+        return unknownTerms.some(term => s.includes(term));
     };
 
     const info = poi.structured_info;
@@ -45,9 +46,11 @@ const PoiDetailContent = ({
     let currentOffset = 0;
     const offsets = {};
 
+    const hasFullDesc = info?.full_description && !isUnknown(info.full_description);
+
     const sections = [
-        { id: 'short', text: info?.short_description },
-        { id: 'full', text: info?.full_description },
+        { id: 'short', text: (!hasFullDesc) ? (info?.short_description || poi.description) : null },
+        { id: 'full', text: hasFullDesc ? info.full_description : null },
         {
             id: 'reasons',
             prefix: language === 'nl' ? "Waarom dit bij je past: " : "Why this matches your interests: ",
@@ -176,41 +179,14 @@ const PoiDetailContent = ({
                 </div>
             )}
 
-            {/* 2. Short Description (Level 1) */}
-            <div className={`text-sm ${textDescription} font-medium leading-relaxed italic border-l-2 border-primary/30 pl-3`}>
-                {renderWithHighlight(info?.short_description || poi.description || (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available."), offsets.short, "not-italic")}
-            </div>
-
-            {/* 3. Interest Alignment / Matching Reasons */}
-            {info?.matching_reasons && info.matching_reasons.length > 0 && !isUnknown(info.matching_reasons) && (
-                <div className="space-y-2">
-                    <h4 className="text-[10px] uppercase tracking-widest text-primary font-bold mb-2 flex items-center">
-                        {language === 'nl' ? 'WAAROM DIT BIJ JE PAST' : 'WHY THIS MATCHES YOUR INTERESTS'}
-                        <ConfidenceBadge confidence={info.matching_reasons_confidence} />
-                    </h4>
-                    <div className="grid gap-1.5">
-                        {/* Note: Highlighting here is slightly approximate as it uses the joint reasons text */}
-                        <div className="text-xs text-primary leading-relaxed opacity-90">
-                            {renderWithHighlight(info.matching_reasons.join(". "), offsets.reasons + (sections.find(s => s.id === 'reasons').prefix?.length || 0), "text-primary")}
-                        </div>
-                    </div>
+            {/* 2. Short Description (Level 1) - Skip if full description is present to avoid redundancy */}
+            {!hasFullDesc && (
+                <div className={`text-sm ${textDescription} font-medium leading-relaxed italic border-l-2 border-primary/30 pl-3`}>
+                    {renderWithHighlight(info?.short_description || poi.description || (language === 'nl' ? "Geen beschrijving beschikbaar." : "No description available."), offsets.short, "not-italic")}
                 </div>
             )}
 
-            {/* 3.5 Arrival / Transport Instructions (For Start Points) */}
-            {poi.arrivalInfo && (
-                <div className={`${isDark ? 'bg-emerald-500/5' : 'bg-emerald-50'} border ${isDark ? 'border-emerald-500/10' : 'border-emerald-200'} rounded-xl p-3 space-y-2`}>
-                    <h4 className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold mb-2 flex items-center gap-1.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                        {language === 'nl' ? 'AANKOMST & PARKEREN' : 'ARRIVAL & PARKING'}
-                    </h4>
-                    <div className={`text-xs ${textMuted} leading-relaxed font-medium`}>
-                        {poi.arrivalInfo}
-                    </div>
-                </div>
-            )}
-
-            {/* 4. Full Description (Level 3) */}
+            {/* 3. Full Description (Level 3) */}
             {info?.full_description && !isUnknown(info.full_description) && (
                 <div className="space-y-4">
                     <h4 className="text-[10px] uppercase tracking-widest text-white font-black mb-2 flex items-center">
@@ -219,6 +195,34 @@ const PoiDetailContent = ({
                     </h4>
                     <div className={`text-sm ${textDescription} leading-relaxed whitespace-pre-wrap`}>
                         {renderWithHighlight(info.full_description, offsets.full, textMuted)}
+                    </div>
+                </div>
+            )}
+
+            {/* 4. Interest Alignment / Matching Reasons */}
+            {info?.matching_reasons && info.matching_reasons.length > 0 && !isUnknown(info.matching_reasons) && (
+                <div className="space-y-2">
+                    <h4 className="text-[10px] uppercase tracking-widest text-primary font-bold mb-2 flex items-center">
+                        {language === 'nl' ? 'WAAROM DIT BIJ JE PAST' : 'WHY THIS MATCHES YOUR INTERESTS'}
+                        <ConfidenceBadge confidence={info.matching_reasons_confidence} />
+                    </h4>
+                    <div className="grid gap-1.5">
+                        <div className="text-xs text-primary leading-relaxed opacity-90">
+                            {renderWithHighlight(info.matching_reasons.join(". "), offsets.reasons + (sections.find(s => s.id === 'reasons').prefix?.length || 0), "text-primary")}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 4.5 Arrival / Transport Instructions (For Start Points) */}
+            {poi.arrivalInfo && (
+                <div className={`${isDark ? 'bg-emerald-500/5' : 'bg-emerald-50'} border ${isDark ? 'border-emerald-500/10' : 'border-emerald-200'} rounded-xl p-3 space-y-2`}>
+                    <h4 className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold mb-2 flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        {language === 'nl' ? 'AANKOMST & PARKEREN' : 'ARRIVAL & PARKING'}
+                    </h4>
+                    <div className={`text-xs ${textMuted} leading-relaxed font-medium`}>
+                        {poi.arrivalInfo}
                     </div>
                 </div>
             )}
