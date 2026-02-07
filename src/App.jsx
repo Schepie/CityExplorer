@@ -4243,7 +4243,7 @@ function CityExplorerApp() {
 
       {/* Background Update Indicator */}
       {isBackgroundUpdating && (
-        <div className="absolute top-0 left-0 right-0 z-[1000] h-1 bg-slate-800 w-full overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 z-[2000] h-1 bg-slate-800 w-full overflow-hidden">
           <div className="h-full bg-blue-500 animate-[progress-indeterminate_1.5s_infinite_linear] origin-left w-full"></div>
           <div className="absolute top-2 right-4 bg-slate-900/80 backdrop-blur text-xs px-3 py-1 rounded-full border border-blue-500/30 text-blue-200 shadow-lg flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
@@ -4438,7 +4438,7 @@ function CityExplorerApp() {
 
       {/* Refinement Modal */}
       {refinementProposals && (
-        <div className="absolute inset-0 z-[600] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="absolute inset-0 z-[1300] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-300">
             <h3 className="text-xl font-bold text-white mb-2">
               {language === 'nl' ? 'Geen resultaten gevonden' : 'No matches found'}
@@ -4473,7 +4473,7 @@ function CityExplorerApp() {
 
       {/* Limit Confirmation Modal - Moved Outside */}
       {limitConfirmation && (
-        <div className="absolute inset-0 z-[600] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="absolute inset-0 z-[1300] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-300">
             <h3 className="text-xl font-bold text-white mb-2">
               {language === 'nl' ? 'Limiet overschreden' : 'Limit Exceeded'}
@@ -4577,7 +4577,7 @@ function CityExplorerApp() {
 
       {/* Scan Result Modal */}
       {scanResult && (
-        <div className="absolute inset-0 z-[1200] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="absolute inset-0 z-[1300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-white/10 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             {/* Image Header */}
             <div className="relative h-48 w-full bg-black">

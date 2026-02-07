@@ -67,7 +67,7 @@ const ArView = ({ onScan, onClose, language = 'en' }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[1000] bg-black text-white flex flex-col">
+        <div className="fixed inset-0 z-[1200] bg-black text-white flex flex-col">
             {/* Camera Feed */}
             <div className="relative flex-1 overflow-hidden">
                 <video
