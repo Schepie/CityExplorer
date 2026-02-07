@@ -260,12 +260,23 @@ app.post('/api/build-booklet', authMiddleware, async (req, res) => {
 // --- Gemini Endpoint ---
 app.post('/api/gemini', authMiddleware, async (req, res) => {
     try {
-        const { prompt } = req.body;
-        console.log(`[Proxy] Gemini Request received`);
-        if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+        const { prompt, image, mimeType } = req.body;
+        console.log(`[Proxy] Gemini Request received. Image present: ${!!image}`);
+        if (!prompt && !image) return res.status(400).json({ error: 'Prompt or Image is required' });
         if (!GEMINI_KEY) {
             console.error("[Proxy] GEMINI_KEY missing");
             return res.status(500).json({ error: 'GEMINI_KEY not configured on server' });
+        }
+
+        const parts = [];
+        if (prompt) parts.push({ text: prompt });
+        if (image) {
+            parts.push({
+                inline_data: {
+                    mime_type: mimeType || 'image/jpeg',
+                    data: image // base64 string
+                }
+            });
         }
 
         // Use direct fetch to ensure Referer header is sent correctly to satisfy API key restrictions
@@ -277,7 +288,7 @@ app.post('/api/gemini', authMiddleware, async (req, res) => {
                 'Origin': 'http://localhost:5173'
             },
             body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
+                contents: [{ parts: parts }]
             })
         });
 

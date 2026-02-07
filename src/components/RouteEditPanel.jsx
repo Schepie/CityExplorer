@@ -140,21 +140,19 @@ const RouteEditPanel = ({
                                             </p>
                                         </div>
 
-                                        {/* Delete Button */}
-                                        {(points.length === 1 || originalIndex > 0) && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onDeletePoint && onDeletePoint(originalIndex);
-                                                }}
-                                                className="p-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all"
-                                                title={text.deletePoint}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                                                </svg>
-                                            </button>
-                                        )}
+                                        {/* Delete Button - Now allowed for Start Point too */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDeletePoint && onDeletePoint(originalIndex);
+                                            }}
+                                            className="p-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all"
+                                            title={text.deletePoint}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                                            </svg>
+                                        </button>
                                     </div>
                                 );
                             })}

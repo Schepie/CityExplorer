@@ -191,31 +191,66 @@ const RouteArrows = ({ polyline }) => {
     );
 };
 
-// Zoom Controls Component
-const ZoomControls = ({ language, isPopupOpen, setUserHasInteracted }) => {
+// Map Instance Reporter to capture the map object
+const MapInstanceReporter = ({ setMap }) => {
     const map = useMap();
+    useEffect(() => {
+        setMap(map);
+    }, [map, setMap]);
+    return null;
+};
+
+// Zoom Controls Component
+// Zoom Controls Component
+// Zoom Controls Component
+const ZoomControls = ({ language, isPopupOpen, setUserHasInteracted, map, isRouteEditMode }) => {
+    // const map = useMap(); // Removed as we are now outside the context
+    const containerRef = useRef(null);
+
+    // Definitive fix for click propagation in Leaflet: 
+    // Use DomEvent.disableClickPropagation on the container.
+    useEffect(() => {
+        if (containerRef.current) {
+            L.DomEvent.disableClickPropagation(containerRef.current);
+            L.DomEvent.disableScrollPropagation(containerRef.current);
+        }
+    }, []);
 
     return (
-        <div className={`absolute bottom-6 right-4 z-[1000] flex flex-col gap-2 transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
+        <div
+            ref={containerRef}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            className={`absolute right-4 z-[1000] flex flex-col gap-2 transition-all duration-300 ${isPopupOpen ? 'opacity-20' : 'opacity-100'} ${isRouteEditMode ? 'bottom-[220px]' : 'bottom-6'}`}
+        >
             {/* Zoom In */}
             <button
-                onClick={() => {
+                onClick={(e) => {
+                    e.stopPropagation();
                     setUserHasInteracted(true);
                     map.zoomIn();
                 }}
-                className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
+                onMouseDown={(e) => e.stopPropagation()}
+                className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group pointer-events-auto"
                 title={language === 'nl' ? 'Inzoomen' : 'Zoom In'}
             >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             </button>
 
+
+
             {/* Zoom Out */}
             <button
-                onClick={() => {
+                onClick={(e) => {
+                    e.stopPropagation();
                     setUserHasInteracted(true);
                     map.zoomOut();
                 }}
-                className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
+                onMouseDown={(e) => e.stopPropagation()}
+                className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group pointer-events-auto"
                 title={language === 'nl' ? 'Uitzoomen' : 'Zoom Out'}
             >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -386,6 +421,26 @@ const MapClickHandler = ({ isMapPickMode, onMapPick }) => {
 
     useMapEvents({
         click(e) {
+            // ROBUST TARGET CHECK: 
+            // If the click happened on a button or inside a UI overlay, ignore it.
+            const target = e.originalEvent?.target;
+
+            // DEBUG LOGGING
+            console.log("[MapPick] Click Event Fired. Target:", target);
+            console.log("[MapPick] Target classes:", target?.className);
+            console.log("[MapPick] Target closest absolute:", target?.closest('.absolute'));
+            console.log("[MapPick] Target closest button:", target?.closest('button'));
+            console.log("[MapPick] Target closest leaflet-control:", target?.closest('.leaflet-control'));
+
+            if (target && (
+                target.closest('button') ||
+                target.closest('.leaflet-control') ||
+                target.closest('.absolute') // Catch our custom absolute overlays
+            )) {
+                console.log("[MapPick] Ignoring click on UI element:", target);
+                return;
+            }
+
             if (isMapPickMode && onMapPick) {
                 onMapPick(e.latlng);
             }
@@ -407,7 +462,17 @@ const MapClickHandler = ({ isMapPickMode, onMapPick }) => {
     return null;
 };
 
-const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, spokenNavigationEnabled, setSpokenNavigationEnabled, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction, navPhase, setNavPhase, routeStart, isMapPickMode, onMapPick, isRouteEditMode = false, routeEditPoints = [], cumulativeDistances = [], selectedEditPointIndex = -1, onEditPointClick }) => {
+const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, spokenNavigationEnabled, setSpokenNavigationEnabled, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction, navPhase, setNavPhase, routeStart, onMapPick,
+    isMapPickMode = false,
+    routeEditPoints = [],
+    selectedEditPointIndex = null,
+    onEditPointClick,
+    cumulativeDistances = [],
+    isRouteEditMode = false,
+    onDeletePoint,
+    onOpenArMode
+}) => {
+    const mapRef = useRef(null);
     const { pois = [], center, routePath } = routeData || {};
     // Fix: In manual mode, we might have an empty routeData to start with.
     // We should treat it as "valid route mode" (to show map) but simply with no POIs yet.
@@ -1094,11 +1159,14 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
 
 
+    const [mapInstance, setMapInstance] = useState(null);
+
     return (
         <>
             <BackgroundKeepAlive isActive={isNavigating} language={language} />
             <div className="relative h-full w-full glass-panel overflow-hidden border-2 border-primary/20 shadow-2xl shadow-primary/10">
                 <LMapContainer center={center || defaultCenter} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                    <MapInstanceReporter setMap={setMapInstance} />
                     <TileLayer
                         key={activeStyleKey} // Force re-render when style changes
                         attribution={MAP_STYLES[activeStyleKey].attribution}
@@ -1194,6 +1262,26 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                                 {isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : point.name || `Stop ${idx}`}
                                             </div>
                                         </Tooltip>
+
+                                        <Popup className="glass-popup">
+                                            <div className="text-slate-900 font-bold mb-2">
+                                                {isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : point.name || `Stop ${idx}`}
+                                            </div>
+                                            {onDeletePoint && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        onDeletePoint(idx);
+                                                        map.closePopup();
+                                                    }}
+                                                    className="bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded-lg border border-red-200 transition-colors flex items-center justify-center shrink-0"
+                                                    title={language === 'nl' ? 'Verwijderen' : 'Delete'}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                                                </button>
+                                            )}
+                                        </Popup>
                                     </Marker>
                                 );
                             })}
@@ -1226,6 +1314,19 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                         <p className="text-xs text-slate-600 mt-2 min-w-[240px] max-w-[320px] leading-relaxed whitespace-pre-wrap">
                                             {routeData.startInfo}
                                         </p>
+                                    )}
+                                    {isRouteEditMode && onDeletePoint && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDeletePoint(0);
+                                                map.closePopup();
+                                            }}
+                                            className="mt-2 bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded-lg border border-red-200 transition-colors flex items-center justify-center shrink-0"
+                                            title={language === 'nl' ? 'Startpunt verwijderen' : 'Delete Start Point'}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                                        </button>
                                     )}
                                 </Popup>
                             </Marker>
@@ -1416,319 +1517,351 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                 );
                             })}
 
-                            {/* --- TOP HUD & CONTROLS MOVED INSIDE MAP TO RESPECT POPUP Z-INDEX --- */}
 
-                            {/* Top Navigation HUD - Instruction Only (Hide during Route Edit) */}
-                            {
-                                pois.length > 0 && !isInputMode && !isRouteEditMode && (() => {
-                                    const effectiveLocation = userLocation || (center ? { lat: center[0], lng: center[1] } : null);
-                                    if (!effectiveLocation) return null;
 
-                                    const targetPoi = focusedLocation || pois[0];
-                                    const steps = routeData?.navigationSteps;
 
-                                    // Progress Stats Calculation
-                                    let progressStats = null;
-                                    if (isNavigating && steps && steps.length > 0) {
-                                        const totalDistKm = steps.reduce((acc, s) => acc + s.distance, 0) / 1000;
-                                        let minD = Infinity;
-                                        let closestIdx = 0;
-                                        steps.forEach((s, i) => {
-                                            // Re-use calcDistance available in scope
-                                            const d = calcDistance(effectiveLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
-                                            if (d < minD) { minD = d; closestIdx = i; }
-                                        });
-                                        const targetIdx = Math.min(closestIdx + 1, steps.length - 1);
-                                        const distToTarget = calcDistance(effectiveLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
-                                        let remainingStepsKm = 0;
-                                        for (let i = targetIdx + 1; i < steps.length; i++) {
-                                            remainingStepsKm += steps[i].distance / 1000;
-                                        }
-                                        const remainingKm = distToTarget + remainingStepsKm;
-                                        const doneKm = Math.max(0, totalDistKm - remainingKm);
-
-                                        // Total Trip Calculation
-                                        const tripDone = (pastDistance || 0) + doneKm;
-                                        const tripTotal = parseFloat(routeData?.stats?.totalDistance || 0);
-                                        // Fallback to current leg if trip total is missing (e.g. single leg)
-                                        const finalTotal = tripTotal > 0.1 ? tripTotal : totalDistKm;
-                                        const finalLeft = Math.max(0, finalTotal - tripDone);
-
-                                        // Dynamic PRE_ROUTE Leg Stats
-                                        let legDone = doneKm.toFixed(1);
-                                        let legLeft = remainingKm.toFixed(1);
-                                        let legTotal = totalDistKm.toFixed(1);
-
-                                        if (navPhase === 'PRE_ROUTE' && routeStart) {
-                                            // Calc live distance to start
-                                            const distToStart = calcDistance(effectiveLocation, { lat: routeStart[0], lng: routeStart[1] });
-                                            // Use captured initial distance or fallback to current + some buffer
-                                            const initialDist = initialStartDistRef.current || distToStart;
-                                            const doneTowardsStart = Math.max(0, initialDist - distToStart);
-
-                                            legLeft = distToStart.toFixed(1);
-                                            legTotal = initialDist.toFixed(1);
-                                            legDone = doneTowardsStart.toFixed(1);
-                                        }
-
-                                        progressStats = {
-                                            leg: {
-                                                done: legDone,
-                                                left: legLeft,
-                                                total: legTotal
-                                            },
-                                            trip: {
-                                                done: tripDone.toFixed(1),
-                                                left: finalLeft.toFixed(1),
-                                                total: finalTotal.toFixed(1)
-                                            }
-                                        };
-                                    }
-
-                                    let hudIcon = '📍';
-                                    let hudInstruction = targetPoi.name;
-                                    let hudDistance = calcDistance(effectiveLocation, targetPoi);
-                                    let bearingTarget = targetPoi;
-                                    let hudSubline = searchMode === 'radius'
-                                        ? (language === 'nl' ? 'Beschikbare Spot' : 'Available Spot')
-                                        : `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
-
-                                    if (isNavigating && steps && steps.length > 0) {
-                                        let minD = Infinity;
-                                        let closestIdx = 0;
-                                        steps.forEach((s, i) => {
-                                            const d = calcDistance(effectiveLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
-                                            if (d < minD) {
-                                                minD = d;
-                                                closestIdx = i;
-                                            }
-                                        });
-
-                                        let targetIdx = closestIdx + 1;
-                                        if (targetIdx < steps.length) {
-                                            const distToTarget = calcDistance(effectiveLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
-                                            if (distToTarget < 0.025) {
-                                                targetIdx++;
-                                            }
-                                        }
-                                        targetIdx = Math.min(targetIdx, steps.length - 1);
-
-                                        const nextStep = steps[targetIdx];
-                                        hudIcon = getManeuverIcon(nextStep.maneuver.modifier, nextStep.maneuver.type);
-                                        hudInstruction = translateHUDInstruction(nextStep, language);
-                                        hudDistance = calcDistance(effectiveLocation, { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] });
-                                        bearingTarget = { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] };
-                                        hudSubline = (targetIdx === steps.length - 1 && hudDistance < 0.02)
-                                            ? (language === 'nl' ? 'Bestemming bereikt' : 'Arrived')
-                                            : (nextStep.name || targetPoi.name);
-                                    }
-
-                                    return (
-                                        <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-[1000] backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl transition-all duration-300 bg-slate-900/95 w-[90%] max-w-[320px] opacity-100 animate-in slide-in-from-top ${isPopupOpen ? 'opacity-40 scale-95' : 'opacity-100'}`}>
-                                            <div className="flex items-center p-3 gap-3">
-                                                {/* Left: Instructions & Stats */}
-                                                <div className="flex-1 flex flex-col justify-center min-w-0">
-                                                    <div className="flex items-center gap-2 mb-0.5">
-                                                        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold leading-none truncate">
-                                                            {hudSubline}
-                                                        </span>
-                                                    </div>
-
-                                                    <div className="text-sm font-bold text-white leading-tight mb-2 break-words max-h-[3.5em] overflow-hidden">
-                                                        {isNavigating ? hudInstruction : (language === 'nl' ? 'Kies een bestemming' : 'Select a destination')}
-                                                    </div>
-
-                                                    {isNavigating && progressStats && progressStats.trip && (
-                                                        <div className="mt-2 pt-2 border-t border-white/10 w-full flex flex-col gap-1 text-[10px] font-mono">
-                                                            {/* Header Row */}
-                                                            <div className="grid grid-cols-4 gap-2 px-1 mb-0.5 opacity-50 text-[9px] uppercase tracking-wider text-center">
-                                                                <div className="text-left bg-transparent"></div> {/* Label Col */}
-                                                                <div>{language === 'nl' ? 'Gedaan' : 'Done'}</div>
-                                                                <div>{language === 'nl' ? 'Nog' : 'Left'}</div>
-                                                                <div>{language === 'nl' ? 'Totaal' : 'Total'}</div>
-                                                            </div>
-
-                                                            {/* LEG Row */}
-                                                            <div className="grid grid-cols-4 gap-2 px-1 items-center">
-                                                                <div className="text-[9px] font-bold uppercase tracking-wider text-blue-400 text-left">Leg</div>
-                                                                <div className="text-white font-bold text-center">{progressStats.leg.done}</div>
-                                                                <div className="text-slate-300 text-center">{progressStats.leg.left}</div>
-                                                                <div className="text-slate-400 text-center">{progressStats.leg.total}</div>
-                                                            </div>
-
-                                                            {/* TRIP Row */}
-                                                            <div className="grid grid-cols-4 gap-2 px-1 items-center">
-                                                                <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 text-left">Trip</div>
-                                                                <div className="text-white font-bold text-center">{navPhase === 'PRE_ROUTE' ? "0.0" : progressStats.trip.done}</div>
-                                                                <div className="text-slate-300 text-center">
-                                                                    {navPhase === 'PRE_ROUTE'
-                                                                        ? (progressStats.trip.total || "0.0")
-                                                                        : progressStats.trip.left}
-                                                                </div>
-                                                                <div className="text-slate-400 text-center">{progressStats.trip.total}</div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Right: Icons Cluster */}
-                                                <div className="flex flex-col gap-2 shrink-0 items-end">
-                                                    {/* Compass */}
-                                                    <div className="bg-white/5 rounded-xl p-1.5 flex items-center justify-center w-10 h-10 border border-white/5">
-                                                        <div style={{ transform: `rotate(${calcBearing(effectiveLocation, bearingTarget) - (effectiveLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
-                                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500 drop-shadow-md">
-                                                                <polygon points="12 2 22 22 12 18 2 22 12 2" />
-                                                            </svg>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex gap-2">
-                                                        {/* Start/Stop Navigation Button */}
-                                                        <button
-                                                            onClick={() => {
-                                                                setUserHasInteracted(true);
-                                                                setIsNavigating(!isNavigating);
-                                                                if (!isNavigating) {
-                                                                    setViewAction('USER');
-                                                                }
-                                                            }}
-                                                            className={`rounded-xl p-1.5 flex items-center justify-center w-10 h-10 border transition-all hover:scale-105 active:scale-95 ${isNavigating ? 'bg-red-500/20 text-red-500 border-red-500/30' : 'bg-green-500/20 text-green-500 border-green-500/30'}`}
-                                                            title={language === 'nl' ? (isNavigating ? 'Stop Navigatie' : 'Start Navigatie') : (isNavigating ? 'Stop Navigation' : 'Start Navigation')}
-                                                        >
-                                                            {isNavigating ? (
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                                                            ) : (
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                                                            )}
-                                                        </button>
-
-                                                        {/* Distance */}
-                                                        <div className="bg-white/5 rounded-xl p-1.5 flex flex-col items-center justify-center w-10 h-10 border border-white/5 leading-none">
-                                                            {(() => {
-                                                                const distKm = hudDistance;
-                                                                let displayVal, unit;
-                                                                if (distKm < 1) {
-                                                                    displayVal = Math.round(distKm * 1000);
-                                                                    unit = "m";
-                                                                } else {
-                                                                    displayVal = distKm.toFixed(1);
-                                                                    unit = "km";
-                                                                }
-                                                                return (
-                                                                    <>
-                                                                        <span className="text-xs font-black text-white tracking-tighter">{displayVal}</span>
-                                                                        <span className="text-[8px] text-slate-400 uppercase font-bold mt-0.5">{unit}</span>
-                                                                    </>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })()
-                            }
-
-                            {/* Map Controls (Simulation) */}
-                            {
-                                !isInputMode && isSimulationEnabled && (
-                                    <div className={`absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] flex flex-row items-center gap-3 bg-slate-900/60 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
-                                        {/* Speed Toggle (Only when simulating) */}
-                                        {navigationPath && isSimulating && (
-                                            <button
-                                                onClick={() => {
-                                                    const nextSpeed = simulationSpeed === 1 ? 2 : (simulationSpeed === 2 ? 5 : 1);
-                                                    setSimulationSpeed(nextSpeed);
-                                                }}
-                                                className="p-3 rounded-xl border border-white/10 shadow-lg bg-slate-800/90 text-slate-200 hover:bg-slate-700 transition-all font-bold text-sm min-w-[48px]"
-                                                title="Simulation Speed"
-                                            >
-                                                {simulationSpeed}x
-                                            </button>
-                                        )}
-
-                                        {/* Test Button - Always Show if Path Exists */}
-                                        {navigationPath && (
-                                            <button
-                                                onClick={() => {
-                                                    if (!isSimulating) {
-                                                        playProximitySound(); // Init context on start
-                                                        setIsNavigating(true); // Ensure fetcher is active
-                                                    }
-                                                    setIsSimulating(!isSimulating);
-                                                }}
-                                                className={`p-3 rounded-xl border border-white/10 shadow-lg transition-all ${isSimulating ? 'bg-green-600 text-white animate-pulse' : 'bg-slate-800/90 text-slate-200'}`}
-                                                title={isSimulating ? "Pause Simulation" : "Start Simulation"}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
-                                            </button>
-                                        )}
-                                    </div>
-                                )
-                            }
-
-                            {/* Bottom Right: View Controls with Zoom */}
-                            {
-                                !isInputMode && (
-                                    <>
-                                        {/* Zoom Controls */}
-                                        <ZoomControls
-                                            language={language}
-                                            isPopupOpen={isPopupOpen}
-                                            setUserHasInteracted={setUserHasInteracted}
-                                        />
-
-                                        {/* Other View Controls */}
-                                        <div className={`absolute bottom-[140px] right-4 z-[1000] flex flex-col gap-2 transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
-                                            {/* Locate Me */}
-                                            <button
-                                                onClick={() => {
-                                                    setUserHasInteracted(true);
-                                                    setViewAction('USER');
-                                                }}
-                                                className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
-                                                title={language === 'nl' ? 'Mijn Locatie' : 'Locate Me'}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
-                                            </button>
-
-                                            {/* Fit Route */}
-                                            <button
-                                                onClick={() => {
-                                                    setUserHasInteracted(true);
-                                                    setViewAction('ROUTE');
-                                                }}
-                                                className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group"
-                                                title={language === 'nl' ? 'Toon Route' : 'Show Route'}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
-                                            </button>
-                                        </div>
-                                    </>
-                                )
-                            }
-
-                            {/* Loading Indicator */}
-                            {
-                                isLoading && !isAiViewActive && (
-                                    <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[1500] bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full border border-primary/30 shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-500 pointer-events-none">
-                                        <div className="relative w-8 h-8 rounded-full border border-primary overflow-hidden bg-white shadow-lg">
-                                            <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-125" />
-                                            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-400 border-2 border-slate-900 rounded-full animate-ping"></div>
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "gids denkt na..." : "guide is thinking...")}</span>
-                                            {loadingCount > 0 && <span className="text-[10px] text-primary font-medium animate-pulse">{loadingCount} {language === 'nl' ? 'spots gevonden' : 'spots found'}</span>}
-                                        </div>
-                                    </div>
-                                )
-                            }
 
                         </>
                     )}
                 </LMapContainer>
 
+                {/* --- TOP HUD & CONTROLS MOVED OUTSIDE MAP TO FIX CLICK PROPAGATION --- */}
+
+                {/* Top Navigation HUD - Instruction Only (Hide during Route Edit) */}
+                {
+                    pois.length > 0 && !isInputMode && !isRouteEditMode && (() => {
+                        const effectiveLocation = userLocation || (center ? { lat: center[0], lng: center[1] } : null);
+                        if (!effectiveLocation) return null;
+
+                        const targetPoi = focusedLocation || pois[0];
+                        const steps = routeData?.navigationSteps;
+
+                        // Progress Stats Calculation
+                        let progressStats = null;
+                        if (isNavigating && steps && steps.length > 0) {
+                            const totalDistKm = steps.reduce((acc, s) => acc + s.distance, 0) / 1000;
+                            let minD = Infinity;
+                            let closestIdx = 0;
+                            steps.forEach((s, i) => {
+                                // Re-use calcDistance available in scope
+                                const d = calcDistance(effectiveLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                                if (d < minD) { minD = d; closestIdx = i; }
+                            });
+                            const targetIdx = Math.min(closestIdx + 1, steps.length - 1);
+                            const distToTarget = calcDistance(effectiveLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                            let remainingStepsKm = 0;
+                            for (let i = targetIdx + 1; i < steps.length; i++) {
+                                remainingStepsKm += steps[i].distance / 1000;
+                            }
+                            const remainingKm = distToTarget + remainingStepsKm;
+                            const doneKm = Math.max(0, totalDistKm - remainingKm);
+
+                            // Total Trip Calculation
+                            const tripDone = (pastDistance || 0) + doneKm;
+                            const tripTotal = parseFloat(routeData?.stats?.totalDistance || 0);
+                            // Fallback to current leg if trip total is missing (e.g. single leg)
+                            const finalTotal = tripTotal > 0.1 ? tripTotal : totalDistKm;
+                            const finalLeft = Math.max(0, finalTotal - tripDone);
+
+                            // Dynamic PRE_ROUTE Leg Stats
+                            let legDone = doneKm.toFixed(1);
+                            let legLeft = remainingKm.toFixed(1);
+                            let legTotal = totalDistKm.toFixed(1);
+
+                            if (navPhase === 'PRE_ROUTE' && routeStart) {
+                                // Calc live distance to start
+                                const distToStart = calcDistance(effectiveLocation, { lat: routeStart[0], lng: routeStart[1] });
+                                // Use captured initial distance or fallback to current + some buffer
+                                const initialDist = initialStartDistRef.current || distToStart;
+                                const doneTowardsStart = Math.max(0, initialDist - distToStart);
+
+                                legLeft = distToStart.toFixed(1);
+                                legTotal = initialDist.toFixed(1);
+                                legDone = doneTowardsStart.toFixed(1);
+                            }
+
+                            progressStats = {
+                                leg: {
+                                    done: legDone,
+                                    left: legLeft,
+                                    total: legTotal
+                                },
+                                trip: {
+                                    done: tripDone.toFixed(1),
+                                    left: finalLeft.toFixed(1),
+                                    total: finalTotal.toFixed(1)
+                                }
+                            };
+                        }
+
+                        let hudIcon = '📍';
+                        let hudInstruction = targetPoi.name;
+                        let hudDistance = calcDistance(effectiveLocation, targetPoi);
+                        let bearingTarget = targetPoi;
+                        let hudSubline = searchMode === 'radius'
+                            ? (language === 'nl' ? 'Beschikbare Spot' : 'Available Spot')
+                            : `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
+
+                        if (isNavigating && steps && steps.length > 0) {
+                            let minD = Infinity;
+                            let closestIdx = 0;
+                            steps.forEach((s, i) => {
+                                const d = calcDistance(effectiveLocation, { lat: s.maneuver.location[1], lng: s.maneuver.location[0] });
+                                if (d < minD) {
+                                    minD = d;
+                                    closestIdx = i;
+                                }
+                            });
+
+                            let targetIdx = closestIdx + 1;
+                            if (targetIdx < steps.length) {
+                                const distToTarget = calcDistance(effectiveLocation, { lat: steps[targetIdx].maneuver.location[1], lng: steps[targetIdx].maneuver.location[0] });
+                                if (distToTarget < 0.025) {
+                                    targetIdx++;
+                                }
+                            }
+                            targetIdx = Math.min(targetIdx, steps.length - 1);
+
+                            const nextStep = steps[targetIdx];
+                            hudIcon = getManeuverIcon(nextStep.maneuver.modifier, nextStep.maneuver.type);
+                            hudInstruction = translateHUDInstruction(nextStep, language);
+                            hudDistance = calcDistance(effectiveLocation, { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] });
+                            bearingTarget = { lat: nextStep.maneuver.location[1], lng: nextStep.maneuver.location[0] };
+                            hudSubline = (targetIdx === steps.length - 1 && hudDistance < 0.02)
+                                ? (language === 'nl' ? 'Bestemming bereikt' : 'Arrived')
+                                : (nextStep.name || targetPoi.name);
+                        }
+
+                        return (
+                            <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-[1000] backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl transition-all duration-300 bg-slate-900/95 w-[90%] max-w-[320px] opacity-100 animate-in slide-in-from-top ${isPopupOpen ? 'opacity-40 scale-95' : 'opacity-100'}`}>
+                                <div className="flex items-center p-3 gap-3">
+                                    {/* Left: Instructions & Stats */}
+                                    <div className="flex-1 flex flex-col justify-center min-w-0">
+                                        <div className="flex items-center gap-2 mb-0.5">
+                                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold leading-none truncate">
+                                                {hudSubline}
+                                            </span>
+                                        </div>
+
+                                        <div className="text-sm font-bold text-white leading-tight mb-2 break-words max-h-[3.5em] overflow-hidden">
+                                            {isNavigating ? hudInstruction : (language === 'nl' ? 'Kies een bestemming' : 'Select a destination')}
+                                        </div>
+
+                                        {isNavigating && progressStats && progressStats.trip && (
+                                            <div className="mt-2 pt-2 border-t border-white/10 w-full flex flex-col gap-1 text-[10px] font-mono">
+                                                {/* Header Row */}
+                                                <div className="grid grid-cols-4 gap-2 px-1 mb-0.5 opacity-50 text-[9px] uppercase tracking-wider text-center">
+                                                    <div className="text-left bg-transparent"></div> {/* Label Col */}
+                                                    <div>{language === 'nl' ? 'Gedaan' : 'Done'}</div>
+                                                    <div>{language === 'nl' ? 'Nog' : 'Left'}</div>
+                                                    <div>{language === 'nl' ? 'Totaal' : 'Total'}</div>
+                                                </div>
+
+                                                {/* LEG Row */}
+                                                <div className="grid grid-cols-4 gap-2 px-1 items-center">
+                                                    <div className="text-[9px] font-bold uppercase tracking-wider text-blue-400 text-left">Leg</div>
+                                                    <div className="text-white font-bold text-center">{progressStats.leg.done}</div>
+                                                    <div className="text-slate-300 text-center">{progressStats.leg.left}</div>
+                                                    <div className="text-slate-400 text-center">{progressStats.leg.total}</div>
+                                                </div>
+
+                                                {/* TRIP Row */}
+                                                <div className="grid grid-cols-4 gap-2 px-1 items-center">
+                                                    <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 text-left">Trip</div>
+                                                    <div className="text-white font-bold text-center">{navPhase === 'PRE_ROUTE' ? "0.0" : progressStats.trip.done}</div>
+                                                    <div className="text-slate-300 text-center">
+                                                        {navPhase === 'PRE_ROUTE'
+                                                            ? (progressStats.trip.total || "0.0")
+                                                            : progressStats.trip.left}
+                                                    </div>
+                                                    <div className="text-slate-400 text-center">{progressStats.trip.total}</div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Right: Icons Cluster */}
+                                    <div className="flex flex-col gap-2 shrink-0 items-end">
+                                        {/* Compass */}
+                                        <div className="bg-white/5 rounded-xl p-1.5 flex items-center justify-center w-10 h-10 border border-white/5">
+                                            <div style={{ transform: `rotate(${calcBearing(effectiveLocation, bearingTarget) - (effectiveLocation.heading || 0)}deg)`, transition: 'transform 0.5s ease-out' }}>
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500 drop-shadow-md">
+                                                    <polygon points="12 2 22 22 12 18 2 22 12 2" />
+                                                </svg>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            {/* Start/Stop Navigation Button */}
+                                            <button
+                                                onClick={() => {
+                                                    setUserHasInteracted(true);
+                                                    setIsNavigating(!isNavigating);
+                                                    if (!isNavigating) {
+                                                        setViewAction('USER');
+                                                    }
+                                                }}
+                                                className={`rounded-xl p-1.5 flex items-center justify-center w-10 h-10 border transition-all hover:scale-105 active:scale-95 ${isNavigating ? 'bg-red-500/20 text-red-500 border-red-500/30' : 'bg-green-500/20 text-green-500 border-green-500/30'}`}
+                                                title={language === 'nl' ? (isNavigating ? 'Stop Navigatie' : 'Start Navigatie') : (isNavigating ? 'Stop Navigation' : 'Start Navigation')}
+                                            >
+                                                {isNavigating ? (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                                                ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                                )}
+                                            </button>
+
+                                            {/* Distance */}
+                                            <div className="bg-white/5 rounded-xl p-1.5 flex flex-col items-center justify-center w-10 h-10 border border-white/5 leading-none">
+                                                {(() => {
+                                                    const distKm = hudDistance;
+                                                    let displayVal, unit;
+                                                    if (distKm < 1) {
+                                                        displayVal = Math.round(distKm * 1000);
+                                                        unit = "m";
+                                                    } else {
+                                                        displayVal = distKm.toFixed(1);
+                                                        unit = "km";
+                                                    }
+                                                    return (
+                                                        <>
+                                                            <span className="text-xs font-black text-white tracking-tighter">{displayVal}</span>
+                                                            <span className="text-[8px] text-slate-400 uppercase font-bold mt-0.5">{unit}</span>
+                                                        </>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()
+                }
+
+                {/* Map Controls (Simulation) */}
+                {
+                    !isInputMode && isSimulationEnabled && (
+                        <div className={`absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] flex flex-row items-center gap-3 bg-slate-900/60 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl transition-opacity ${isPopupOpen ? 'opacity-20' : 'opacity-100'}`}>
+                            {/* Speed Toggle (Only when simulating) */}
+                            {navigationPath && isSimulating && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const nextSpeed = simulationSpeed === 1 ? 2 : (simulationSpeed === 2 ? 5 : 1);
+                                        setSimulationSpeed(nextSpeed);
+                                    }}
+                                    className="p-3 rounded-xl border border-white/10 shadow-lg bg-slate-800/90 text-slate-200 hover:bg-slate-700 transition-all font-bold text-sm min-w-[48px]"
+                                    title="Simulation Speed"
+                                >
+                                    {simulationSpeed}x
+                                </button>
+                            )}
+
+                            {/* Test Button - Always Show if Path Exists */}
+                            {navigationPath && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!isSimulating) {
+                                            playProximitySound(); // Init context on start
+                                            setIsNavigating(true); // Ensure fetcher is active
+                                        }
+                                        setIsSimulating(!isSimulating);
+                                    }}
+                                    className={`p-3 rounded-xl border border-white/10 shadow-lg transition-all ${isSimulating ? 'bg-green-600 text-white animate-pulse' : 'bg-slate-800/90 text-slate-200'}`}
+                                    title={isSimulating ? "Pause Simulation" : "Start Simulation"}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
+                                </button>
+                            )}
+                        </div>
+                    )
+                }
+
+                {/* Bottom Right: View Controls with Zoom */}
+                {
+                    !isInputMode && (
+                        <>
+                            {/* Zoom Controls */}
+                            <ZoomControls
+                                language={language}
+                                isPopupOpen={isPopupOpen}
+                                setUserHasInteracted={setUserHasInteracted}
+                                map={mapInstance}
+                                isRouteEditMode={isRouteEditMode}
+                            />
+
+                            {/* Other View Controls */}
+                            <div
+                                onClick={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onMouseUp={(e) => e.stopPropagation()}
+                                onTouchStart={(e) => e.stopPropagation()}
+                                className={`absolute right-4 z-[1000] flex flex-col gap-2 transition-all duration-300 ${isPopupOpen ? 'opacity-20' : 'opacity-100'} ${isRouteEditMode ? 'bottom-[320px]' : 'bottom-[140px]'}`}
+                            >
+                                {/* AR Button */}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setUserHasInteracted(true);
+                                        if (onOpenArMode) onOpenArMode();
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group pointer-events-auto"
+                                    title={language === 'nl' ? 'AR Modus' : 'AR Mode'}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h20" /><path d="M12 2v20" /><path d="M4.93 4.93l14.14 14.14" /><path d="M4.93 19.07L19.07 4.93" /></svg>
+                                </button>
+
+                                {/* Locate Me */}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setUserHasInteracted(true);
+                                        setViewAction('USER');
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group pointer-events-auto"
+                                    title={language === 'nl' ? 'Mijn Locatie' : 'Locate Me'}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></svg>
+                                </button>
+
+                                {/* Fit Route */}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setUserHasInteracted(true);
+                                        setViewAction('ROUTE');
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    className="bg-black/20 hover:bg-black/60 backdrop-blur-sm rounded-full p-2.5 border border-white/5 shadow-sm text-white/70 hover:text-white transition-all group pointer-events-auto"
+                                    title={language === 'nl' ? 'Toon Route' : 'Show Route'}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+                                </button>
+                            </div>
+                        </>
+                    )
+                }
+
+                {/* Loading Indicator */}
+                {
+                    isLoading && !isAiViewActive && (
+                        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[1500] bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full border border-primary/30 shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-500 pointer-events-none">
+                            <div className="relative w-8 h-8 rounded-full border border-primary overflow-hidden bg-white shadow-lg">
+                                <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-125" />
+                                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-400 border-2 border-slate-900 rounded-full animate-ping"></div>
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold text-white tracking-wide uppercase">{loadingText || (language === 'nl' ? "gids denkt na..." : "guide is thinking...")}</span>
+                                {loadingCount > 0 && <span className="text-[10px] text-primary font-medium animate-pulse">{loadingCount} {language === 'nl' ? 'spots gevonden' : 'spots found'}</span>}
+                            </div>
+                        </div>
+                    )
+                }
             </div >
         </>
     );

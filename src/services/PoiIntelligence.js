@@ -577,6 +577,65 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
     // --- Signal Fetchers ---
 
+    /**
+     * STAGE 3: Image Analysis (Camera Scan)
+     */
+    async analyzeImage(base64Image, userLocation = null) {
+        const prompt = `
+            You are an expert city guide and architectural historian.
+            Identify the building, landmark, statue, or object in this image.
+            
+            Context: The user is in ${this.config?.city || 'a city'} ${userLocation ? `at coordinates ${userLocation.lat}, ${userLocation.lng}` : ''}.
+            
+            If you invoke a specific landmark name, provide a JSON response with:
+            {
+                "name": "Name of the landmark",
+                "short_description": "A 2-sentence summary of what it is.",
+                "fun_fact": "One interesting fact about it.",
+                "confidence": "high|medium|low"
+            }
+
+            If you cannot identify it with confidence, or if it's just a generic street/object, return:
+            {
+                "name": "Unknown",
+                "short_description": "I couldn't quite identify this. Try getting closer or a different angle.",
+                "confidence": "low"
+            }
+
+            Output ONLY valid JSON.
+        `;
+
+        try {
+            const url = '/api/gemini';
+            const response = await apiFetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt,
+                    image: base64Image.split(',')[1], // Send only base64 data, remove header
+                    mimeType: 'image/jpeg'
+                })
+            });
+
+            if (!response.ok) {
+                console.warn(`[AI] Image analysis failed: ${response.status}`);
+                return null;
+            }
+            const data = await response.json();
+            const cleanText = data.text.replace(/```json/g, '').replace(/```/g, '').trim();
+            const result = JSON.parse(cleanText);
+
+            return {
+                ...result,
+                image: base64Image // Pass back the image so we can show it in the UI
+            };
+
+        } catch (e) {
+            console.error("Image Analysis Failed:", e);
+            return null;
+        }
+    }
+
     async fetchGooglePlaceDetails(placeId) {
         try {
             if (!this.config.googleKey) return null;
