@@ -1959,6 +1959,19 @@ const ItinerarySidebar = ({
                                         {[
                                             {
                                                 date: "07 Feb 2026",
+                                                version: "v2.0.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "AR Modus", desc: "Richt je camera op gebouwen om ze direct te identificeren." },
+                                                    { title: "Camera Scan", desc: "Nieuwe AI-analyse voor monumenten en bezienswaardigheden." },
+                                                    { title: "Kaart Interface", desc: "Verbeterde knoppenindeling voor een rustiger beeld." }
+                                                ] : [
+                                                    { title: "AR Mode", desc: "Point your camera at buildings to identify them instantly." },
+                                                    { title: "Camera Scan", desc: "New AI analysis for monuments and landmarks." },
+                                                    { title: "Map Interface", desc: "Improved button layout for a cleaner view." }
+                                                ]
+                                            },
+                                            {
+                                                date: "07 Feb 2026",
                                                 version: "v1.10.0",
                                                 items: language === 'nl' ? [
                                                     { title: "Gesproken Navigatie", desc: "Ontvang nu gesproken turn-by-turn aanwijzingen tijdens je route." },
@@ -2501,7 +2514,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v1.10.0</span>
+                                            <span className="text-slate-300 text-sm font-medium">v2.0.0</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
