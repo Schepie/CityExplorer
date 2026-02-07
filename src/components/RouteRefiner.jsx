@@ -874,13 +874,13 @@ const RouteRefiner = ({
                         </div>
                     </div>
 
-                    {/* Footer */}
-                    <div className="p-6 bg-slate-950/80 border-t border-white/5">
+                    {/* Footer - Matches ItinerarySidebar Design */}
+                    <div className="px-3 py-2 border-t border-white/10 bg-slate-900/50 backdrop-blur-md">
                         <button
                             onClick={onClose}
-                            className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-widest"
+                            className="w-full h-8 text-[9px] uppercase tracking-wider font-bold rounded-lg bg-slate-800/40 border border-white/5 text-slate-500 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
                             {text.back}
                         </button>
                     </div>
