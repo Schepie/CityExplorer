@@ -1290,8 +1290,11 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
                                 onClick={() => setIsAiViewActive(true)}
                                 className="w-full py-2 px-3 rounded-xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider group"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                                {language === 'nl' ? 'Vraag de gids' : 'Ask the guide'}
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                </svg>
+                                {language === 'nl' ? 'ROUTE AANPASSEN' : 'ADJUST ROUTE'}
                             </button>
                         </div>
                     )}
@@ -1635,10 +1638,11 @@ const ItinerarySidebar = ({
                                                 setShowSettings(false);
                                             }}
                                             className="p-2 rounded-full transition-all mt-1 text-slate-400 hover:text-white hover:bg-white/5"
-                                            title={language === 'nl' ? 'Vraag de gids' : 'Ask the guide'}
+                                            title={language === 'nl' ? 'Route Opties' : 'Route Options'}
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                                             </svg>
                                         </button>
                                     )}
@@ -1687,20 +1691,23 @@ const ItinerarySidebar = ({
                                 </div>
                             </div>
                         ) : (
-                            /* Guide Active Header - Icon, Title and Settings Button */
+                            /* Route Options Header - Icon, Title and Settings Button */
                             <div className="flex items-center justify-between w-full">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full border-2 border-primary overflow-hidden shrink-0 shadow-lg shadow-primary/20">
-                                        <img src="/guide-icon-round.jpg" alt="Guide" className="w-full h-full object-cover scale-[1.6]" />
+                                    <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 shadow-lg shadow-primary/10">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                        </svg>
                                     </div>
                                     <div>
                                         <h2 className="text-lg font-bold text-white leading-tight">
-                                            {language === 'nl' ? "Je Persoonlijke Gids" : "Your Personal Guide"}
+                                            {language === 'nl' ? "Route Opties" : "Route Options"}
                                         </h2>
                                         <p className="text-[10px] text-slate-400 font-medium leading-tight max-w-[200px]">
                                             {language === 'nl'
-                                                ? "pas je route aan"
-                                                : "adjust your route"}
+                                                ? "Pas je reis aan"
+                                                : "Adjust your trip"}
                                         </p>
                                     </div>
                                 </div>
@@ -1720,7 +1727,14 @@ const ItinerarySidebar = ({
                                     </button>
 
                                     <button
-                                        onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
+                                        onClick={() => {
+                                            if (isAiViewActive) {
+                                                setIsAiViewActive(false);
+                                            } else {
+                                                setIsOpen(false);
+                                                onStopSpeech?.();
+                                            }
+                                        }}
                                         className="p-2 rounded-full transition-all text-slate-400 hover:text-white hover:bg-white/5 md:hidden"
                                         title={language === 'nl' ? 'Inklappen' : 'Collapse'}
                                     >
@@ -1730,7 +1744,14 @@ const ItinerarySidebar = ({
                                     </button>
 
                                     <button
-                                        onClick={() => { setIsOpen(false); onStopSpeech?.(); }}
+                                        onClick={() => {
+                                            if (isAiViewActive) {
+                                                setIsAiViewActive(false);
+                                            } else {
+                                                setIsOpen(false);
+                                                onStopSpeech?.();
+                                            }
+                                        }}
                                         className="p-2 rounded-full transition-all text-slate-400 hover:text-white hover:bg-white/5 hidden md:block"
                                         title={language === 'nl' ? 'Inklappen' : 'Collapse'}
                                     >
@@ -2580,13 +2601,15 @@ const ItinerarySidebar = ({
                                                                                 e.stopPropagation();
                                                                                 setSearchMode('prompt');
                                                                                 setIsAiViewActive(true);
-                                                                                setExpandedPoi(null);
                                                                             }}
                                                                             className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-black tracking-wider transition-all border border-primary/20 shadow-sm active:scale-95"
-                                                                            title={language === 'nl' ? "Vraag de gids" : "Ask the guide"}
+                                                                            title={language === 'nl' ? "Pas route aan" : "Adjust Route"}
                                                                         >
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                                                                            {language === 'nl' ? 'GIDS' : 'GUIDE'}
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                                                            </svg>
+                                                                            {language === 'nl' ? 'WIJZIG' : 'EDIT'}
                                                                         </button>
                                                                     </div>
 

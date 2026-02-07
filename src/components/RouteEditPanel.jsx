@@ -194,7 +194,7 @@ const RouteEditPanel = ({
                             <div>
                                 <p className="text-[8px] uppercase tracking-widest text-slate-500 font-bold leading-none mb-0.5">{text.totalDistance}</p>
                                 <p className="text-xs font-black text-white leading-none">
-                                    {isCalculating ? '...' : `${totalDistance.toFixed(1)} km`}
+                                    {isCalculating ? '...' : `${Number(totalDistance).toFixed(1)} km`}
                                 </p>
                             </div>
                             <div className="h-5 w-px bg-white/10" />

@@ -3515,8 +3515,7 @@ function CityExplorerApp() {
   /**
    * Enter Map Pick Mode
    */
-  const handleStartMapPick = async (cityQuery) => {
-    console.log("Initializing Map Pick Mode - Triggering Full Reset");
+  const handleStartMapPick = async (cityQuery, keepExisting = false) => {
     setIsMapPickMode(true);
     setIsSidebarOpen(false);
 
@@ -3525,6 +3524,51 @@ function CityExplorerApp() {
     setRouteEditPoints([]);
     setSelectedEditPointIndex(-1);
     setCumulativeDistances([]);
+
+    if (keepExisting && routeData) {
+      console.log("Initializing Map Pick Mode - Keeping Existing Route");
+
+      // Construct points list from current route
+      const points = [];
+
+      // 1. Start Point
+      if (routeData.startPoi) {
+        points.push(routeData.startPoi);
+      } else {
+        // Create a point from center
+        points.push({
+          id: 'start-anchor',
+          name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
+          lat: routeData.center[0],
+          lng: routeData.center[1],
+          type: 'custom'
+        });
+      }
+
+      // 2. Waypoints
+      if (routeData.pois) {
+        points.push(...routeData.pois);
+      }
+
+      setRouteEditPoints(points);
+
+      // 3. Cumulative Distances
+      if (routeData.legs) {
+        let total = 0;
+        const dists = [0];
+        routeData.legs.forEach(leg => {
+          total += ((leg.distance || 0) / 1000);
+          dists.push(total);
+        });
+        setCumulativeDistances(dists);
+      } else {
+        setCumulativeDistances(points.map(() => 0));
+      }
+
+      return; // SKIP RESET
+    }
+
+    console.log("Initializing Map Pick Mode - Triggering Full Reset");
 
     // COMPLETE RESET: Create fresh routeData object without any previous state
     // This ensures no old POIs or routes are visible

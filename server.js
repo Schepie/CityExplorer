@@ -268,12 +268,30 @@ app.post('/api/gemini', authMiddleware, async (req, res) => {
             return res.status(500).json({ error: 'GEMINI_KEY not configured on server' });
         }
 
-        const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        // Use direct fetch to ensure Referer header is sent correctly to satisfy API key restrictions
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Referer': 'http://localhost:5173/',
+                'Origin': 'http://localhost:5173'
+            },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }]
+            })
+        });
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[Proxy] Gemini API Error ${response.status}: ${errorText}`);
+            return res.status(response.status).json({ error: errorText });
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        console.log(`[Proxy] Gemini Success`);
+        res.json({ text });
 
         console.log(`[Proxy] Gemini Success`);
         res.json({ text });

@@ -834,7 +834,7 @@ const RouteRefiner = ({
 
                                 {/* Map Pick */}
                                 <button
-                                    onClick={() => onStartMapPick && onStartMapPick()}
+                                    onClick={() => onStartMapPick && onStartMapPick(null, true)}
                                     className="w-full p-4 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 hover:bg-teal-500/20 transition-all flex items-center gap-3 text-left group"
                                 >
                                     <div className="p-2 bg-teal-500/20 rounded-lg group-hover:scale-110 transition-transform">
