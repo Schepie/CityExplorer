@@ -57,6 +57,7 @@ const ArView = ({ onScan, onClose, language = 'en' }) => {
 
         // Get Base64
         const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+        console.log(`[ArView] Captured frame. Length: ${base64Image.length}`);
 
         // Send to parent
         onScan(base64Image);

@@ -261,7 +261,8 @@ app.post('/api/build-booklet', authMiddleware, async (req, res) => {
 app.post('/api/gemini', authMiddleware, async (req, res) => {
     try {
         const { prompt, image, mimeType } = req.body;
-        console.log(`[Proxy] Gemini Request received. Image present: ${!!image}`);
+        console.log(`[Proxy] Gemini Request received. Prompt: ${prompt ? 'Yes' : 'No'}, Image present: ${!!image}, MimeType: ${mimeType}`);
+        if (image) console.log(`[Proxy] Image length: ${image.length} chars (approx ${Math.round(image.length * 0.75 / 1024)} KB)`);
         if (!prompt && !image) return res.status(400).json({ error: 'Prompt or Image is required' });
         if (!GEMINI_KEY) {
             console.error("[Proxy] GEMINI_KEY missing");
@@ -280,7 +281,7 @@ app.post('/api/gemini', authMiddleware, async (req, res) => {
         }
 
         // Use direct fetch to ensure Referer header is sent correctly to satisfy API key restrictions
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -299,12 +300,13 @@ app.post('/api/gemini', authMiddleware, async (req, res) => {
         }
 
         const data = await response.json();
+
+        // Log raw response for debugging AR
+        console.log(`[Proxy] Gemini Raw Response:`, JSON.stringify(data).substring(0, 500));
+
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-        console.log(`[Proxy] Gemini Success`);
-        res.json({ text });
-
-        console.log(`[Proxy] Gemini Success`);
+        console.log(`[Proxy] Gemini Success. Text length: ${text ? text.length : 0}`);
         res.json({ text });
     } catch (error) {
         console.error("Gemini Proxy Error:", error);

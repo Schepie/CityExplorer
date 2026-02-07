@@ -581,6 +581,11 @@ Je MOET antwoorden met een JSON object in dit formaat:
      * STAGE 3: Image Analysis (Camera Scan)
      */
     async analyzeImage(base64Image, userLocation = null) {
+        console.log(`[PoiIntelligence] analyzeImage called. Image length: ${base64Image?.length}`);
+        if (!base64Image) {
+            console.error("[PoiIntelligence] No image data received");
+            return null;
+        }
         const prompt = `
             You are an expert city guide and architectural historian.
             Identify the building, landmark, statue, or object in this image.
@@ -622,13 +627,33 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 return null;
             }
             const data = await response.json();
-            const cleanText = data.text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const result = JSON.parse(cleanText);
+            console.log("[PoiIntelligence] Raw API Response:", data);
 
-            return {
-                ...result,
-                image: base64Image // Pass back the image so we can show it in the UI
-            };
+            if (!data.text) {
+                console.error("[PoiIntelligence] No text field in response");
+                return null;
+            }
+
+            try {
+                // Find the JSON block boundaries
+                const startIndex = data.text.indexOf('{');
+                const endIndex = data.text.lastIndexOf('}');
+
+                if (startIndex === -1 || endIndex === -1) {
+                    throw new Error("No JSON object found in response text");
+                }
+
+                const jsonString = data.text.substring(startIndex, endIndex + 1);
+                const result = JSON.parse(jsonString);
+
+                return {
+                    ...result,
+                    image: base64Image // Pass back the image so we can show it in the UI
+                };
+            } catch (parseError) {
+                console.error("[PoiIntelligence] JSON Parse Error:", parseError, "Raw Text:", data.text);
+                return null;
+            }
 
         } catch (e) {
             console.error("Image Analysis Failed:", e);
