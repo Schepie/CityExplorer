@@ -190,7 +190,7 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
                                         </p>
                                         <div className="flex items-center gap-4 mt-1">
                                             {!step.isFallback && (
-                                                <span className="text-xs text-slate-500 font-bold bg-black/20 px-1.5 py-0.5 rounded">
+                                                <span className="text-xs text-white font-black bg-black/20 px-1.5 py-0.5 rounded">
                                                     {step.distance < 1000 ? `${Math.round(step.distance)}m` : `${(step.distance / 1000).toFixed(1)}km`}
                                                 </span>
                                             )}

@@ -61,9 +61,9 @@ const DistanceRefineConfirmation = ({
                 <div className="p-8 space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                         <div className="p-4 rounded-3xl bg-white/5 border border-white/5">
-                            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-2">{text.currentTitle}</div>
+                            <div className="text-[10px] uppercase tracking-widest text-white font-black mb-2">{text.currentTitle}</div>
                             <div className="flex flex-col gap-1">
-                                <div className="text-lg font-black text-white">{currentPoisCount} <span className="text-xs text-slate-500 font-bold">{text.stops}</span></div>
+                                <div className="text-lg font-black text-white">{currentPoisCount} <span className="text-xs text-white font-black">{text.stops}</span></div>
                                 <div className="text-sm font-bold text-slate-400">{currentStats?.totalDistance} <span className="text-[10px] uppercase">km</span></div>
                             </div>
                         </div>

@@ -192,14 +192,14 @@ const RouteEditPanel = ({
                         {/* Left: Stats */}
                         <div className="flex items-center gap-2 shrink-0">
                             <div>
-                                <p className="text-[8px] uppercase tracking-widest text-slate-500 font-bold leading-none mb-0.5">{text.totalDistance}</p>
+                                <p className="text-[8px] uppercase tracking-widest text-white font-black leading-none mb-0.5">{text.totalDistance}</p>
                                 <p className="text-xs font-black text-white leading-none">
                                     {isCalculating ? '...' : `${Number(totalDistance).toFixed(1)} km`}
                                 </p>
                             </div>
                             <div className="h-5 w-px bg-white/10" />
                             <div>
-                                <p className="text-[8px] uppercase tracking-widest text-slate-500 font-bold leading-none mb-0.5">{text.estimatedTime}</p>
+                                <p className="text-[8px] uppercase tracking-widest text-white font-black leading-none mb-0.5">{text.estimatedTime}</p>
                                 <p className="text-xs font-black text-primary leading-none">
                                     {isCalculating ? '...' : timeDisplay}
                                 </p>

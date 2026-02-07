@@ -213,7 +213,7 @@ const PoiDetailContent = ({
             {/* 4. Full Description (Level 3) */}
             {info?.full_description && !isUnknown(info.full_description) && (
                 <div className="space-y-4">
-                    <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2 flex items-center">
+                    <h4 className="text-[10px] uppercase tracking-widest text-white font-black mb-2 flex items-center">
                         {language === 'nl' ? 'OVER DEZE PLEK' : 'ABOUT THIS PLACE'}
                         <ConfidenceBadge confidence={info.full_description_confidence} />
                     </h4>

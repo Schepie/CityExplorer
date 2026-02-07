@@ -299,7 +299,7 @@ const SidebarInput = ({
                     <div className="space-y-4">
                         {/* 1. City Selection */}
                         <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                            <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                 {language === 'nl' ? 'Welke stad?' : 'Which city?'}
                             </label>
                             <div className="relative group">
@@ -328,7 +328,7 @@ const SidebarInput = ({
                         {/* 2. Location & Type */}
                         {/* 2. Start Location */}
                         <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                            <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                 {language === 'nl' ? 'Vertrekpunt (optioneel)' : 'Start Point (optional)'}
                             </label>
                             <div className="relative group">
@@ -347,7 +347,7 @@ const SidebarInput = ({
 
                         {/* 3. Interests Selection */}
                         <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                            <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                 {language === 'nl' ? 'Wat zijn je interesses? (optioneel)' : 'What are your interests? (optional)'}
                             </label>
                             <div className="relative group">
@@ -368,7 +368,7 @@ const SidebarInput = ({
                         {/* 3. Travel Mode */}
                         <div className="grid grid-cols-1 gap-3">
                             <div className="space-y-2">
-                                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                     {language === 'nl' ? 'Tripwijze' : 'Travel Mode'}
                                 </label>
                                 <div className="flex bg-[var(--input-bg)] p-1 rounded-xl border border-[var(--panel-border)]">
@@ -393,7 +393,7 @@ const SidebarInput = ({
                             {/* Unified Distance/Time Slider for Roundtrip */}
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between px-1">
-                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                                    <label className="text-[10px] uppercase tracking-widest text-white font-black">
                                         {language === 'nl' ? 'Bereik' : 'Range'}
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -466,7 +466,7 @@ const SidebarInput = ({
 
                     <div className="space-y-4">
                         <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                            <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                 {language === 'nl' ? 'Welke stad?' : 'Which city?'}
                             </label>
                             <div className="relative group">
@@ -501,7 +501,7 @@ const SidebarInput = ({
                         {/* Travel Mode Selector */}
                         <div className="grid grid-cols-1 gap-3">
                             <div className="space-y-2">
-                                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                     {language === 'nl' ? 'Tripwijze' : 'Travel Mode'}
                                 </label>
                                 <div className="flex bg-[var(--input-bg)] p-1 rounded-xl border border-[var(--panel-border)]">
@@ -881,6 +881,7 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
     const [userPos, setUserPos] = useState(null);
     const [currentTime, setCurrentTime] = useState('');
     const [showDurationInfo, setShowDurationInfo] = useState(false);
+    const [activeView, setActiveView] = useState('main'); // 'main' or 'weather'
 
     const highlightedWordRef = useRef(null);
     const [isEditingStart, setIsEditingStart] = useState(false);
@@ -913,12 +914,16 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
 
         // Reset description to null to show loading state and prevent stale text
         setDescription(null);
+        setActiveView('main'); // Reset view on city change
 
-        // 1. Weather
-        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${center[0]}&longitude=${center[1]}&current_weather=true`)
+        // 1. Weather (Expanded to include daily and hourly forecast)
+        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${center[0]}&longitude=${center[1]}&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&hourly=temperature_2m,weather_code,weathercode&timezone=auto&forecast_days=7`)
             .then(r => r.json())
-            .then(data => setWeather(data.current_weather))
-            .catch(e => console.warn("Weather fetch failed", e));
+            .then(data => {
+                console.log("Weather Data:", data);
+                setWeather(data);
+            })
+            .catch(e => console.warn("Weather Failed:", e));
 
         // 2. City Description via Intelligence Engine
         const actualDist = stats?.totalDistance ? `${stats.totalDistance} km` : `${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}`;
@@ -1042,22 +1047,28 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
             style={{
                 borderColor: isExpanded ? hexToRgba(primaryColor, 0.5) : 'rgba(255,255,255,0.05)'
             }}
-            className={`group relative bg-slate-800/40 hover:bg-slate-800/80 p-4 rounded-xl border transition-all cursor-pointer`}
+            className={`group relative bg-slate-800/40 hover:bg-slate-800/80 p-3 rounded-xl border transition-all cursor-pointer`}
         >
             <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline gap-2">
-                        <h3 className={`font-bold text-base leading-tight truncate transition-colors ${isExpanded ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>{city}</h3>
+                        <h3 className={`font-bold text-base leading-tight truncate transition-colors ${isExpanded ? 'text-white' : 'text-slate-200 group-hover:text-white'}`}>
+                            {city || (language === 'nl' ? 'Leuven' : 'My city trip')}
+                        </h3>
                         <div
-                            className="flex items-center gap-2 text-[10px] font-medium whitespace-nowrap text-white"
+                            className="flex items-center gap-2 text-[10px] font-medium whitespace-nowrap text-white cursor-pointer hover:bg-white/10 px-1.5 py-0.5 rounded-lg transition-colors border border-transparent hover:border-white/10"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (weather) setActiveView('weather');
+                            }}
+                            title={language === 'nl' ? 'Bekijk weersverwachting' : 'View weather forecast'}
                         >
-                            <span>{weather ? `${getWeatherIcon(weather.weathercode)} ${weather.temperature}°C` : ''}</span>
+                            <span>{weather ? `${getWeatherIcon(weather.current_weather?.weathercode)} ${weather.current_weather?.temperature}°C` : ''}</span>
                         </div>
                     </div>
                     {!isExpanded && (
                         <p
-                            className="text-[10px] mt-0.5 truncate uppercase tracking-widest font-bold opacity-60 group-hover:opacity-100 transition-opacity"
-                            style={{ color: primaryColor }}
+                            className="text-[10px] mt-0.5 truncate uppercase tracking-widest font-black text-white/70 group-hover:text-white transition-opacity"
                         >
                             {language === 'nl' ? 'KLIK VOOR INFO' : 'CLICK FOR INFO'}
                         </p>
@@ -1066,244 +1077,357 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
 
                 </div>
 
-                {/* Audio Control */}
+                {/* Audio/Back Control */}
                 {isExpanded && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            const cityPoi = {
-                                id: `city-welcome-${city}`,
-                                name: city,
-                                description: description || (language === 'nl' ? `Welkom in ${city}` : `Welcome to ${city}`)
-                            };
-                            onSpeak(cityPoi);
-                        }}
-                        style={{
-                            backgroundColor: speakingId === `city-welcome-${city}` ? primaryColor : hexToRgba(primaryColor, 0.1),
-                            color: speakingId === `city-welcome-${city}` ? 'white' : primaryColor,
-                        }}
-                        className={`p-1.5 rounded-full transition-all shrink-0 ${speakingId === `city-welcome-${city}` ? 'shadow-lg' : 'hover:bg-opacity-20 hover:text-white'}`}
-                        title="Read Aloud"
-                    >
-                        {speakingId === `city-welcome-${city}` ? (
-                            isSpeechPaused ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                            )
-                        ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {activeView === 'weather' && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveView('main');
+                                }}
+                                className="p-1.5 rounded-full bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+                                title={language === 'nl' ? 'Terug' : 'Back'}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                                </svg>
+                            </button>
                         )}
-
-
-                    </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const cityPoi = {
+                                    id: `city-welcome-${city}`,
+                                    name: city,
+                                    description: description || (language === 'nl' ? `Welkom in ${city}` : `Welcome to ${city}`)
+                                };
+                                onSpeak(cityPoi);
+                            }}
+                            style={{
+                                backgroundColor: speakingId === `city-welcome-${city}` ? primaryColor : hexToRgba(primaryColor, 0.1),
+                                color: speakingId === `city-welcome-${city}` ? 'white' : primaryColor,
+                            }}
+                            className={`p-1.5 rounded-full transition-all ${speakingId === `city-welcome-${city}` ? 'shadow-lg' : 'hover:bg-opacity-20 hover:text-white'}`}
+                            title="Read Aloud"
+                        >
+                            {speakingId === `city-welcome-${city}` ? (
+                                isSpeechPaused ? (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                )
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                            )}
+                        </button>
+                    </div>
                 )}
-
-
-
-                <div
-                    className="shrink-0 transition-colors"
-                    style={{ color: hexToRgba(primaryColor, 0.5) }}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                </div>
             </div>
 
-            {/* Expandable "Guide" Content */}
+            {/* Expandable Content */}
             {isExpanded && (
-                <div className="mt-3 pt-3 space-y-3 animate-in slide-in-from-top-2 fade-in" style={{ borderTop: `1px solid ${hexToRgba(primaryColor, 0.1)}` }}>
-                    <div className="text-xs text-slate-300 leading-relaxed italic opacity-90 pl-3" style={{ borderLeft: `2px solid ${hexToRgba(primaryColor, 0.3)}` }}>
-                        {(() => {
-                            const displayDesc = description || (language === 'nl' ? "Informatie aan het laden..." : "Loading info...");
-                            const currentSpeakingId = `city-welcome-${city}`;
+                <div className="mt-4 animate-in slide-in-from-top-2 fade-in duration-200">
+                    {activeView === 'weather' ? (
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-black tracking-widest text-emerald-500 uppercase">
+                                    {language === 'nl' ? 'Weersverwachting' : 'Weather Forecast'}
+                                </h4>
+                                <span className="text-[10px] text-slate-400">7-Day</span>
+                            </div>
 
-                            if (speakingId === currentSpeakingId && spokenCharCount !== undefined) {
-                                const idx = spokenCharCount;
-                                let endIdx = displayDesc.indexOf(' ', idx);
-                                if (endIdx === -1) endIdx = displayDesc.length;
-
-                                if (idx >= 0 && idx < displayDesc.length) {
-                                    const before = displayDesc.slice(0, idx);
-                                    const current = displayDesc.slice(idx, endIdx);
-                                    const after = displayDesc.slice(endIdx);
+                            <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+                                {weather?.daily?.time?.map((date, idx) => {
+                                    const d = new Date(date);
+                                    const dayName = d.toLocaleDateString(language === 'nl' ? 'nl-NL' : 'en-US', { weekday: 'short' });
+                                    const isToday = idx === 0;
 
                                     return (
-                                        <>
-                                            <span className="text-white not-italic">{before}</span>
-                                            <span
-                                                ref={highlightedWordRef}
-                                                style={{
-                                                    backgroundColor: hexToRgba(primaryColor, 0.4),
-                                                    borderRadius: '2px'
-                                                }}
-                                                className="text-white not-italic"
-                                            >
-                                                {current}
-                                            </span>
-                                            <span className="opacity-50">{after}</span>
-                                        </>
-                                    );
-                                }
-                            }
-                            return displayDesc;
-                        })()}
-                    </div>
-
-                    {searchMode !== 'radius' && (
-                        <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 space-y-2">
-                            <div className="flex justify-between items-center text-[10px]">
-                                <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Totaal' : 'Total'}</span>
-                                <span className="text-slate-200 font-bold">
-                                    {(() => {
-                                        const rawDist = stats.walkDistance || stats.totalDistance || 0;
-                                        const dist = parseFloat(rawDist) || 0;
-                                        if (dist < 1) {
-                                            return `${Math.round(dist * 1000)} m`;
-                                        }
-                                        return `${dist.toFixed(2)} km`;
-                                    })()}
-                                </span>
-                            </div>
-                            {pois && pois.length > 0 && (
-                                <div>
-                                    <div className="flex justify-between items-center text-[10px]">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Naar 1e Stop' : 'To 1st Stop'}</span>
-                                            {onUpdateStartLocation && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); setIsEditingStart(!isEditingStart); }}
-                                                    className="text-slate-500 hover:text-white transition-colors"
-                                                    title={language === 'nl' ? "Startpunt wijzigen" : "Change Start Point"}
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
-                                                </button>
-                                            )}
-
-
+                                        <div
+                                            key={date}
+                                            onClick={(e) => {
+                                                if (isToday) {
+                                                    e.stopPropagation();
+                                                    setActiveView('hourly');
+                                                }
+                                            }}
+                                            className={`flex items-center justify-between pl-3 pr-5 py-3 border-b border-white/5 last:border-0 ${isToday ? 'bg-emerald-500/10 cursor-pointer hover:bg-emerald-500/20 transition-colors' : ''}`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex flex-col">
+                                                    <span className={`text-[10px] w-14 font-bold uppercase tracking-wider ${isToday ? 'text-emerald-500' : 'text-slate-300'}`}>
+                                                        {isToday ? (language === 'nl' ? 'Vandaag' : 'Today') : dayName}
+                                                    </span>
+                                                    {isToday && (
+                                                        <span className="text-[8px] text-emerald-500/60 font-black tracking-widest uppercase">
+                                                            {language === 'nl' ? 'BEKIJK UUR' : 'VIEW HOURLY'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <span className="text-xl leading-none">
+                                                    {getWeatherIcon(weather.daily.weathercode[idx])}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-baseline gap-1">
+                                                    <span className="text-xs font-black text-white">{Math.round(weather.daily.temperature_2m_max[idx])}°</span>
+                                                    <span className="text-[9px] font-bold text-slate-500">{Math.round(weather.daily.temperature_2m_min[idx])}°</span>
+                                                </div>
+                                            </div>
                                         </div>
+                                    );
+                                })}
+                            </div>
+
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveView('main');
+                                }}
+                                className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-black tracking-widest text-slate-400 hover:text-white transition-all uppercase border border-white/10"
+                            >
+                                {language === 'nl' ? 'TERUG NAAR OVERZICHT' : 'BACK TO SUMMARY'}
+                            </button>
+                        </div>
+                    ) : activeView === 'hourly' ? (
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-black tracking-widest text-emerald-500 uppercase">
+                                    {language === 'nl' ? 'Verwachting per uur' : 'Hourly Forecast'}
+                                </h4>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveView('weather');
+                                    }}
+                                    className="p-1 px-2 rounded-md bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-400 hover:text-white transition-all flex items-center gap-1"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
+                                    {language === 'nl' ? '7-DAGEN' : '7-DAY'}
+                                </button>
+                            </div>
+
+                            <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden max-h-[300px] overflow-y-auto custom-scrollbar">
+                                {(!weather?.hourly?.time || weather.hourly.time.length === 0) ? (
+                                    <div className="p-8 text-center text-slate-500 text-[10px] font-bold">
+                                        {language === 'nl' ? 'GEEN GEGEVENS BESCHIKBAAR' : 'NO DATA AVAILABLE'}
+                                    </div>
+                                ) : (
+                                    weather.hourly.time.slice(0, 24).map((time, idx) => {
+                                        const date = new Date(time);
+                                        const hour = date.getHours();
+                                        const isNow = hour === new Date().getHours();
+                                        const wCode = weather.hourly.weather_code?.[idx] ?? weather.hourly.weathercode?.[idx];
+
+                                        return (
+                                            <div
+                                                key={time}
+                                                className={`flex items-center justify-between pl-4 pr-5 py-3 border-b border-white/5 last:border-0 ${isNow ? 'bg-emerald-500/5' : ''}`}
+                                            >
+                                                <div className="flex items-center gap-4">
+                                                    <span className={`text-[10px] font-bold w-10 ${isNow ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                                        {hour}:00
+                                                    </span>
+                                                    <span className="text-xl">
+                                                        {getWeatherIcon(wCode)}
+                                                    </span>
+                                                </div>
+                                                <span className="text-xs font-black text-white">
+                                                    {Math.round(weather.hourly.temperature_2m[idx])}°
+                                                </span>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveView('main');
+                                }}
+                                className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-black tracking-widest text-slate-400 hover:text-white transition-all uppercase border border-white/10"
+                            >
+                                {language === 'nl' ? 'TERUG NAAR OVERZICHT' : 'BACK TO SUMMARY'}
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="text-xs text-slate-300 leading-relaxed italic opacity-90 pl-3" style={{ borderLeft: `2px solid ${hexToRgba(primaryColor, 0.3)}` }}>
+                                {(() => {
+                                    const displayDesc = description || (language === 'nl' ? "Informatie aan het laden..." : "Loading info...");
+                                    const currentSpeakingId = `city-welcome-${city}`;
+
+                                    if (speakingId === currentSpeakingId && spokenCharCount !== undefined) {
+                                        const idx = spokenCharCount;
+                                        let endIdx = displayDesc.indexOf(' ', idx);
+                                        if (endIdx === -1) endIdx = displayDesc.length;
+
+                                        if (idx >= 0 && idx < displayDesc.length) {
+                                            const before = displayDesc.slice(0, idx);
+                                            const current = displayDesc.slice(idx, endIdx);
+                                            const after = displayDesc.slice(endIdx);
+
+                                            return (
+                                                <>
+                                                    <span className="text-white not-italic">{before}</span>
+                                                    <span
+                                                        ref={highlightedWordRef}
+                                                        style={{
+                                                            backgroundColor: hexToRgba(primaryColor, 0.4),
+                                                            borderRadius: '2px'
+                                                        }}
+                                                        className="text-white not-italic"
+                                                    >
+                                                        {current}
+                                                    </span>
+                                                    <span className="opacity-50">{after}</span>
+                                                </>
+                                            );
+                                        }
+                                    }
+                                    return displayDesc;
+                                })()}
+                            </div>
+
+                            {searchMode !== 'radius' && (
+                                <div className="mt-4 bg-slate-900/40 p-2.5 rounded-lg border border-white/5 space-y-2">
+                                    <div className="flex justify-between items-center text-[10px]">
+                                        <span className="text-white font-black uppercase tracking-wider">{language === 'nl' ? 'Totaal' : 'Total'}</span>
                                         <span className="text-slate-200 font-bold">
                                             {(() => {
-                                                // Use REAL user position if available, otherwise fallback to center or '-'
-                                                // The user specifically asked for "From My Location", so we should prioritize that.
-                                                const startLat = userPos ? userPos.lat : (center ? center[0] : null);
-                                                const startLon = userPos ? userPos.lng : (center ? center[1] : null);
-
-                                                if (!startLat || !pois[0]) return '-';
-
-                                                // If we have a custom start point active (checking if center deviates significantly from city center?), maybe indicate?
-                                                // For now just show distance.
-
-                                                const lat1 = startLat;
-                                                const lon1 = startLon;
-                                                const lat2 = pois[0].lat;
-                                                const lon2 = pois[0].lng;
-                                                const R = 6371; // km
-                                                const dLat = (lat2 - lat1) * (Math.PI / 180);
-                                                const dLon = (lon2 - lon1) * (Math.PI / 180);
-                                                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                                                    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-                                                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-                                                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                                                const dist = R * c;
-                                                return dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(2)} km`;
+                                                const rawDist = stats.walkDistance || stats.totalDistance || 0;
+                                                const dist = parseFloat(rawDist) || 0;
+                                                if (dist < 1) {
+                                                    return `${Math.round(dist * 1000)} m`;
+                                                }
+                                                return `${dist.toFixed(2)} km`;
                                             })()}
                                         </span>
                                     </div>
-                                    {isEditingStart && (
-                                        <div className="mt-2 flex gap-1 animate-in fade-in slide-in-from-top-1" onClick={e => e.stopPropagation()}>
-                                            <input
-                                                type="text"
-                                                value={editStartValue}
-                                                onChange={(e) => setEditStartValue(e.target.value)}
-                                                placeholder={language === 'nl' ? "Startpunt (bijv. Station, Huidig)" : "Start (e.g. Station, Current)"}
-                                                className="flex-1 bg-black/30 border border-white/10 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:border-primary/50"
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        onUpdateStartLocation(editStartValue);
-                                                        setIsEditingStart(false);
-                                                    }
-                                                }}
-                                            />
-                                            <button
-                                                onClick={() => {
-                                                    onUpdateStartLocation(editStartValue);
-                                                    setIsEditingStart(false);
-                                                }}
-                                                className="bg-primary/20 hover:bg-primary/40 text-primary px-2 py-1 rounded-md text-xs font-bold"
-                                            >
-                                                OK
-                                            </button>
+                                    {pois && pois.length > 0 && (
+                                        <div>
+                                            <div className="flex justify-between items-center text-[10px]">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-white font-black uppercase tracking-wider">{language === 'nl' ? 'Naar 1e Stop' : 'To 1st Stop'}</span>
+                                                    {onUpdateStartLocation && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setIsEditingStart(!isEditingStart); }}
+                                                            className="text-slate-500 hover:text-white transition-colors"
+                                                            title={language === 'nl' ? "Startpunt wijzigen" : "Change Start Point"}
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <span className="text-slate-200 font-bold">
+                                                    {(() => {
+                                                        const startLat = userPos ? userPos.lat : (center ? center[0] : null);
+                                                        const startLon = userPos ? userPos.lng : (center ? center[1] : null);
+
+                                                        if (!startLat || !pois[0]) return '-';
+
+                                                        const lat1 = startLat;
+                                                        const lon1 = startLon;
+                                                        const lat2 = pois[0].lat;
+                                                        const lon2 = pois[0].lng;
+                                                        const R = 6371; // km
+                                                        const dLat = (lat2 - lat1) * (Math.PI / 180);
+                                                        const dLon = (lon2 - lon1) * (Math.PI / 180);
+                                                        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                                                            Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+                                                            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                                                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                                                        const dist = R * c;
+                                                        return dist < 1 ? `${Math.round(dist * 1000)} m` : `${dist.toFixed(2)} km`;
+                                                    })()}
+                                                </span>
+                                            </div>
+                                            {isEditingStart && (
+                                                <div className="mt-2 flex gap-1 animate-in fade-in slide-in-from-top-1" onClick={e => e.stopPropagation()}>
+                                                    <input
+                                                        type="text"
+                                                        value={editStartValue}
+                                                        onChange={(e) => setEditStartValue(e.target.value)}
+                                                        placeholder={language === 'nl' ? "Startpunt (bijv. Station, Huidig)" : "Start (e.g. Station, Current)"}
+                                                        className="flex-1 bg-black/30 border border-white/10 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:border-primary/50"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                onUpdateStartLocation(editStartValue);
+                                                                setIsEditingStart(false);
+                                                            }
+                                                        }}
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            onUpdateStartLocation(editStartValue);
+                                                            setIsEditingStart(false);
+                                                        }}
+                                                        className="bg-primary/20 hover:bg-primary/40 text-primary px-2 py-1 rounded-md text-xs font-bold"
+                                                    >
+                                                        OK
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
+                                    <div className="flex justify-between items-center text-[10px]">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-white font-black uppercase tracking-wider">{language === 'nl' ? 'Duur' : 'Duration'}</span>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setShowDurationInfo(!showDurationInfo); }}
+                                                className={`transition-colors ${showDurationInfo ? 'text-blue-400' : 'text-slate-600 hover:text-slate-400'}`}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <span className="text-slate-200 font-bold">~{durationDetails?.totalStr || '-'}</span>
+                                    </div>
 
+                                    {showDurationInfo && durationDetails && (
+                                        <div className="mt-2 p-2 bg-black/20 rounded-md text-[9px] text-slate-400 space-y-1 border border-white/5 animate-in fade-in zoom-in-95 duration-200">
+                                            <div className="flex justify-between">
+                                                <span>{language === 'nl' ? 'Triptijd' : 'Travel time'}:</span>
+                                                <span className="text-slate-300">{durationDetails.dist}km @ {durationDetails.speed}km/u → {Math.round(durationDetails.walkTime)}m</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>{language === 'nl' ? 'Stoptijd' : 'Stop time'}:</span>
+                                                <span className="text-slate-300">{durationDetails.poiCount} {language === 'nl' ? 'stops' : 'spots'} x {durationDetails.buffer}m → {durationDetails.visitTime}m</span>
+                                            </div>
+                                            <div className="pt-1 border-t border-white/5 flex justify-between font-bold text-slate-300">
+                                                <span>{language === 'nl' ? 'Totaal' : 'Total'}:</span>
+                                                <span>{durationDetails.totalStr}</span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
-
-
-
-                            <div className="flex justify-between items-center text-[10px]">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="text-slate-500 font-bold uppercase tracking-wider">{language === 'nl' ? 'Duur' : 'Duration'}</span>
+                            {!isAiViewActive && (
+                                <div className="mt-3 px-1">
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); setShowDurationInfo(!showDurationInfo); }}
-                                        className={`transition-colors ${showDurationInfo ? 'text-blue-400' : 'text-slate-600 hover:text-slate-400'}`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsAiViewActive(true);
+                                        }}
+                                        className="w-full py-2 px-3 rounded-xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider group"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                                         </svg>
+                                        {language === 'nl' ? 'ROUTE AANPASSEN' : 'ADJUST ROUTE'}
                                     </button>
                                 </div>
-                                <span className="text-slate-200 font-bold">~{durationDetails?.totalStr || '-'}</span>
-                            </div>
-
-                            {showDurationInfo && durationDetails && (
-                                <div className="mt-2 p-2 bg-black/20 rounded-md text-[9px] text-slate-400 space-y-1 border border-white/5 animate-in fade-in zoom-in-95 duration-200">
-                                    <div className="flex justify-between">
-                                        <span>{language === 'nl' ? 'Triptijd' : 'Travel time'}:</span>
-                                        <span className="text-slate-300">{durationDetails.dist}km @ {durationDetails.speed}km/u → {Math.round(durationDetails.walkTime)}m</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span>{language === 'nl' ? 'Stoptijd' : 'Stop time'}:</span>
-                                        <span className="text-slate-300">{durationDetails.poiCount} {language === 'nl' ? 'stops' : 'spots'} x {durationDetails.buffer}m → {durationDetails.visitTime}m</span>
-                                    </div>
-                                    <div className="pt-1 border-t border-white/5 flex justify-between font-bold text-slate-300">
-                                        <span>{language === 'nl' ? 'Totaal' : 'Total'}:</span>
-                                        <span>{durationDetails.totalStr}</span>
-                                    </div>
-                                </div>
                             )}
-
-
-                        </div>
+                        </>
                     )}
-
-
-
-                    {/* AI Planner Quick Access */}
-                    {!isAiViewActive && (
-                        <div className="mt-3 px-1">
-                            <button
-                                onClick={() => setIsAiViewActive(true)}
-                                className="w-full py-2 px-3 rounded-xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider group"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                </svg>
-                                {language === 'nl' ? 'ROUTE AANPASSEN' : 'ADJUST ROUTE'}
-                            </button>
-                        </div>
-                    )}
-
-
                 </div>
             )}
-
-
         </div>
     );
 };
@@ -1355,7 +1479,8 @@ const ItinerarySidebar = ({
     isRouteEditMode,
     isEnriching,
     onStartEnrichment,
-    onPauseEnrichment
+    onPauseEnrichment,
+    onEnrichSinglePoi
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -1592,7 +1717,7 @@ const ItinerarySidebar = ({
             >
                 <div className="flex flex-col h-full bg-gradient-to-b from-[var(--bg-gradient-start)]/50 to-transparent">
                     {/* Header */}
-                    <div className="px-4 pt-4 pb-3 border-b border-white/10">
+                    <div className="px-4 pt-4 pb-2 border-b border-white/10">
                         {!isAiViewActive || !routeData ? (
                             <div className="flex justify-between items-center mb-2">
                                 <div className="flex items-center gap-3">
@@ -1767,7 +1892,7 @@ const ItinerarySidebar = ({
                     </div>
                     {/* City Welcome Card (Replaces Stats Summary) */}
                     {!isAiViewActive && showItinerary && (
-                        <div className="mt-4">
+                        <div className="mt-2.5">
                             <CityWelcomeCard
                                 city={city}
                                 center={routeData.center}
@@ -1972,7 +2097,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setShowLanguageSettings(!showLanguageSettings)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Taal' : 'Language'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -2033,7 +2158,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setShowVoiceSettings(!showVoiceSettings)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Stem' : 'Voice'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -2095,7 +2220,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setShowThemeSettings(!showThemeSettings)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Thema' : 'Theme'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -2156,7 +2281,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setShowTravelSettings(!showTravelSettings)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Reiswijze' : 'Travel Mode'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -2224,7 +2349,7 @@ const ItinerarySidebar = ({
                                                 }}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Simulatie' : 'Simulation'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -2241,7 +2366,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setAutoAudio(!autoAudio)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Auto Audio' : 'Auto Audio'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -2259,7 +2384,7 @@ const ItinerarySidebar = ({
                                                 onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
                                                 className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                             >
-                                                <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                     {language === 'nl' ? 'Autosave' : 'Autosave'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
@@ -2277,7 +2402,7 @@ const ItinerarySidebar = ({
                                                     onClick={() => setShowTruthfulnessLegend(!showTruthfulnessLegend)}
                                                     className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                                 >
-                                                    <label className="text-xs uppercase tracking-wider text-slate-500 font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
                                                         {language === 'nl' ? 'Betrouwbaarheid' : 'Truthfulness'}
                                                     </label>
                                                     <svg
@@ -2396,14 +2521,10 @@ const ItinerarySidebar = ({
                             onSpeak={onSpeak}
                         />
                     ) : (
-                        <div
-                            ref={scrollContainerRef}
-                            onScroll={handleScroll}
-                            className="flex-1 overflow-y-auto p-4 custom-scrollbar"
-                        >
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                             {/* VIEW 1: Disambiguation */}
                             {showDisambiguation ? (
-                                <div className="space-y-3">
+                                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3">
                                     <h3 className="font-bold text-[var(--text-main)]">{text.disambig_title} {city}?</h3>
                                     {disambiguationOptions.map((option, idx) => (
                                         <button
@@ -2424,9 +2545,9 @@ const ItinerarySidebar = ({
                                 </div>
                             ) : showItinerary ? (
                                 /* VIEW 2: Itinerary List */
-                                <div className="space-y-3">
-                                    <div className="flex items-center justify-between mb-1 px-1">
-                                        <h3 className="text-[10px] font-black tracking-widest text-[var(--text-muted)] uppercase">
+                                <>
+                                    <div className="flex items-center justify-between mb-1 px-5 pt-4 pb-2">
+                                        <h3 className="text-[10px] font-black tracking-widest text-white uppercase">
                                             {language === 'nl' ? 'Jouw Dagplanning' : 'Your Schedule'}
                                         </h3>
                                         <div className="flex items-center gap-2">
@@ -2440,13 +2561,13 @@ const ItinerarySidebar = ({
                                                         if (onStartEnrichment) onStartEnrichment();
                                                     }
                                                 }}
-                                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold transition-all border shadow-sm ${isEnriching
-                                                    ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20'
-                                                    : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20'
+                                                className={`flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold transition-all border shadow-sm whitespace-nowrap w-[115px] ${isEnriching
+                                                    ? 'bg-primary/10 text-primary border-primary/20 animate-pulse'
+                                                    : 'bg-white/5 text-[var(--text-muted)] border-white/10 hover:text-white hover:bg-white/10'
                                                     }`}
                                                 title={language === 'nl'
-                                                    ? (isEnriching ? "Pauzeer het ophalen van info" : "Hervat info ophalen")
-                                                    : (isEnriching ? "Pause info fetching" : "Resume info fetching")
+                                                    ? (isEnriching ? "Pauzeer het ophalen van info" : "Hervat info ophalen") // Tooltip can define action, so "Resume info fetching" is effectively "Update Info"
+                                                    : (isEnriching ? "Pause info fetching" : "Update info")
                                                 }
                                             >
                                                 {isEnriching ? (
@@ -2456,8 +2577,8 @@ const ItinerarySidebar = ({
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                                                        {language === 'nl' ? 'HERVAT' : 'RESUME'}
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21h5v-5" /></svg>
+                                                        {language === 'nl' ? 'INFO UPDATEN' : 'UPDATE INFO'}
                                                     </>
                                                 )}
                                             </button>
@@ -2467,7 +2588,7 @@ const ItinerarySidebar = ({
                                                     e.stopPropagation();
                                                     if (onReverseDirection) onReverseDirection();
                                                 }}
-                                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-extrabold transition-all border border-primary/20 shadow-sm"
+                                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-[10px] font-extrabold transition-all border border-emerald-500/20 shadow-sm"
                                                 title={language === 'nl' ? "Draai de looprichting om" : "Reverse walking direction"}
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m21 7-3-3-3 3"></path><path d="M18 16V4"></path><path d="m3 17 3 3 3-3"></path><path d="M6 8v12"></path></svg>
@@ -2475,183 +2596,205 @@ const ItinerarySidebar = ({
                                             </button>
                                         </div>
                                     </div>
-                                    {(() => {
-                                        const items = [...routeData.pois];
-                                        const startPoint = {
-                                            // Spread rich POI data if this start point is a POI
-                                            ...(routeData.startIsPoi ? routeData.startPoi : {}),
-                                            id: 'sidebar-start',
-                                            name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
-                                            isSpecial: true,
-                                            specialType: 'start',
-                                            // Use rich description if available, otherwise fallback to accessibility info
-                                            // If it IS a POI, we prioritize its own description.
-                                            // If we have both, we can show both in the detailed view.
-                                            description: (routeData.startIsPoi && (routeData.startPoi?.description || routeData.startPoi?.structured_info?.short_description))
-                                                ? (routeData.startPoi.description || routeData.startPoi?.structured_info?.short_description)
-                                                : (routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info...")),
-                                            arrivalInfo: routeData.startInfo,
-                                            isFullyEnriched: routeData.startIsPoi ? (routeData.startPoi?.isFullyEnriched) : (!!routeData.startInfo)
-                                        };
+                                    <div
+                                        ref={scrollContainerRef}
+                                        onScroll={handleScroll}
+                                        className="flex-1 overflow-y-auto px-4 pb-4 custom-scrollbar"
+                                    >
+                                        <div className="space-y-3">
+                                            {(() => {
+                                                const items = [...routeData.pois];
+                                                const startPoint = {
+                                                    // Spread rich POI data if this start point is a POI
+                                                    ...(routeData.startIsPoi ? routeData.startPoi : {}),
+                                                    id: 'sidebar-start',
+                                                    name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
+                                                    isSpecial: true,
+                                                    specialType: 'start',
+                                                    // Use rich description if available, otherwise fallback to accessibility info
+                                                    // If it IS a POI, we prioritize its own description.
+                                                    // If we have both, we can show both in the detailed view.
+                                                    description: (routeData.startIsPoi && (routeData.startPoi?.description || routeData.startPoi?.structured_info?.short_description))
+                                                        ? (routeData.startPoi.description || routeData.startPoi?.structured_info?.short_description)
+                                                        : (routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info...")),
+                                                    arrivalInfo: routeData.startInfo,
+                                                    isFullyEnriched: routeData.startIsPoi ? (routeData.startPoi?.isFullyEnriched) : (!!routeData.startInfo)
+                                                };
 
-                                        const finalItems = [startPoint, ...items];
+                                                const finalItems = [startPoint, ...items];
 
-                                        return finalItems.map((poi, index) => {
-                                            const isExpanded = expandedPoi === poi.id;
-                                            // Adjust index for display numbering (skipped for special nodes)
-                                            const displayNum = poi.isSpecial ? null : (finalItems.slice(0, index).filter(i => !i.isSpecial).length + 1);
+                                                return finalItems.map((poi, index) => {
+                                                    const isExpanded = expandedPoi === poi.id;
+                                                    // Adjust index for display numbering (skipped for special nodes)
+                                                    const displayNum = poi.isSpecial ? null : (finalItems.slice(0, index).filter(i => !i.isSpecial).length + 1);
 
-                                            return (
-                                                <div
-                                                    key={poi.id}
-                                                    ref={el => poiRefs.current[poi.id] = el}
-                                                    onClick={() => {
-                                                        const newExpanded = isExpanded ? null : poi.id;
-                                                        setExpandedPoi(newExpanded);
+                                                    return (
+                                                        <div
+                                                            key={poi.id}
+                                                            ref={el => poiRefs.current[poi.id] = el}
+                                                            onClick={() => {
+                                                                const newExpanded = isExpanded ? null : poi.id;
+                                                                setExpandedPoi(newExpanded);
 
-                                                        if (!isExpanded) {
-                                                            // Expanding: Focus on Map
-                                                            if (poi.isSpecial) {
-                                                                // Center on Start/End
-                                                                if (poi.specialType === 'start') {
-                                                                    if (typeof setViewAction === 'function') setViewAction('ROUTE');
-                                                                } else onPoiClick(items[items.length - 1], 'medium'); // Focus last poi for end
-                                                            } else {
-                                                                onPoiClick(poi, descriptionLength || 'medium');
-                                                            }
-                                                        } else {
-                                                            if (onPopupClose) onPopupClose();
-                                                        }
-                                                    }}
-                                                    className={`group relative bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-[var(--input-bg)]' : 'border-[var(--panel-border)] hover:border-primary/30'}`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border transition-colors
-                                                        ${poi.isSpecial
-                                                                ? (poi.specialType === 'start' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30')
-                                                                : (poi.isFullyEnriched
-                                                                    ? (isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white')
-                                                                    : (poi.short_description
-                                                                        ? 'bg-primary/40 text-blue-200 border-primary/40 animate-pulse'
-                                                                        : 'bg-slate-700 text-slate-400 border-slate-600 animate-pulse'
-                                                                    ))
-                                                            }`}>
-
-                                                            {poi.isSpecial ? (
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                                                            ) : (
-                                                                searchMode === 'radius' ? (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
-                                                                ) : displayNum
-                                                            )}
-
-
-                                                        </div>
-                                                        <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-[var(--text-main)] group-hover:text-primary'} pr-16`}>
-                                                            {poi.name}
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                                {getPoiCategoryIcon(poi)}
-                                                            </svg>
-                                                        </h3>
-                                                    </div>
-
-                                                    {!poi.isSpecial && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setPoiToDelete(poi);
+                                                                if (!isExpanded) {
+                                                                    // Expanding: Focus on Map
+                                                                    if (poi.isSpecial) {
+                                                                        // Center on Start/End
+                                                                        if (poi.specialType === 'start') {
+                                                                            if (typeof setViewAction === 'function') setViewAction('ROUTE');
+                                                                        } else onPoiClick(items[items.length - 1], 'medium'); // Focus last poi for end
+                                                                    } else {
+                                                                        onPoiClick(poi, descriptionLength || 'medium');
+                                                                    }
+                                                                } else {
+                                                                    if (onPopupClose) onPopupClose();
+                                                                }
                                                             }}
-                                                            className="absolute top-4 right-3 p-1.5 rounded-full text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-all focus:opacity-100"
-                                                            title={language === 'nl' ? "Verwijder" : "Remove"}
+                                                            className={`group relative bg-[var(--panel-bg)] hover:bg-[var(--input-bg)] p-4 rounded-xl border transition-all cursor-pointer ${isExpanded ? 'border-primary/50 bg-[var(--input-bg)]' : 'border-[var(--panel-border)] hover:border-primary/30'}`}
                                                         >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                        </button>
-                                                    )}
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border transition-colors
+                                                        ${poi.isSpecial
+                                                                        ? (poi.specialType === 'start' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30')
+                                                                        : (poi.isFullyEnriched
+                                                                            ? (isExpanded ? 'bg-primary text-white border-primary' : 'bg-primary/20 text-primary border-primary/20 group-hover:bg-primary group-hover:text-white')
+                                                                            : (poi.short_description
+                                                                                ? 'bg-primary/40 text-blue-200 border-primary/40 animate-pulse'
+                                                                                : 'bg-slate-700 text-slate-400 border-slate-600 animate-pulse'
+                                                                            ))
+                                                                    }`}>
 
-
-
-                                                    {/* Expandable Content */}
-                                                    {
-                                                        isExpanded && (
-                                                            <div className="mt-3 pl-9 animate-in slide-in-from-top-2 fade-in duration-200">
-
-                                                                <div className="space-y-4 pr-8">
-                                                                    {/* Action Buttons */}
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {!poi.isSpecial && (
-                                                                            <button
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    if (onCycleStart) onCycleStart(poi.id);
-                                                                                }}
-                                                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-[10px] font-black tracking-wider transition-all border border-emerald-500/20 shadow-sm active:scale-95"
-                                                                                title={language === 'nl' ? "Maak dit het nieuwe startpunt" : "Make this the new start point"}
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                                                                                {language === 'nl' ? 'STARTPUNT' : 'START POINT'}
-                                                                            </button>
-                                                                        )}
-
-
-
-
-
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                setSearchMode('prompt');
-                                                                                setIsAiViewActive(true);
-                                                                            }}
-                                                                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-black tracking-wider transition-all border border-primary/20 shadow-sm active:scale-95"
-                                                                            title={language === 'nl' ? "Pas route aan" : "Adjust Route"}
-                                                                        >
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                                                            </svg>
-                                                                            {language === 'nl' ? 'WIJZIG' : 'EDIT'}
-                                                                        </button>
-                                                                    </div>
-
-                                                                    <PoiDetailContent
-                                                                        poi={poi}
-                                                                        language={language}
-                                                                        speakingId={speakingId}
-                                                                        spokenCharCount={spokenCharCount}
-                                                                        highlightRef={poiHighlightedWordRef}
-                                                                        isDark={true}
-                                                                        primaryColor={activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6'}
-                                                                    />
-                                                                </div>
-
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
-                                                                    className={`absolute top-4 right-12 p-2 rounded-full transition-all ${speakingId === poi.id ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
-                                                                    title="Read Aloud"
-                                                                >
-                                                                    {speakingId === poi.id ? (
-                                                                        isSpeechPaused ? (
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                                                                        ) : (
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                                                                        )
+                                                                    {poi.isSpecial ? (
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                                                                     ) : (
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                                                        searchMode === 'radius' ? (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
+                                                                        ) : displayNum
                                                                     )}
 
 
-                                                                </button>
+                                                                </div>
+                                                                <h3 className={`font-semibold transition-colors line-clamp-1 flex items-center gap-1.5 ${isExpanded ? 'text-primary' : 'text-[var(--text-main)] group-hover:text-primary'} pr-24`}>
+                                                                    {poi.name}
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                        {getPoiCategoryIcon(poi)}
+                                                                    </svg>
+                                                                </h3>
                                                             </div>
-                                                        )
-                                                    }
-                                                </div>
-                                            );
-                                        })
-                                    })()}
-                                </div>
+
+                                                            {!poi.isSpecial && (
+                                                                <div className="absolute top-4 right-3 flex items-center gap-1">
+
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (onEnrichSinglePoi) onEnrichSinglePoi(poi);
+                                                                        }}
+                                                                        className={`p-1.5 rounded-full transition-all focus:opacity-100 ${poi.isLoading ? 'text-primary animate-pulse' : 'text-[var(--text-muted)] hover:text-primary hover:bg-primary/10'}`}
+                                                                        title={language === 'nl' ? "Info updaten" : "Update info"}
+                                                                        disabled={poi.isLoading}
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setPoiToDelete(poi);
+                                                                        }}
+                                                                        className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-all focus:opacity-100"
+                                                                        title={language === 'nl' ? "Verwijder" : "Remove"}
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                                    </button>
+                                                                </div>
+                                                            )}
+
+
+
+                                                            {/* Expandable Content */}
+                                                            {
+                                                                isExpanded && (
+                                                                    <div className="mt-3 pl-9 animate-in slide-in-from-top-2 fade-in duration-200">
+
+                                                                        <div className="space-y-4 pr-8">
+                                                                            {/* Action Buttons */}
+                                                                            <div className="flex flex-wrap gap-2">
+                                                                                {!poi.isSpecial && (
+                                                                                    <button
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            if (onCycleStart) onCycleStart(poi.id);
+                                                                                        }}
+                                                                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-[10px] font-black tracking-wider transition-all border border-emerald-500/20 shadow-sm active:scale-95"
+                                                                                        title={language === 'nl' ? "Maak dit het nieuwe startpunt" : "Make this the new start point"}
+                                                                                    >
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                                                                        {language === 'nl' ? 'STARTPUNT' : 'START POINT'}
+                                                                                    </button>
+                                                                                )}
+
+
+
+
+
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setSearchMode('prompt');
+                                                                                        setIsAiViewActive(true);
+                                                                                    }}
+                                                                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-[10px] font-black tracking-wider transition-all border border-primary/20 shadow-sm active:scale-95"
+                                                                                    title={language === 'nl' ? "Pas route aan" : "Adjust Route"}
+                                                                                >
+                                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                                                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                                                                    </svg>
+                                                                                    {language === 'nl' ? 'WIJZIG' : 'EDIT'}
+                                                                                </button>
+
+                                                                                <button
+                                                                                    onClick={(e) => { e.stopPropagation(); onSpeak(poi); }}
+                                                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider transition-all border shadow-sm active:scale-95 ${speakingId === poi.id
+                                                                                        ? 'bg-primary text-white border-primary shadow-lg shadow-primary/30'
+                                                                                        : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 border-white/10'
+                                                                                        }`}
+                                                                                    title="Read Aloud"
+                                                                                >
+                                                                                    {speakingId === poi.id && !isSpeechPaused ? (
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 animate-pulse" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                                                                    ) : (
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                                                                                    )}
+                                                                                    {/* Optional Text Label if needed, user just asked for icon but next to 'EDIT' implies style match */}
+                                                                                </button>
+                                                                            </div>
+
+                                                                            <PoiDetailContent
+                                                                                poi={poi}
+                                                                                language={language}
+                                                                                speakingId={speakingId}
+                                                                                spokenCharCount={spokenCharCount}
+                                                                                highlightRef={poiHighlightedWordRef}
+                                                                                isDark={true}
+                                                                                primaryColor={activeTheme && availableThemes?.[activeTheme] ? availableThemes[activeTheme].colors.primary : '#3b82f6'}
+                                                                            />
+                                                                        </div>
+
+
+                                                                    </div>
+                                                                )
+                                                            }
+                                                        </div>
+                                                    );
+                                                })
+                                            })()}
+                                        </div>
+                                    </div>
+                                </>
                             ) : (
                                 /* VIEW 4: Input Form (Start or Add) */
-                                <div className="relative">
+                                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar relative">
                                     {isAddingMode && (
                                         <button
                                             onClick={() => setIsAddingMode(false)}
@@ -2719,9 +2862,9 @@ const ItinerarySidebar = ({
                             <div className="flex items-center gap-1.5 h-8">
                                 <button
                                     onClick={() => setAutoAudio(!autoAudio)}
-                                    className={`flex-1 h-full text-[9px] uppercase tracking-wider font-bold rounded-lg border transition-all flex items-center justify-center gap-1.5 ${autoAudio ? 'bg-primary/10 border-primary/40 text-primary shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)]' : 'bg-slate-800/40 border-white/5 text-slate-500 hover:bg-slate-800/80 hover:text-white'}`}
+                                    className={`flex-1 h-full text-[10px] uppercase tracking-widest font-extrabold rounded-full border transition-all flex items-center justify-center gap-1.5 shadow-sm ${autoAudio ? 'bg-primary/20 border-primary/40 text-primary shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)]' : 'bg-slate-800/60 border-white/10 text-slate-400 hover:bg-slate-800/80 hover:text-white'}`}
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" /></svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" /></svg>
                                     <span className="truncate">{autoAudio ? "Audio aan" : "Audio uit"}</span>
                                 </button>
 
@@ -2732,17 +2875,17 @@ const ItinerarySidebar = ({
                                         setIsAddingMode(false);
                                         onReset();
                                     }}
-                                    className="flex-1 h-full text-[9px] uppercase tracking-wider font-bold rounded-lg bg-slate-800/40 border border-white/5 text-slate-500 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5"
+                                    className="flex-1 h-full text-[10px] uppercase tracking-widest font-extrabold rounded-full bg-slate-800/60 border border-white/10 text-slate-400 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
                                     <span className="truncate">{text.reset}</span>
                                 </button>
 
                                 <button
                                     onClick={onSave}
-                                    className="flex-1 h-full text-[9px] uppercase tracking-wider font-bold rounded-lg bg-slate-800/40 border border-white/5 text-slate-500 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5"
+                                    className="flex-1 h-full text-[10px] uppercase tracking-widest font-extrabold rounded-full bg-slate-800/60 border border-white/10 text-slate-400 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
                                     <span className="truncate">{text.save}</span>
                                 </button>
                             </div>

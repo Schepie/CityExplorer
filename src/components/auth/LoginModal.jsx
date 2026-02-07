@@ -112,7 +112,7 @@ const LoginModal = () => {
 
                             <form onSubmit={loginMode === 'request' ? handleRequestLink : handleVerifyCode} className="space-y-4">
                                 <div>
-                                    <label className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">
+                                    <label className="block text-xs uppercase tracking-wider text-white font-black mb-2">
                                         Email Address
                                     </label>
                                     <input
@@ -127,7 +127,7 @@ const LoginModal = () => {
 
                                 {loginMode === 'code' && (
                                     <div>
-                                        <label className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">
+                                        <label className="block text-xs uppercase tracking-wider text-white font-black mb-2">
                                             6-Digit Access Code
                                         </label>
                                         <input

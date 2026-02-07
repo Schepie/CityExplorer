@@ -130,6 +130,33 @@ function CityExplorerApp() {
     }
   }, [activeTheme]);
 
+  // Re-enrich POIs when Language changes
+  useEffect(() => {
+    // Only trigger if we have a valid route
+    if (routeData && routeData.pois && routeData.pois.length > 0) {
+      console.log("Language changed to:", language);
+
+      const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, roundtrip)`;
+
+      // Force reset of enrichment status for all POIs so they are re-fetched in new language
+      const resetPois = routeData.pois.map(p => ({
+        ...p,
+        isFullyEnriched: false,
+        isLoading: true
+      }));
+
+      // Update state to show loading immediately
+      setRouteData(prev => ({
+        ...prev,
+        pois: resetPois
+      }));
+
+      // Trigger enrichment with reset POIs
+      enrichBackground(resetPois, city, language, descriptionLength, interests, routeCtx)
+        .catch(err => console.warn("Language enrichment failed", err));
+    }
+  }, [language]);
+
 
 
   // Focused Location (for "Fly To" interaction)
@@ -538,6 +565,18 @@ function CityExplorerApp() {
         // New: Skip if already done
         if (poi.isFullyEnriched) continue;
 
+        // Set loading state immediately for visual feedback
+        setRouteData((prev) => {
+          if (!prev) return prev;
+          const loadingPoi = { ...poi, isLoading: true };
+          const isStart = prev.startIsPoi && prev.startPoi?.id === poi.id;
+          return {
+            ...prev,
+            startPoi: isStart ? loadingPoi : prev.startPoi,
+            pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? loadingPoi : p) : []
+          };
+        });
+
 
         try {
           // Step 1: Gather Signals (Triangulation)
@@ -591,6 +630,18 @@ function CityExplorerApp() {
         if (signal.aborted) return; // Exit if reset
         // New: Skip if already done
         if (poi.isFullyEnriched) continue;
+
+        // Set loading state immediately for visual feedback (Stage 2)
+        setRouteData((prev) => {
+          if (!prev) return prev;
+          const loadingPoi = { ...poi, isLoading: true };
+          const isStart = prev.startIsPoi && prev.startPoi?.id === poi.id;
+          return {
+            ...prev,
+            startPoi: isStart ? loadingPoi : prev.startPoi,
+            pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? loadingPoi : p) : []
+          };
+        });
 
 
         try {
@@ -663,6 +714,70 @@ function CityExplorerApp() {
       enrichmentAbortController.current.abort();
       setIsBackgroundUpdating(false);
       enrichmentAbortController.current = null;
+
+      // Stop animation on all POIs that might be loading from the background process
+      setRouteData(prev => prev ? ({
+        ...prev,
+        pois: prev.pois.map(p => ({ ...p, isLoading: false }))
+      }) : prev);
+    }
+  };
+
+  const handleEnrichSinglePoi = async (poi) => {
+    if (!poi) return;
+    const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, roundtrip)`;
+    // Re-use enrichment logic but only for this POI
+    // We create a new instance to avoid aborting the main background process if running?
+    // Actually simplicity: Just call enrichBackground with a single-item array?
+    // But enrichBackground resets state for ALL provided POIs.
+    // Better: We instantiate the engine here directly.
+
+    // Force UI into loading state for this POI and clear old data to ensure fresh update
+    setRouteData(prev => ({
+      ...prev,
+      pois: prev.pois.map(p => p.id === poi.id ? {
+        ...p,
+        isLoading: true,
+        isFullyEnriched: false,
+        // Clear old data to show we are truly fetching new info
+        description: null,
+        structured_info: null,
+        fun_facts: [],
+        visitor_tips: null
+      } : p)
+    }));
+
+    const engine = new PoiIntelligence({
+      city: city,
+      language: language,
+      lengthMode: descriptionLength,
+      interests: interests,
+      routeContext: routeCtx
+    });
+
+    try {
+      const signals = await engine.gatherSignals(poi);
+      // Fetch full details directly
+      // Use existing short desc if available to save tokens?
+      const fullData = await engine.fetchGeminiFullDetails(poi, signals, poi.short_description || null);
+
+      if (fullData) {
+        setRouteData(prev => ({
+          ...prev,
+          pois: prev.pois.map(p => p.id === poi.id ? {
+            ...p,
+            ...fullData,
+            isFullyEnriched: true,
+            isLoading: false
+          } : p)
+        }));
+      }
+    } catch (e) {
+      console.error("Single POI enrichment failed", e);
+      setRouteData(prev => ({
+        ...prev,
+        pois: prev.pois.map(p => p.id === poi.id ? { ...p, isLoading: false } : p)
+      }));
     }
   };
 
@@ -4250,6 +4365,7 @@ function CityExplorerApp() {
         isEnriching={isBackgroundUpdating}
         onStartEnrichment={handleTriggerEnrichment}
         onPauseEnrichment={handlePauseEnrichment}
+        onEnrichSinglePoi={handleEnrichSinglePoi}
       />
 
       {/* Map Pick Instruction Overlay - REMOVED per user request */}

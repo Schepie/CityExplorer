@@ -383,7 +383,7 @@ const RouteRefiner = ({
                                     <p className="text-sm text-slate-400 text-center">{searchError}</p>
                                     <button
                                         onClick={handleBackToWizard}
-                                        className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-bold transition-all"
+                                        className="px-6 py-2.5 bg-slate-800/60 hover:bg-slate-800/80 text-white rounded-full text-[10px] font-extrabold tracking-widest uppercase transition-all shadow-sm border border-white/10"
                                     >
                                         {text.tryAgain}
                                     </button>
@@ -485,7 +485,7 @@ const RouteRefiner = ({
                                     <p className="text-sm text-slate-400 text-center">{searchError}</p>
                                     <button
                                         onClick={handleBackToWizard}
-                                        className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-sm font-bold transition-all"
+                                        className="px-6 py-2.5 bg-slate-800/60 hover:bg-slate-800/80 text-white rounded-full text-[10px] font-extrabold tracking-widest uppercase transition-all shadow-sm border border-white/10"
                                     >
                                         {text.tryAgain}
                                     </button>
@@ -548,7 +548,7 @@ const RouteRefiner = ({
                             <div className="p-6 bg-slate-950/80 border-t border-white/5">
                                 <button
                                     onClick={handleBackToWizard}
-                                    className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all text-xs uppercase tracking-widest"
+                                    className="w-full h-9 bg-slate-800/60 hover:bg-slate-800/80 text-slate-400 hover:text-white font-extrabold rounded-full border border-white/10 transition-all text-[10px] uppercase tracking-widest shadow-sm"
                                 >
                                     {text.backToWizard}
                                 </button>
@@ -565,7 +565,7 @@ const RouteRefiner = ({
 
                                 {/* Question 1: What? */}
                                 <div className="space-y-4">
-                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                    <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                         {text.stopWizardTypePrompt}
                                     </label>
                                     <div className="grid grid-cols-2 gap-3">
@@ -596,7 +596,7 @@ const RouteRefiner = ({
 
                                 {/* Question 2: When? - Flex to fill remainder */}
                                 <div className="flex-1 flex flex-col min-h-0 space-y-4">
-                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                                    <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                         {text.stopWizardWhenPrompt}
                                     </label>
                                     <div className="flex-1 flex flex-col min-h-0">
@@ -629,13 +629,13 @@ const RouteRefiner = ({
                             <div className="p-6 bg-slate-950/80 border-t border-white/5 flex gap-3">
                                 <button
                                     onClick={() => setShowStopSelector(false)}
-                                    className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all text-xs uppercase tracking-widest"
+                                    className="flex-1 h-9 bg-slate-800/60 hover:bg-slate-800/80 text-slate-400 hover:text-white font-extrabold rounded-full border border-white/10 transition-all text-[10px] uppercase tracking-widest shadow-sm"
                                 >
                                     {text.back}
                                 </button>
                                 <button
                                     onClick={handleExecuteStopAdd}
-                                    className="flex-1 py-3.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
+                                    className="flex-1 h-9 bg-primary hover:bg-primary/90 text-white font-extrabold rounded-full shadow-lg shadow-primary/20 transition-all text-[10px] uppercase tracking-widest"
                                 >
                                     {text.stopAdd}
                                 </button>
@@ -649,7 +649,7 @@ const RouteRefiner = ({
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-2 space-y-8">
                         {/* 1. Travel Mode Toggle */}
                         <div className="space-y-3">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                            <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                 {text.travelMode}
                             </label>
                             <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950/50 rounded-xl border border-white/5">
@@ -674,7 +674,7 @@ const RouteRefiner = ({
                         <div className="space-y-4">
                             <div className="flex justify-between items-end ml-1">
                                 <div>
-                                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                                    <label className="text-[10px] uppercase tracking-widest text-white font-black">
                                         {text.stops}
                                     </label>
                                     <p className="text-[9px] text-slate-500/60 font-medium">{text.stopsSub}</p>
@@ -702,7 +702,7 @@ const RouteRefiner = ({
                         {/* 2. Distance Slider */}
                         <div className="space-y-4">
                             <div className="flex justify-between items-end ml-1">
-                                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                                <label className="text-[10px] uppercase tracking-widest text-white font-black">
                                     {text.distance}
                                 </label>
                                 <div className="bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
@@ -728,7 +728,7 @@ const RouteRefiner = ({
 
                         {/* 3. Smart Actions */}
                         <div className="space-y-3">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                            <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                 Snel Toevoegen
                             </label>
                             <div className="grid gap-2">
@@ -849,7 +849,7 @@ const RouteRefiner = ({
 
                         {/* 4. Current Stops (Modification Section) */}
                         <div className="space-y-3">
-                            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold ml-1">
+                            <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                 {text.currentRoute}
                             </label>
                             <div className="space-y-2">
@@ -878,9 +878,9 @@ const RouteRefiner = ({
                     <div className="px-3 py-2 border-t border-white/10 bg-slate-900/50 backdrop-blur-md">
                         <button
                             onClick={onClose}
-                            className="w-full h-8 text-[9px] uppercase tracking-wider font-bold rounded-lg bg-slate-800/40 border border-white/5 text-slate-500 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5"
+                            className="w-full h-8 text-[10px] uppercase tracking-widest font-extrabold rounded-full bg-slate-800/60 border border-white/10 text-slate-400 hover:bg-slate-800/80 hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M10 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
                             {text.back}
                         </button>
                     </div>
