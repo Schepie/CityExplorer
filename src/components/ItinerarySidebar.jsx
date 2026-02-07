@@ -1959,6 +1959,15 @@ const ItinerarySidebar = ({
                                         {[
                                             {
                                                 date: "07 Feb 2026",
+                                                version: "v2.0.1",
+                                                items: language === 'nl' ? [
+                                                    { title: "Stem Fix", desc: "Nederlandse stemmen worden nu correct herkend, ongeacht regio (NL/BE)." }
+                                                ] : [
+                                                    { title: "Voice Fix", desc: "Dutch voices are now correctly identified regardless of region (NL/BE)." }
+                                                ]
+                                            },
+                                            {
+                                                date: "07 Feb 2026",
                                                 version: "v2.0.0",
                                                 items: language === 'nl' ? [
                                                     { title: "AR Modus", desc: "Richt je camera op gebouwen om ze direct te identificeren." },
@@ -2514,7 +2523,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v2.0.0</span>
+                                            <span className="text-slate-300 text-sm font-medium">v2.0.1</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">

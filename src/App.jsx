@@ -3366,34 +3366,49 @@ function CityExplorerApp() {
     if (voiceSettings.variant === 'en') targetLang = 'en-US';
     else if (voiceSettings.variant === 'be') targetLang = 'nl-BE';
 
-    // Fallback logic for language
-    let relevantVoices = availableVoices.filter(v => v.lang.includes(targetLang));
-    if (relevantVoices.length === 0) {
-      // Try broader search (e.g. 'en' instead of 'en-US')
+    const targetGender = voiceSettings.gender;
+
+    // Helper to find gender match in a list of voices
+    const findGenderMatch = (voices) => {
+      return voices.find(v => {
+        const n = v.name.toLowerCase();
+        // Expanded heuristic list
+        const maleNames = ['male', 'man', 'xander', 'bart', 'arthur', 'david', 'frank', 'maarten', 'mark', 'stefan', 'rob', 'paul', 'daniel', 'george', 'james', 'microsoft david', 'microsoft mark'];
+        const femaleNames = ['female', 'woman', 'lady', 'ellen', 'claire', 'laura', 'google', 'zira', 'eva', 'katja', 'fenna', 'samantha', 'tessa', 'karen', 'fiona', 'moira', 'saskia', 'hazel', 'susan', 'heidi', 'elke', 'colette', 'microsoft zira'];
+
+        if (targetGender === 'female' && n.includes('male')) return false;
+        if (targetGender === 'male' && n.includes('female')) return false;
+
+        if (targetGender === 'male') return maleNames.some(name => n.includes(name));
+        if (targetGender === 'female') return femaleNames.some(name => n.includes(name));
+        return false;
+      });
+    };
+
+    // Strategy 1: Exact Locale Match (e.g. nl-NL)
+    let relevantVoices = availableVoices.filter(v => v.lang.toLowerCase() === targetLang.toLowerCase());
+    let selectedVoice = findGenderMatch(relevantVoices);
+
+    // Strategy 2: Broad Language Match (e.g. any 'nl') if no gender match found yet
+    if (!selectedVoice) {
       const shortLang = targetLang.split('-')[0];
-      relevantVoices = availableVoices.filter(v => v.lang.includes(shortLang));
+      const broadVoices = availableVoices.filter(v => v.lang.toLowerCase().startsWith(shortLang));
+      selectedVoice = findGenderMatch(broadVoices);
     }
 
-    // 2. Filter by Gender (Heuristic based on name)
-    let selectedVoice = relevantVoices[0]; // Default to first found
-
-    const targetGender = voiceSettings.gender;
-    const genderMatch = relevantVoices.find(v => {
-      const n = v.name.toLowerCase();
-      // Expanded heuristic list for common Windows/Mac/Chrome voices
-      const maleNames = ['male', 'man', 'xander', 'bart', 'arthur', 'david', 'frank', 'maarten', 'mark', 'stefan', 'rob', 'paul', 'daniel'];
-      const femaleNames = ['female', 'woman', 'lady', 'ellen', 'claire', 'laura', 'google', 'zira', 'eva', 'katja', 'fenna', 'samantha', 'tessa', 'karen', 'fiona', 'moira'];
-
-      if (targetGender === 'male') {
-        return maleNames.some(name => n.includes(name));
+    // Strategy 3: Fallback to first available voice of target language (ignore gender)
+    if (!selectedVoice) {
+      // Reset relevance to exact or broad
+      relevantVoices = availableVoices.filter(v => v.lang.includes(targetLang));
+      if (relevantVoices.length === 0) {
+        const shortLang = targetLang.split('-')[0];
+        relevantVoices = availableVoices.filter(v => v.lang.includes(shortLang));
       }
-      if (targetGender === 'female') {
-        return femaleNames.some(name => n.includes(name));
-      }
-      return false;
-    });
+      selectedVoice = relevantVoices[0];
+    }
 
-    if (genderMatch) selectedVoice = genderMatch;
+    // Log for debugging
+    console.log(`[TTS] Selected Voice for ${targetLang} (${targetGender}):`, selectedVoice ? `${selectedVoice.name} (${selectedVoice.lang})` : 'None found');
 
     if (selectedVoice) {
       u.voice = selectedVoice;
