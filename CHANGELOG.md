@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-02-09
+
+### Added
+- **Corridor POI Discovery**: POI searches now strictly filter results within a 50-meter buffer of the actual route path, ensuring maximum relevance.
+- **User-Triggered Discovery**: Replaced automatic POI loading with a dedicated "Discover Now" trigger after route creation.
+- **Persistent Route Markers**: Numbered route markers (1, 2, 3...) now remain visible on the map after route finalization.
+- **Nominatim Proxy**: Fixed CORS and 403 errors by routing OpenStreetMap/Nominatim requests through a secure internal proxy.
+
+### Changed
+- **POI/Marker Separation**: Internal state refactored to treat user-defined stops and discovered POIs as distinct layers.
+- **Sidebar Transition**: Improved sidebar logic to ensure the itinerary view persists correctly after "Finish" is clicked, even while POIs are still being discovered.
+
+### Fixed
+- **Marker Visualization**: Resolved a prop mismatch that caused markers to be invisible during the map selection process.
+- **ReferenceErrors**: Fixed multiple JS errors in `App.jsx` and `ItinerarySidebar.jsx` related to state management during route finalization.
+
+## [2.0.1] - 2026-02-07
+- Initial V2 release with refactored navigation and HUD.
+- Integration of spoken navigation features.
+
 ## [1.8.0] - 2026-02-04
 
 ### Added

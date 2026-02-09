@@ -1469,7 +1469,9 @@ const ItinerarySidebar = ({
     isEnriching,
     onStartEnrichment,
     onPauseEnrichment,
-    onEnrichSinglePoi
+    onEnrichSinglePoi,
+    onFindPoisAlongRoute,
+    isDiscoveryTriggered
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -1572,8 +1574,10 @@ const ItinerarySidebar = ({
     const text = t[language || 'en'];
 
     // Determine View Mode
-    // Hide itinerary when in route edit mode to prevent showing stale POIs
-    const showItinerary = !isAddingMode && !isRouteEditMode && routeData && routeData.pois && routeData.pois.length > 0 && !isAiViewActive;
+    // Show itinerary if we have POIs OR if we have a finalized route path (discovery flow)
+    const hasRoute = routeData && routeData.routePath && routeData.routePath.length > 0;
+    const hasPois = routeData && routeData.pois && routeData.pois.length > 0;
+    const showItinerary = !isAddingMode && !isRouteEditMode && (hasPois || hasRoute) && !isAiViewActive;
     const showDisambiguation = disambiguationOptions && disambiguationOptions.length > 0;
 
     const [touchStart, setTouchStart] = useState(null);
@@ -1965,6 +1969,21 @@ const ItinerarySidebar = ({
                                     /* Changelog View */
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
+                                            {
+                                                date: "09 Feb 2026",
+                                                version: "v2.1.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Corridor Zoeken", desc: "POI-zoekopdrachten tonen nu alleen plaatsen binnen 50m van je werkelijke pad." },
+                                                    { title: "Blijvende Stops", desc: "Genummerde routepunten (1, 2, 3...) blijven nu zichtbaar op de kaart na het afronden." },
+                                                    { title: "Snel Ontdekken", desc: "Nieuwe 'Nu Ontdekken' trigger na routecreatie voor een betere controle." },
+                                                    { title: "Stabiliteit", desc: "Diverse verbeteringen voor kaartmarkeringen en OSM-proxy verbindingen." }
+                                                ] : [
+                                                    { title: "Corridor Search", desc: "POI searches now strictly filter results within 50m of your actual route path." },
+                                                    { title: "Persistent Stops", desc: "Numbered route markers (1, 2, 3...) now stay visible after finishing your route." },
+                                                    { title: "Fast Discovery", desc: "New 'Discover Now' phase after route creation for better control." },
+                                                    { title: "Stability", desc: "Key fixes for map marker visibility and OSM proxy reliability." }
+                                                ]
+                                            },
                                             {
                                                 date: "09 Feb 2026",
                                                 version: "v2.0.1",
@@ -2533,7 +2552,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v2.0.1</span>
+                                            <span className="text-slate-300 text-sm font-medium">v2.1.0</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -2542,7 +2561,7 @@ const ItinerarySidebar = ({
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                        <span className="text-[var(--text-muted)] text-sm font-medium">07 Feb 2026</span>
+                                        <span className="text-[var(--text-muted)] text-sm font-medium">09 Feb 2026</span>
                                     </div>
                                 </div>
                             </div>
@@ -2657,6 +2676,54 @@ const ItinerarySidebar = ({
                                         onScroll={handleScroll}
                                         className="flex-1 overflow-y-auto px-4 pb-4 custom-scrollbar"
                                     >
+                                        {/* Discovery Trigger - Shown when we have a route but haven't discovered POIs yet */}
+                                        {routeData && routeData.routePath && routeData.routePath.length > 0 && !isDiscoveryTriggered && (
+                                            <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                                                <div className="bg-gradient-to-br from-primary/10 to-blue-500/5 border border-primary/20 rounded-2x p-5 text-center relative overflow-hidden group">
+                                                    <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 blur-3xl rounded-full -mr-8 -mt-8 group-hover:bg-primary/10 transition-colors" />
+
+                                                    <div className="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-primary/30 shadow-lg shadow-primary/10">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                            <path d="m18 8-4 4 4 4" />
+                                                        </svg>
+                                                    </div>
+
+                                                    <h4 className="text-lg font-bold text-white mb-2">
+                                                        {language === 'nl' ? 'Ontdek plekken langs je route' : 'Discover places along your route'}
+                                                    </h4>
+                                                    <p className="text-slate-400 text-sm mb-5 px-2">
+                                                        {language === 'nl'
+                                                            ? 'Vind interessante stops gebaseerd op jouw interesses.'
+                                                            : 'Find interesting stops tailored to your preferences.'}
+                                                    </p>
+
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (onFindPoisAlongRoute) onFindPoisAlongRoute();
+                                                        }}
+                                                        disabled={isLoading}
+                                                        className="w-full bg-primary hover:bg-primary-hover disabled:bg-slate-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-xl shadow-primary/20 flex items-center justify-center gap-2 group-hover:scale-[1.02]"
+                                                    >
+                                                        {isLoading ? (
+                                                            <>
+                                                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                                <span>{loadingText || (language === 'nl' ? 'Bezig...' : 'Processing...')}</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" />
+                                                                </svg>
+                                                                <span>{language === 'nl' ? 'Nu ontdekken' : 'Discover now'}</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="space-y-3">
                                             {(() => {
                                                 const items = [...routeData.pois];

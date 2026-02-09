@@ -464,7 +464,7 @@ const MapClickHandler = ({ isMapPickMode, onMapPick }) => {
 
 const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiClick, onPopupClose, speakingId, isSpeechPaused, onSpeak, onStopSpeech, spokenCharCount, isLoading, loadingText, loadingCount, onUpdatePoiDescription, onNavigationRouteFetched, onToggleNavigation, autoAudio, setAutoAudio, spokenNavigationEnabled, setSpokenNavigationEnabled, userSelectedStyle = 'walking', onStyleChange, isSimulating, setIsSimulating, isSimulationEnabled, isAiViewActive, onOpenAiChat, userLocation, setUserLocation, activePoiIndex, setActivePoiIndex, pastDistance = 0, viewAction, setViewAction, navPhase, setNavPhase, routeStart, onMapPick,
     isMapPickMode = false,
-    routeEditPoints = [],
+    routeMarkers = [], // Renamed for clarity
     selectedEditPointIndex = null,
     onEditPointClick,
     cumulativeDistances = [],
@@ -473,7 +473,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     onOpenArMode
 }) => {
     const mapRef = useRef(null);
-    const { pois = [], center, routePath } = routeData || {};
+    const { pois = [], center, routePath, routeMarkers: persistentMarkers = [] } = routeData || {};
     // Fix: In manual mode, we might have an empty routeData to start with.
     // We should treat it as "valid route mode" (to show map) but simply with no POIs yet.
     // If routeData is null, we are in true input mode (splash screen).
@@ -1187,13 +1187,14 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                     <MapClickHandler isMapPickMode={isMapPickMode} onMapPick={onMapPick} />
 
-                    {/* Route Edit Mode - Numbered Markers */}
-                    {isRouteEditMode && routeEditPoints && routeEditPoints.length > 0 && (
+                    {/* Route Markers - Numbered Markers (shown during edit AND after finalization) */}
+                    {(isRouteEditMode ? routeMarkers : persistentMarkers)?.length > 0 && (
                         <>
-                            {routeEditPoints.map((point, idx) => {
+                            {(isRouteEditMode ? routeMarkers : persistentMarkers).map((point, idx) => {
                                 const isStart = idx === 0;
                                 const isSelected = selectedEditPointIndex === idx;
-                                const distance = cumulativeDistances[idx] || 0;
+                                // For persistent markers, skip the 0km label or show it differently if desired
+                                const distance = isRouteEditMode ? (cumulativeDistances[idx] || 0) : null;
 
                                 // Custom numbered marker icon
                                 const numberedIcon = L.divIcon({
@@ -1211,17 +1212,18 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                             border-radius: 50%;
                                             background: ${isStart ? '#22c55e' : (isSelected ? '#f59e0b' : 'var(--primary)')};
                                             border: 3px solid white;
-                                            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                                            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
                                             display: flex;
                                             align-items: center;
                                             justify-content: center;
-                                            font-weight: bold;
+                                            font-weight: 900;
                                             font-size: ${isStart ? '10px' : '14px'};
                                             color: white;
                                             ${isSelected ? 'animation: pulse 1s infinite;' : ''}
                                         ">
                                             ${isStart ? 'START' : idx}
                                         </div>
+                                        ${distance !== null ? `
                                         <div style="
                                             margin-top: 4px;
                                             background: rgba(0,0,0,0.75);
@@ -1234,21 +1236,23 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                         ">
                                             ${distance.toFixed(1)} km
                                         </div>
+                                        ` : ''}
                                     </div>
                                 `,
-                                    iconSize: [isStart ? 40 : 32, 50],
+                                    iconSize: [isStart ? 40 : 32, distance !== null ? 50 : 40],
                                     iconAnchor: [isStart ? 20 : 16, isStart ? 20 : 16]
                                 });
 
                                 return (
                                     <Marker
-                                        key={`edit-${point.id || idx}`}
+                                        key={`route-marker-${point.id || idx}`}
                                         position={[point.lat, point.lng]}
                                         icon={numberedIcon}
                                         zIndexOffset={isSelected ? 1100 : 1000}
                                         eventHandlers={{
                                             click: () => {
-                                                if (onEditPointClick) onEditPointClick(idx);
+                                                if (isRouteEditMode && onEditPointClick) onEditPointClick(idx);
+                                                else if (!isRouteEditMode && onPoiClick) onPoiClick(point, 'medium');
                                             }
                                         }}
                                     >
@@ -1258,30 +1262,47 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                             offset={[0, -20]}
                                             className="route-edit-tooltip"
                                         >
-                                            <div className="font-bold text-slate-900">
-                                                {isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : point.name || `Stop ${idx}`}
+                                            <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                                <span className="text-[10px] bg-primary/20 text-primary px-1 rounded">
+                                                    {isStart ? 'START' : (language === 'nl' ? 'PUNT' : 'POINT')} {idx > 0 ? idx : ''}
+                                                </span>
+                                                {point.name || (isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : `Stop ${idx}`)}
                                             </div>
                                         </Tooltip>
 
-                                        <Popup className="glass-popup">
-                                            <div className="text-slate-900 font-bold mb-2">
-                                                {isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : point.name || `Stop ${idx}`}
-                                            </div>
-                                            {onDeletePoint && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        onDeletePoint(idx);
-                                                        map.closePopup();
-                                                    }}
-                                                    className="bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded-lg border border-red-200 transition-colors flex items-center justify-center shrink-0"
-                                                    title={language === 'nl' ? 'Verwijderen' : 'Delete'}
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-                                                </button>
-                                            )}
-                                        </Popup>
+                                        {!isRouteEditMode && (
+                                            <Popup className="glass-popup">
+                                                <div className="text-slate-900 font-bold mb-1">
+                                                    {point.name || (isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : `Stop ${idx}`)}
+                                                </div>
+                                                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
+                                                    {language === 'nl' ? 'Routepunt' : 'Route Marker'}
+                                                </div>
+                                                {point.description && <p className="text-xs text-slate-600 mb-2">{point.description}</p>}
+                                            </Popup>
+                                        )}
+
+                                        {isRouteEditMode && (
+                                            <Popup className="glass-popup">
+                                                <div className="text-slate-900 font-bold mb-2">
+                                                    {isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : point.name || `Stop ${idx}`}
+                                                </div>
+                                                {onDeletePoint && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            onDeletePoint(idx);
+                                                            map.closePopup();
+                                                        }}
+                                                        className="bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded-lg border border-red-200 transition-colors flex items-center justify-center shrink-0"
+                                                        title={language === 'nl' ? 'Verwijderen' : 'Delete'}
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                                                    </button>
+                                                )}
+                                            </Popup>
+                                        )}
                                     </Marker>
                                 );
                             })}

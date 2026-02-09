@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import LoginModal from './components/auth/LoginModal';
 import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle } from './utils/routeUtils';
+import { isLocationOnPath } from './utils/geometry';
 import PoiProposalModal from './components/PoiProposalModal';
 import DistanceRefineConfirmation from './components/DistanceRefineConfirmation';
 import RouteEditPanel from './components/RouteEditPanel';
@@ -77,11 +78,12 @@ function CityExplorerApp() {
   const [isNavigationOpen, setIsNavigationOpen] = useState(false); // Navigation UI State
   // Map Pick Mode State
   const [isMapPickMode, setIsMapPickMode] = useState(false);
+  const [isRouteEditMode, setIsRouteEditMode] = useState(false);
   const [mapPickContext, setMapPickContext] = useState(null); // To store callback or context if needed
 
-  // Route Edit Mode State
-  const [isRouteEditMode, setIsRouteEditMode] = useState(false);
-  const [routeEditPoints, setRouteEditPoints] = useState([]);
+  // Route Markers State (Temporary points for custom routing)
+  const [routeMarkers, setRouteMarkers] = useState([]);
+  const [isDiscoveryTriggered, setIsDiscoveryTriggered] = useState(false);
   const [selectedEditPointIndex, setSelectedEditPointIndex] = useState(-1);
   const [cumulativeDistances, setCumulativeDistances] = useState([]);
 
@@ -1019,13 +1021,9 @@ function CityExplorerApp() {
         let address = null;
         let resultData = null;
 
-        // 1. Try Nominatim (OSM) - High Quality
+        // 1. Try Nominatim (OSM) - High Quality via Proxy
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
-            headers: {
-              'Accept-Language': language === 'nl' ? 'nl' : 'en'
-            }
-          });
+          const res = await apiFetch(`/api/nominatim?format=json&lat=${latitude}&lon=${longitude}`);
           if (!res.ok) throw new Error(res.statusText);
           const data = await res.json();
           if (data && data.address) {
@@ -3695,14 +3693,15 @@ function CityExplorerApp() {
 
     // Enable Route Edit Mode
     setIsRouteEditMode(true);
-    setRouteEditPoints([]);
+    setRouteMarkers([]);
     setSelectedEditPointIndex(-1);
     setCumulativeDistances([]);
+    setIsDiscoveryTriggered(false); // Reset discovery state
 
     if (keepExisting && routeData) {
       console.log("Initializing Map Pick Mode - Keeping Existing Route");
 
-      // Construct points list from current route
+      // Construct points list from current route or markers
       const points = [];
 
       // 1. Start Point
@@ -3719,12 +3718,15 @@ function CityExplorerApp() {
         });
       }
 
-      // 2. Waypoints
-      if (routeData.pois) {
+      // 2. Markers (formerly points/pois in edit mode)
+      if (routeData.routeMarkers && routeData.routeMarkers.length > 0) {
+        points.push(...routeData.routeMarkers);
+      } else if (routeData.pois) {
+        // Fallback for transition or if we want to turn existing POIs back into markers
         points.push(...routeData.pois);
       }
 
-      setRouteEditPoints(points);
+      setRouteMarkers(points);
 
       // 3. Cumulative Distances
       if (routeData.legs) {
@@ -3777,11 +3779,7 @@ function CityExplorerApp() {
 
       try {
         // Use proxy to avoid CORS
-        const res = await fetch(`/api/nominatim?q=${encodeURIComponent(cityQuery)}&format=json&limit=1`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('city_explorer_token')}`
-          }
-        });
+        const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(cityQuery)}&format=json&limit=1`);
         const data = await res.json();
         console.log("[MapPick] Geocoding response for", cityQuery, ":", data);
         if (data && data[0]) {
@@ -3827,12 +3825,7 @@ function CityExplorerApp() {
 
     try {
       // 1. Reverse Geocode (use proxy to avoid CORS)
-      const response = await fetch(`/api/nominatim?lat=${latlng.lat}&lon=${latlng.lng}&format=json&zoom=18&addressdetails=1`, {
-        headers: {
-          'Accept-Language': language,
-          'Authorization': `Bearer ${localStorage.getItem('city_explorer_token')}`
-        }
-      });
+      const response = await apiFetch(`/api/nominatim?lat=${latlng.lat}&lon=${latlng.lng}&format=json&zoom=18&addressdetails=1`);
       const data = await response.json();
 
       const name = data.name ||
@@ -3849,13 +3842,13 @@ function CityExplorerApp() {
         address: data.address
       };
 
-      // 2. Route Edit Mode Logic - Update routeEditPoints
+      // 2. Route Edit Mode Logic - Update routeMarkers
       if (isRouteEditMode) {
-        const newPoints = [...routeEditPoints, poi];
-        setRouteEditPoints(newPoints);
+        const newMarkers = [...routeMarkers, poi];
+        setRouteMarkers(newMarkers);
 
         // Calculate cumulative distances
-        if (newPoints.length === 1) {
+        if (newMarkers.length === 1) {
           // First point (start) has 0 distance
           setCumulativeDistances([0]);
 
@@ -3863,6 +3856,7 @@ function CityExplorerApp() {
           setRouteData({
             center: [poi.lat, poi.lng],
             pois: [],
+            routeMarkers: [poi], // Initialize markers in routeData
             startPoi: poi,
             startName: poi.name,
             startIsPoi: true,
@@ -3879,19 +3873,19 @@ function CityExplorerApp() {
           }
         } else {
           // Calculate route to this point
-          const startCoords = [newPoints[0].lat, newPoints[0].lng];
+          const startCoords = [newMarkers[0].lat, newMarkers[0].lng];
           const activeMode = travelMode || 'walking';
 
           try {
-            // Calculate full route through all points (except we don't close the loop yet)
+            // Calculate full route through all markers (except we don't close the loop yet)
             const routeResult = await calculateRoutePath(
-              newPoints.slice(1), // Exclude start, it's the center
+              newMarkers.slice(1), // Exclude start, it's the center
               startCoords,
               activeMode,
               null // Don't close loop yet
             );
 
-            // Calculate cumulative distances for each point
+            // Calculate cumulative distances for each marker
             const newDistances = [0]; // Start is 0
             let cumulative = 0;
 
@@ -3902,39 +3896,46 @@ function CityExplorerApp() {
               });
             } else {
               // Fallback: use total distance distributed evenly
-              const distPerPoint = routeResult.dist / (newPoints.length - 1);
-              for (let i = 1; i < newPoints.length; i++) {
+              const distPerPoint = routeResult.dist / (newMarkers.length - 1);
+              for (let i = 1; i < newMarkers.length; i++) {
                 newDistances.push(distPerPoint * i);
               }
             }
 
             setCumulativeDistances(newDistances);
 
-            // Update route data for visualization - use fresh object with new data
-            setRouteData({
-              center: [newPoints[0].lat, newPoints[0].lng],
-              pois: newPoints.slice(1),
-              startPoi: newPoints[0],
-              startName: newPoints[0].name,
+            // Update route data for visualization - markers are separate from POIs
+            setRouteData(prev => ({
+              ...prev,
+              center: [newMarkers[0].lat, newMarkers[0].lng],
+              routeMarkers: newMarkers,
+              pois: [], // Clear POIs while editing/adding markers
+              startPoi: newMarkers[0],
+              startName: newMarkers[0].name,
               startIsPoi: true,
               routePath: routeResult.path,
               navigationSteps: routeResult.steps,
               legs: routeResult.legs,
-              originalPois: null,
               stats: {
                 totalDistance: routeResult.dist,
                 walkDistance: routeResult.walkDist || routeResult.dist,
                 limitKm: Math.ceil(routeResult.dist) || 5
               }
-            });
+            }));
 
           } catch (calcErr) {
             console.error("Route calculation failed:", calcErr);
             // Still add the point, just estimate distance
-            const lastPoint = newPoints[newPoints.length - 2];
-            const dist = getDistance(lastPoint.lat, lastPoint.lng, poi.lat, poi.lng);
+            const lastPoint = newMarkers[newMarkers.length - 2];
+            const dist = smartPoiUtils.getDistance(lastPoint.lat, lastPoint.lng, poi.lat, poi.lng);
             const lastDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
             setCumulativeDistances([...cumulativeDistances, lastDist + dist]);
+
+            setRouteData(prev => ({
+              ...prev,
+              routeMarkers: newMarkers,
+              pois: []
+            }));
           }
         }
 
@@ -4019,18 +4020,19 @@ function CityExplorerApp() {
   /**
    * Delete a point from route edit mode
    */
-  const handleDeleteEditPoint = async (index) => {
-    if (index < 0 || index >= routeEditPoints.length) return;
+  const handleDeleteMarker = async (index) => {
+    if (index < 0 || index >= routeMarkers.length) return;
 
-    const newPoints = routeEditPoints.filter((_, i) => i !== index);
-    setRouteEditPoints(newPoints);
+    const newMarkers = routeMarkers.filter((_, i) => i !== index);
+    setRouteMarkers(newMarkers);
     setSelectedEditPointIndex(-1);
 
-    if (newPoints.length === 0) {
+    if (newMarkers.length === 0) {
       setCumulativeDistances([]);
       setRouteData(prev => ({
         ...prev,
         pois: [],
+        routeMarkers: [],
         routePath: [],
         stats: { ...prev.stats, totalDistance: 0 }
       }));
@@ -4038,8 +4040,8 @@ function CityExplorerApp() {
     }
 
     // Recalculate route with remaining points
-    if (newPoints.length >= 2) {
-      const startCoords = [newPoints[0].lat, newPoints[0].lng];
+    if (newMarkers.length >= 2) {
+      const startCoords = [newMarkers[0].lat, newMarkers[0].lng];
       const activeMode = travelMode || 'walking';
 
       try {
@@ -4047,7 +4049,7 @@ function CityExplorerApp() {
         setLoadingText(language === 'nl' ? 'Route herberekenen...' : 'Recalculating route...');
 
         const routeResult = await calculateRoutePath(
-          newPoints.slice(1),
+          newMarkers.slice(1),
           startCoords,
           activeMode,
           null
@@ -4066,8 +4068,9 @@ function CityExplorerApp() {
 
         setRouteData(prev => ({
           ...prev,
-          center: [newPoints[0].lat, newPoints[0].lng],
-          pois: newPoints.slice(1),
+          center: [newMarkers[0].lat, newMarkers[0].lng],
+          routeMarkers: newMarkers,
+          pois: [],
           routePath: routeResult.path,
           legs: routeResult.legs,
           stats: { ...prev.stats, totalDistance: routeResult.dist }
@@ -4083,7 +4086,8 @@ function CityExplorerApp() {
       setCumulativeDistances([0]);
       setRouteData(prev => ({
         ...prev,
-        center: [newPoints[0].lat, newPoints[0].lng],
+        center: [newMarkers[0].lat, newMarkers[0].lng],
+        routeMarkers: newMarkers,
         pois: [],
         routePath: [],
         stats: { ...prev.stats, totalDistance: 0 }
@@ -4095,7 +4099,7 @@ function CityExplorerApp() {
    * Finalize route - close the loop and exit edit mode
    */
   const handleFinalizeRoute = async () => {
-    if (routeEditPoints.length < 2) {
+    if (routeMarkers.length < 2) {
       alert(language === 'nl' ? 'Voeg minimaal 2 punten toe.' : 'Add at least 2 points.');
       return;
     }
@@ -4104,31 +4108,27 @@ function CityExplorerApp() {
     setLoadingText(language === 'nl' ? 'Route afronden...' : 'Finalizing route...');
 
     try {
-      const startCoords = [routeEditPoints[0].lat, routeEditPoints[0].lng];
+      const startCoords = [routeMarkers[0].lat, routeMarkers[0].lng];
       const activeMode = travelMode || 'walking';
 
       // Calculate route WITH loop closure (back to start)
       const routeResult = await calculateRoutePath(
-        routeEditPoints.slice(1),
+        routeMarkers.slice(1),
         startCoords,
         activeMode,
         startCoords // Close the loop by returning to start
       );
 
-      // Convert edit points to POIs for the main route
-      const finalPois = routeEditPoints.slice(1).map((p, idx) => ({
-        ...p,
-        order: idx + 1
-      }));
-
-      // Update route data with finalized route
+      // We maintain routeMarkers separately in the routeData
+      // and initialize an empty POI list for the discovery layer
       setRouteData(prev => ({
         ...prev,
         center: startCoords,
-        startPoi: routeEditPoints[0],
-        startName: routeEditPoints[0].name,
+        startPoi: routeMarkers[0],
+        startName: routeMarkers[0].name,
         startIsPoi: true,
-        pois: finalPois,
+        routeMarkers: [...routeMarkers], // Store markers permanently in routeData
+        pois: [], // Initially empty, user must trigger discovery
         routePath: routeResult.path,
         navigationSteps: routeResult.steps,
         legs: routeResult.legs,
@@ -4139,10 +4139,12 @@ function CityExplorerApp() {
         }
       }));
 
+      setIsDiscoveryTriggered(false); // Mode finalized, but discovery not yet run
+
       // Exit edit mode
       setIsRouteEditMode(false);
       setIsMapPickMode(false);
-      setRouteEditPoints([]);
+      setRouteMarkers([]);
       setCumulativeDistances([]);
       setSelectedEditPointIndex(-1);
 
@@ -4153,16 +4155,102 @@ function CityExplorerApp() {
 
 
       // Feedback
+      const finalizeMsg = language === 'nl'
+        ? `🎉 Route afgerond! Totale afstand: **${routeResult.dist.toFixed(1)} km** met ${routeMarkers.length} stops.\n\nZal ik op zoek gaan naar interessante plekjes langs deze route? Klik op de **"Nu ontdekken"** knop in de zijbalk!`
+        : `🎉 Route finalized! Total distance: **${routeResult.dist.toFixed(1)} km** with ${routeMarkers.length} stops.\n\nShould I find interesting spots along this route? Click the **"Discover now"** button in the sidebar!`;
+
       setAiChatHistory(prev => [...prev, {
         role: 'brain',
-        text: language === 'nl'
-          ? `🎉 Route afgerond! Totale afstand: **${routeResult.dist.toFixed(1)} km** met ${finalPois.length} stops.`
-          : `🎉 Route finalized! Total distance: **${routeResult.dist.toFixed(1)} km** with ${finalPois.length} stops.`
+        text: finalizeMsg
       }]);
+
+      // Proactive speech if auto-audio is on
+      if (autoAudio) {
+        handleSpeak(language === 'nl'
+          ? "Route afgerond! Zal ik op zoek gaan naar interessante plekjes langs deze route? Klik op de knop Nu ontdekken."
+          : "Route finalized! Should I find interesting spots along this route? Click the Discover now button.",
+          'finalize-ask'
+        );
+      }
+
+      setRefinementProposals(null); // Clear any old search refinements
 
     } catch (err) {
       console.error("Route finalization failed:", err);
       alert(language === 'nl' ? 'Kon route niet afronden.' : 'Could not finalize route.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Find POIs along the currently generated route path
+   */
+  const handleFindPoisAlongRoute = async () => {
+    if (!routeData || !routeData.routePath || routeData.routePath.length === 0) {
+      alert(language === 'nl' ? 'Plan eerst een route.' : 'Plan a route first.');
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Plekken ontdekken...' : 'Discovering places...');
+
+    try {
+      // 1. Get interests or defaults
+      const interestLine = interests || 'top sights, landmark, museum, park';
+
+      // 2. Determine search radius based on city scale (approx 10km to cover more of the route extent)
+      const radiusKm = 10;
+
+      // 3. Fetch POIs using the same logic as journey generation
+      const center = routeData.center;
+      const sources = searchSources;
+
+      console.log("Searching POIs along route near", center);
+
+      const rawDiscoveredPois = await getCombinedPOIs(
+        validatedCityData || { name: city },
+        interestLine,
+        city,
+        radiusKm,
+        sources,
+        language
+      );
+
+      // Filter: Keep only POIs within 50 meters of the actual route path
+      const discoveredPois = rawDiscoveredPois.filter(poi =>
+        isLocationOnPath({ lat: poi.lat, lng: poi.lng }, routeData.routePath, 0.05)
+      );
+
+      if (!discoveredPois || discoveredPois.length === 0) {
+        alert(language === 'nl' ? 'Geen nieuwe plekken gevonden langs deze route.' : 'No new places found along this route.');
+      } else {
+        // 4. Enrich discovered POIs in background
+        const routeCtx = `Discovery along route in ${city}`;
+
+        // Show initial results immediately
+        setRouteData(prev => ({
+          ...prev,
+          pois: discoveredPois
+        }));
+
+        setIsDiscoveryTriggered(true);
+
+        // Feedback
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: language === 'nl'
+            ? `✨ Ik heb **${discoveredPois.length}** interessante plekken gevonden langs je route!`
+            : `✨ I found **${discoveredPois.length}** interesting stops along your route!`
+        }]);
+
+        // Start background enrichment
+        enrichBackground(discoveredPois, city, language, descriptionLength, interestLine, routeCtx)
+          .catch(err => console.warn("Discovery enrichment failed", err));
+      }
+    } catch (err) {
+      console.error("Discovery failed:", err);
+      alert(language === 'nl' ? 'Fout bij het zoeken naar plekken.' : 'Error searching for places.');
     } finally {
       setIsLoading(false);
     }
@@ -4174,7 +4262,7 @@ function CityExplorerApp() {
   const handleCancelEditMode = () => {
     setIsRouteEditMode(false);
     setIsMapPickMode(false);
-    setRouteEditPoints([]);
+    setRouteMarkers([]);
     setCumulativeDistances([]);
     setSelectedEditPointIndex(-1);
     setIsSidebarOpen(true);
@@ -4299,23 +4387,23 @@ function CityExplorerApp() {
           isMapPickMode={isMapPickMode}
           onMapPick={handleMapPick}
           isRouteEditMode={isRouteEditMode}
-          routeEditPoints={routeEditPoints}
+          routeMarkers={routeMarkers}
           cumulativeDistances={cumulativeDistances}
           selectedEditPointIndex={selectedEditPointIndex}
           onEditPointClick={(idx) => setSelectedEditPointIndex(idx)}
-          onDeletePoint={handleDeleteEditPoint}
+          onDeletePoint={handleDeleteMarker}
           onOpenArMode={() => setIsArMode(true)}
         />
 
         {/* Route Edit Panel - shown during route edit mode */}
         {isRouteEditMode && (
           <RouteEditPanel
-            points={routeEditPoints}
+            points={routeMarkers}
             cumulativeDistances={cumulativeDistances}
             totalDistance={routeData?.stats?.totalDistance || 0}
             travelMode={travelMode}
             language={language}
-            onDeletePoint={handleDeleteEditPoint}
+            onDeletePoint={handleDeleteMarker}
             onFinalize={handleFinalizeRoute}
             onCancel={handleCancelEditMode}
             onPointClick={(idx) => setSelectedEditPointIndex(idx)}
@@ -4431,7 +4519,8 @@ function CityExplorerApp() {
         isEnriching={isBackgroundUpdating}
         onStartEnrichment={handleTriggerEnrichment}
         onPauseEnrichment={handlePauseEnrichment}
-        onEnrichSinglePoi={handleEnrichSinglePoi}
+        onFindPoisAlongRoute={handleFindPoisAlongRoute}
+        isDiscoveryTriggered={isDiscoveryTriggered}
       />
 
       {/* Map Pick Instruction Overlay - REMOVED per user request */}
