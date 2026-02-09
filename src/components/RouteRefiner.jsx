@@ -132,6 +132,16 @@ const RouteRefiner = ({
 
     const text = t[language === 'nl' ? 'nl' : 'en'];
 
+    // Unified list of stops for the refiner views (fallback to manual markers if no POIs)
+    const navPoints = (routeData?.pois && routeData.pois.length > 0)
+        ? routeData.pois
+        : (routeData?.routeMarkers || []).map((m, i) => ({
+            ...m,
+            id: m.id || `manual-${i}`,
+            name: m.name || (i === 0 ? (language === 'nl' ? 'Start' : 'Start') : `${language === 'nl' ? 'Stop' : 'Stop'} ${i}`),
+            isManual: true
+        }));
+
     const handleHalfwayBeer = () => {
         setShowStopSelector(true);
     };
@@ -145,7 +155,7 @@ const RouteRefiner = ({
         setSearchResults([]);
 
         const stopIndex = parseInt(pendingStopLocation);
-        const targetPoi = routeData?.pois?.[stopIndex];
+        const targetPoi = navPoints[stopIndex];
 
         const searchParams = {
             stopType: pendingStopType,
@@ -493,7 +503,7 @@ const RouteRefiner = ({
                             ) : (
                                 <div className="flex-1 overflow-y-auto custom-scrollbar px-6 space-y-3">
                                     {searchResults.map((poi, idx) => {
-                                        const referencePoi = routeData?.pois?.[parseInt(pendingStopLocation)];
+                                        const referencePoi = navPoints[parseInt(pendingStopLocation)];
                                         let distanceKm = null;
                                         if (referencePoi && poi.lat && (poi.lng || poi.lon) && referencePoi.lat && (referencePoi.lng || referencePoi.lon)) {
                                             const R = 6371; // Earth radius in km
@@ -602,7 +612,7 @@ const RouteRefiner = ({
                                     <div className="flex-1 flex flex-col min-h-0">
                                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
                                             <div className="space-y-2 pb-2">
-                                                {routeData?.pois?.slice(0, -1).map((poi, idx) => {
+                                                {navPoints.slice(0, -1).map((poi, idx) => {
                                                     if (idx < activePoiIndex) return null;
                                                     return (
                                                         <button
@@ -853,7 +863,7 @@ const RouteRefiner = ({
                                 {text.currentRoute}
                             </label>
                             <div className="space-y-2">
-                                {routeData?.pois?.map((poi, idx) => (
+                                {navPoints.map((poi, idx) => (
                                     <div key={poi.id} className="flex items-center justify-between p-3 bg-slate-900/40 border border-white/5 rounded-xl group hover:bg-slate-900/60 transition-all">
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400 group-hover:bg-primary group-hover:text-white transition-all shrink-0">
@@ -861,13 +871,15 @@ const RouteRefiner = ({
                                             </div>
                                             <span className="text-xs font-bold text-slate-200 truncate pr-2">{poi.name}</span>
                                         </div>
-                                        <button
-                                            onClick={() => onRemovePoi(poi.id)}
-                                            className="p-1.5 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all"
-                                            title={text.remove}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
-                                        </button>
+                                        {!poi.isManual && (
+                                            <button
+                                                onClick={() => onRemovePoi(poi.id)}
+                                                className="p-1.5 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all"
+                                                title={text.remove}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>

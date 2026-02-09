@@ -558,8 +558,6 @@ function CityExplorerApp() {
     } catch (e) {
       if (e.name !== 'AbortError') console.warn("Start/End Enrichment Failed:", e);
     }
-
-    // Local cache to persist short descriptions between Stage 1 and Stage 2
     const shortDescMap = new Map();
 
     try {
@@ -1346,7 +1344,7 @@ function CityExplorerApp() {
       // Construct Context Object
       const routeContext = routeData ? {
         isActive: true,
-        city: validatedCityData?.name || city,
+        city: validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null),
         stats: routeData.stats,
         poiNames: routeData.pois ? routeData.pois.map(p => p.name).join(', ') : '',
         startName: routeData.startName || startPoint
@@ -1378,7 +1376,6 @@ function CityExplorerApp() {
       } else if (semanticMatch) {
         console.log("[AI] Semantic Search Promise detected:", semanticMatch[1]);
         searchIntent = semanticMatch[1].trim();
-        // Don't remove text, let the user see the confirmation
       }
 
       setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
@@ -3486,9 +3483,21 @@ function CityExplorerApp() {
   };
 
   const handleNavigationRouteFetched = (steps) => {
-    console.log("Navigation steps updated from MapContainer:", steps.length);
     setRouteData(prev => {
       if (!prev) return prev;
+
+      // Guard: If we already have navigation steps and they are effectively the same,
+      // skip update to prevent re-render loops.
+      if (prev.navigationSteps && prev.navigationSteps.length === steps.length) {
+        const lastOld = prev.navigationSteps[prev.navigationSteps.length - 1]?.maneuver?.location;
+        const lastNew = steps[steps.length - 1]?.maneuver?.location;
+
+        if (lastOld && lastNew && lastOld[0] === lastNew[0] && lastOld[1] === lastNew[1]) {
+          return prev;
+        }
+      }
+
+      console.log("Navigation steps updated from MapContainer:", steps.length);
       return {
         ...prev,
         navigationSteps: steps
@@ -3564,9 +3573,30 @@ function CityExplorerApp() {
     setLoadingText(language === 'nl' ? 'Stop toevoegen aan route...' : 'Adding stop to route...');
 
     try {
+      // Determine if we are adding to a purely manual route
+      const isManualRoute = routeData.routeMarkers && routeData.routeMarkers.length > 0 && (routeData.pois.length === 0);
+
       // Insert the POI after the specified index
-      const newPois = [...routeData.pois];
-      newPois.splice(afterStopIndex + 1, 0, {
+      let newPois;
+      let spliceIndex;
+
+      if (isManualRoute) {
+        // Fallback to route markers if no POIs exist yet
+        // We exclude the start point (index 0) because it's the center
+        newPois = routeData.routeMarkers.slice(1).map((m, i) => ({
+          ...m,
+          id: m.id || `manual-${i + 1}`,
+          isManualStop: true
+        }));
+        // afterStopIndex 0 from RouteRefiner means "After Start"
+        // In our newPois array, index 0 is M1. So splice at 0 puts it after Start.
+        spliceIndex = afterStopIndex;
+      } else {
+        newPois = [...routeData.pois];
+        spliceIndex = afterStopIndex + 1;
+      }
+
+      newPois.splice(spliceIndex, 0, {
         ...poi,
         id: poi.id || `stop-${Date.now()}`,
         isExtraStop: true,
@@ -3582,6 +3612,7 @@ function CityExplorerApp() {
         ...prev,
         pois: newPois,
         originalPois: newPois,
+        routeMarkers: isManualRoute ? [] : (prev.routeMarkers || []),
         routePath: routeResult.path,
         navigationSteps: routeResult.steps,
         legs: routeResult.legs || prev.legs,
@@ -4186,7 +4217,7 @@ function CityExplorerApp() {
   /**
    * Find POIs along the currently generated route path
    */
-  const handleFindPoisAlongRoute = async () => {
+  const handleFindPoisAlongRoute = async (customInterests = null) => {
     if (!routeData || !routeData.routePath || routeData.routePath.length === 0) {
       alert(language === 'nl' ? 'Plan eerst een route.' : 'Plan a route first.');
       return;
@@ -4197,7 +4228,7 @@ function CityExplorerApp() {
 
     try {
       // 1. Get interests or defaults
-      const interestLine = interests || 'top sights, landmark, museum, park';
+      const interestLine = customInterests || interests || 'top sights, landmark, museum, park';
 
       // 2. Determine search radius based on city scale (approx 10km to cover more of the route extent)
       const radiusKm = 10;
@@ -4206,7 +4237,7 @@ function CityExplorerApp() {
       const center = routeData.center;
       const sources = searchSources;
 
-      console.log("Searching POIs along route near", center);
+      console.log("Searching POIs along route near", center, "with interests:", interestLine);
 
       const rawDiscoveredPois = await getCombinedPOIs(
         validatedCityData || { name: city },
@@ -4520,6 +4551,12 @@ function CityExplorerApp() {
         onStartEnrichment={handleTriggerEnrichment}
         onPauseEnrichment={handlePauseEnrichment}
         onFindPoisAlongRoute={handleFindPoisAlongRoute}
+        onSkipDiscovery={() => {
+          setIsDiscoveryTriggered(true);
+          setIsSidebarOpen(false);
+          setIsNavigationOpen(true);
+          setNavPhase(NAV_PHASES.ACTIVE_ROUTE);
+        }}
         isDiscoveryTriggered={isDiscoveryTriggered}
       />
 

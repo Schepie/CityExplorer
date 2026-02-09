@@ -40,6 +40,10 @@ const MAP_STYLES = {
     }
 };
 
+// Stable constants to prevent re-renders
+const EMPTY_ARRAY = [];
+const COORD_THRESHOLD = 0.0001; // ~10m at typical latitudes
+
 // Math Helpers
 const toRad = (v) => v * Math.PI / 180;
 const toDeg = (v) => v * 180 / Math.PI;
@@ -473,16 +477,17 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     onOpenArMode
 }) => {
     const mapRef = useRef(null);
-    const { pois = [], center, routePath, routeMarkers: persistentMarkers = [] } = routeData || {};
-    // Fix: In manual mode, we might have an empty routeData to start with.
-    // We should treat it as "valid route mode" (to show map) but simply with no POIs yet.
-    // If routeData is null, we are in true input mode (splash screen).
+    const { pois = EMPTY_ARRAY, center, routePath, routeMarkers: persistentMarkers = EMPTY_ARRAY } = routeData || {};
+    // Fallback points for navigation when no POIs are discovered
+    const navPoints = pois.length > 0 ? pois : (persistentMarkers.length > 1 ? persistentMarkers.slice(1) : []);
     const isInputMode = !routeData;
 
     // track simulation index to allow pausing
     const simulationIndexRef = useRef(0);
     const lastFetchedIndexRef = useRef(-1); // Sync fetcher with target POI
     const lastFetchedPhaseRef = useRef(null); // Sync fetcher with nav phase
+    const lastFetchedLocationRef = useRef(null); // track location used for last fetch
+    const fetchInProgressRef = useRef(false); // prevent concurrent fetches
     const initialStartDistRef = useRef(null); // Track initial distance to start for PRE_ROUTE leg stats
     const [simulationSpeed, setSimulationSpeed] = useState(1); // 1x, 2x, 5x
     // Fix for stale closure in Leaflet listeners
@@ -589,7 +594,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
             } else {
                 clearInterval(interval);
                 console.log("Simulation leg complete. Checking for next POI...");
-                if (routeData && routeData.pois && activePoiIndex < (routeData.pois.length - 1)) {
+                if (navPoints.length > 0 && activePoiIndex < (navPoints.length - 1)) {
                     const nextIdx = activePoiIndex + 1;
                     setNavigationPath(null);
                     simulationIndexRef.current = 0;
@@ -728,12 +733,12 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
         // Requirement: Only open if IN_ROUTE, Sequential, and On-Path
         const checkPoiActivation = () => {
             if (navPhase !== 'IN_ROUTE') return;
-            if (activePoiIndex >= routeData.pois.length) return;
+            if (activePoiIndex >= navPoints.length) return;
 
             // 1. Define Candidates: Current Target & Next Target (handling skips)
             // We check only activePoiIndex and activePoiIndex + 1
             const candidates = [activePoiIndex];
-            if (activePoiIndex < routeData.pois.length - 1) {
+            if (activePoiIndex < navPoints.length - 1) {
                 candidates.push(activePoiIndex + 1);
             }
 
@@ -742,7 +747,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
             for (const targetIdx of candidates) {
                 if (activationFound) break; // Only trigger one at a time
 
-                const targetPoi = routeData.pois[targetIdx];
+                const targetPoi = navPoints[targetIdx];
                 const distKm = calcDistance(
                     { lat: userLocation.lat, lng: userLocation.lng },
                     { lat: targetPoi.lat, lng: targetPoi.lng }
@@ -883,8 +888,9 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     const [effectiveHeading, setEffectiveHeading] = useState(0);
 
     useEffect(() => {
-        const currentSteps = navigationPath?.steps || routeData?.navigationSteps; // Re-use common logic
-        const targetPoi = focusedLocation || (pois && pois[0]);
+        // 1. Identify Target
+        const currentSteps = navigationPath?.steps || routeData?.navigationSteps;
+        const targetPoi = focusedLocation || navPoints[0];
 
         if (isNavigating && userLocation && currentSteps && currentSteps.length > 0) {
             // Find current maneuver bearing
@@ -919,7 +925,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
         const effectiveLocation = userLocation || (center ? { lat: center[0], lng: center[1] } : null);
         if (!effectiveLocation) return;
 
-        const targetPoi = focusedLocation || pois[0];
+        const targetPoi = focusedLocation || navPoints[0];
         const steps = navigationPath?.steps || routeData?.navigationSteps;
 
         if (steps && steps.length > 0) {
@@ -1007,17 +1013,9 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     // Fetch real street navigation path
     useEffect(() => {
         // console.log("Nav check:", { user: !!userLocation, focus: !!focusedLocation, nav: isNavigating, style: userSelectedStyle });
-        // TEST MODE GUARD: Do not re-fetch route if we are simulating AND we already have the path for the current target
-        if (isSimulating && navigationPath && navigationPath.length > 0 &&
-            lastFetchedIndexRef.current === activePoiIndex &&
-            lastFetchedPhaseRef.current === navPhase) {
-            return;
-        }
-        lastFetchedIndexRef.current = activePoiIndex;
-        lastFetchedPhaseRef.current = navPhase;
 
         // Target is determined by the sequential index
-        let navTarget = (pois && pois.length > activePoiIndex) ? pois[activePoiIndex] : (focusedLocation || (pois && pois[0]));
+        let navTarget = (navPoints.length > activePoiIndex) ? navPoints[activePoiIndex] : (focusedLocation || navPoints[0]);
 
         if (navPhase === 'PRE_ROUTE' && routeData?.center) {
             navTarget = {
@@ -1033,7 +1031,21 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
             return;
         }
 
+        // STABILITY GUARDS
+        if (fetchInProgressRef.current) return;
+
+        const isSameTarget = lastFetchedIndexRef.current === activePoiIndex && lastFetchedPhaseRef.current === navPhase;
+        if (isSameTarget && lastFetchedLocationRef.current) {
+            const dLat = Math.abs(userLocation.lat - lastFetchedLocationRef.current.lat);
+            const dLng = Math.abs(userLocation.lng - lastFetchedLocationRef.current.lng);
+            if (dLat < COORD_THRESHOLD && dLng < COORD_THRESHOLD) {
+                // Location hasn't moved enough to justify a re-fetch
+                return;
+            }
+        }
+
         const fetchPath = async () => {
+            fetchInProgressRef.current = true;
             try {
                 // CRITICAL FIX: Use current user location if available to ensure accurate navigation from device location.
                 // Fallback to center/start point only if user location is missing or for initial preview.
@@ -1051,22 +1063,17 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                     console.log("🚀 Routing from START (Fallback) to POI1:", { start: center, poi1: navTarget });
                 } else {
                     // Should not happen if userLocation is required, but safe fallback
-                    originLat = center[0];
-                    originLng = center[1];
+                    originLat = center?.[0] || 0;
+                    originLng = center?.[1] || 0;
                 }
 
                 const fLng = Number(navTarget.lng);
                 const fLat = Number(navTarget.lat);
 
                 // Switch profile based on map style
-                // 'foot' (pedestrian) prefers safe, smaller paths. 'bike'/'bicycle' prefers bike lanes/roads.
-                // We default to 'foot' to ensure we never get car routes.
                 const profile = userSelectedStyle === 'cycling' ? 'bicycle' : 'foot';
 
-                // Use 'routing.openstreetmap.de' which is often better for dedicated walking/hiking paths in Europe
-                // Note: This specific localized server uses 'driving' as the generic endpoint name but the subdomain determines the profile.
                 let baseUrl = 'https://router.project-osrm.org/route/v1/' + profile;
-
                 if (profile === 'foot') {
                     baseUrl = 'https://routing.openstreetmap.de/routed-foot/route/v1/driving';
                 } else if (profile === 'bicycle') {
@@ -1083,11 +1090,14 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                     const path = route.geometry.coordinates.map(c => [c[1], c[0]]);
 
                     // Force the path to end EXACTLY at the POI coordinate.
-                    // This solves the issue where OSRM stops on the street (e.g. 50m away)
-                    // and the simulation stops before triggering the "Arrival" threshold.
                     path.push([fLat, fLng]);
 
                     setNavigationPath(path);
+
+                    // Track metadata for next comparison
+                    lastFetchedIndexRef.current = activePoiIndex;
+                    lastFetchedPhaseRef.current = navPhase;
+                    lastFetchedLocationRef.current = { lat: originLat, lng: originLng };
 
                     // Extract steps and lift them up
                     if (route.legs && route.legs.length > 0 && onNavigationRouteFetched) {
@@ -1096,11 +1106,13 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                 }
             } catch (e) {
                 console.error("Navigation fetch failed", e);
+            } finally {
+                fetchInProgressRef.current = false;
             }
         };
 
         fetchPath();
-    }, [userLocation, focusedLocation, isNavigating, userSelectedStyle, pois, activePoiIndex, center]);
+    }, [userLocation, focusedLocation, isNavigating, userSelectedStyle, pois, activePoiIndex, center, navPhase, onNavigationRouteFetched]);
 
     // Determine effective style
     // If no route data (input mode), use Dark. Otherwise use user selection.
@@ -1550,11 +1562,12 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                 {/* Top Navigation HUD - Instruction Only (Hide during Route Edit) */}
                 {
-                    pois.length > 0 && !isInputMode && !isRouteEditMode && (() => {
+                    navPoints.length > 0 && !isInputMode && !isRouteEditMode && (() => {
                         const effectiveLocation = userLocation || (center ? { lat: center[0], lng: center[1] } : null);
                         if (!effectiveLocation) return null;
 
-                        const targetPoi = focusedLocation || pois[0];
+                        const targetPoi = focusedLocation || navPoints[0];
+                        if (!targetPoi) return null;
                         const steps = routeData?.navigationSteps;
 
                         // Progress Stats Calculation
@@ -1621,7 +1634,9 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                         let bearingTarget = targetPoi;
                         let hudSubline = searchMode === 'radius'
                             ? (language === 'nl' ? 'Beschikbare Spot' : 'Available Spot')
-                            : `${text.next}: POI ${pois.findIndex(p => p.id === targetPoi.id) + 1}`;
+                            : (pois.length > 0
+                                ? `${text.next}: POI ${navPoints.findIndex(p => p.id === targetPoi.id) + 1}`
+                                : `${text.next}: ${language === 'nl' ? 'Stop' : 'Stop'} ${persistentMarkers.findIndex(p => p.id === targetPoi.id)}`);
 
                         if (isNavigating && steps && steps.length > 0) {
                             let minD = Infinity;

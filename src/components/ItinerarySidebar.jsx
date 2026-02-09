@@ -1471,6 +1471,7 @@ const ItinerarySidebar = ({
     onPauseEnrichment,
     onEnrichSinglePoi,
     onFindPoisAlongRoute,
+    onSkipDiscovery,
     isDiscoveryTriggered
 }) => {
 
@@ -1487,6 +1488,15 @@ const ItinerarySidebar = ({
     const [showVoiceSettings, setShowVoiceSettings] = useState(false);
     const [showThemeSettings, setShowThemeSettings] = useState(false);
     const [showTravelSettings, setShowTravelSettings] = useState(false);
+    const [selectedDiscoveryChips, setSelectedDiscoveryChips] = useState(new Set());
+    const [customDiscoveryInterest, setCustomDiscoveryInterest] = useState('');
+
+    const discoveryChips = [
+        { id: 'parks', label: { en: 'Parks', nl: 'Parken' }, icon: '🌳' },
+        { id: 'restaurants', label: { en: 'Food', nl: 'Eten' }, icon: '🍴' },
+        { id: 'culture', label: { en: 'Culture', nl: 'Cultuur' }, icon: '🏛️' },
+        { id: 'landmarks', label: { en: 'Sights', nl: 'Beziens' }, icon: '📸' }
+    ];
 
     const poiHighlightedWordRef = useRef(null);
     const scrollerRef = useRef(null);
@@ -1969,6 +1979,19 @@ const ItinerarySidebar = ({
                                     /* Changelog View */
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
+                                            {
+                                                date: "09 Feb 2026",
+                                                version: "v2.1.1",
+                                                items: language === 'nl' ? [
+                                                    { title: "Navigatie Stabiliteit", desc: "Infinite-loop fix voor route-fetching en verbeterde GPS-drempels." },
+                                                    { title: "Handmatige Routes", desc: "Volledige ondersteuning voor eet/drink-stops op zelf getekende routes." },
+                                                    { title: "Prestaties", desc: "Minder netwerkverkeer en batterijverbruik door slimme caching-guards." }
+                                                ] : [
+                                                    { title: "Navigation Stability", desc: "Fixed infinite-loop in route fetching and optimized GPS thresholds." },
+                                                    { title: "Manual Route Support", desc: "Full support for food/drink stops on manually drawn routes." },
+                                                    { title: "Performance", desc: "Reduced network traffic and battery usage via smart caching guards." }
+                                                ]
+                                            },
                                             {
                                                 date: "09 Feb 2026",
                                                 version: "v2.1.0",
@@ -2552,7 +2575,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v2.1.0</span>
+                                            <span className="text-slate-300 text-sm font-medium">v2.1.1</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -2698,10 +2721,58 @@ const ItinerarySidebar = ({
                                                             : 'Find interesting stops tailored to your preferences.'}
                                                     </p>
 
+                                                    {/* Interest Chips */}
+                                                    <div className="flex flex-wrap justify-center gap-2 mb-4">
+                                                        {discoveryChips.map(chip => (
+                                                            <button
+                                                                key={chip.id}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const next = new Set(selectedDiscoveryChips);
+                                                                    if (next.has(chip.id)) next.delete(chip.id);
+                                                                    else next.add(chip.id);
+                                                                    setSelectedDiscoveryChips(next);
+                                                                }}
+                                                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border flex items-center gap-1.5 ${selectedDiscoveryChips.has(chip.id)
+                                                                    ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20'
+                                                                    : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:border-white/20'
+                                                                    }`}
+                                                            >
+                                                                <span>{chip.icon}</span>
+                                                                {language === 'nl' ? chip.label.nl : chip.label.en}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+
+                                                    {/* Custom Interest Input */}
+                                                    <div className="relative mb-6 mx-2">
+                                                        <input
+                                                            type="text"
+                                                            value={customDiscoveryInterest}
+                                                            onChange={(e) => setCustomDiscoveryInterest(e.target.value)}
+                                                            placeholder={language === 'nl' ? 'Bijv. koffie, speeltuinen...' : 'e.g. coffee, playgrounds...'}
+                                                            className="w-full bg-slate-950/50 border border-white/10 rounded-xl py-2.5 px-10 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-primary/50 transition-all font-medium"
+                                                        />
+                                                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                            </svg>
+                                                        </div>
+                                                    </div>
+
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            if (onFindPoisAlongRoute) onFindPoisAlongRoute();
+                                                            const chipInterests = Array.from(selectedDiscoveryChips).map(id => {
+                                                                const chip = discoveryChips.find(c => c.id === id);
+                                                                return chip ? chip.label.en : id;
+                                                            });
+                                                            const combinedInterests = [
+                                                                ...chipInterests,
+                                                                ...(customDiscoveryInterest ? [customDiscoveryInterest] : [])
+                                                            ].join(', ');
+
+                                                            if (onFindPoisAlongRoute) onFindPoisAlongRoute(combinedInterests || null);
                                                         }}
                                                         disabled={isLoading}
                                                         className="w-full bg-primary hover:bg-primary-hover disabled:bg-slate-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-xl shadow-primary/20 flex items-center justify-center gap-2 group-hover:scale-[1.02]"
@@ -2720,13 +2791,28 @@ const ItinerarySidebar = ({
                                                             </>
                                                         )}
                                                     </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (onSkipDiscovery) onSkipDiscovery();
+                                                        }}
+                                                        className="w-full mt-2 py-2 text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors"
+                                                    >
+                                                        {language === 'nl' ? 'Nee bedankt, ik volg gewoon de route' : 'No thanks, I will just follow the route'}
+                                                    </button>
                                                 </div>
                                             </div>
                                         )}
 
                                         <div className="space-y-3">
                                             {(() => {
-                                                const items = [...routeData.pois];
+                                                const manualStops = (routeData.routeMarkers || []).slice(1).map(m => ({
+                                                    ...m,
+                                                    isManualStop: true,
+                                                    isFullyEnriched: true,
+                                                    short_description: language === 'nl' ? 'Ingepland punt' : 'Planned stop'
+                                                }));
+                                                const items = [...manualStops, ...routeData.pois];
                                                 const startPoint = {
                                                     // Spread rich POI data if this start point is a POI
                                                     ...(routeData.startIsPoi ? routeData.startPoi : {}),
@@ -2912,6 +2998,8 @@ const ItinerarySidebar = ({
                                                     );
                                                 })
                                             })()}
+
+                                            {/* Start Journey Button - REMOVED per user request */}
                                         </div>
                                     </div>
                                 </>
