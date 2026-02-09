@@ -883,6 +883,7 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
     const [activeView, setActiveView] = useState('main'); // 'main' or 'weather'
     const [isEditingStart, setIsEditingStart] = useState(false);
     const [editStartValue, setEditStartValue] = useState('');
+    const highlightedWordRef = useRef(null);
 
     // Use theme colors
     const primaryColor = activeTheme?.colors?.primary || '#3b82f6';
@@ -943,6 +944,13 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
             });
         }
     }, [description, isExpanded, autoAudio, city, onSpeak, speakingId]);
+
+    // Sync highlight for city description
+    useEffect(() => {
+        if (speakingId === `city-welcome-${city}` && highlightedWordRef.current && scroller) {
+            scroller.syncHighlight(highlightedWordRef.current);
+        }
+    }, [spokenCharCount, speakingId, city, scroller]);
 
     // Cleanup image on city change
     useEffect(() => { setCityImage(null); }, [city]);
@@ -1958,11 +1966,13 @@ const ItinerarySidebar = ({
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
                                             {
-                                                date: "07 Feb 2026",
+                                                date: "09 Feb 2026",
                                                 version: "v2.0.1",
                                                 items: language === 'nl' ? [
+                                                    { title: "Crash Fix", desc: "Een fout opgelost waarbij de app crashte bij het openen van de stadsinfo met audio aan." },
                                                     { title: "Stem Fix", desc: "Nederlandse stemmen worden nu correct herkend, ongeacht regio (NL/BE)." }
                                                 ] : [
+                                                    { title: "Crash Fix", desc: "Fixed a critical error where the app would crash when opening city info with audio enabled." },
                                                     { title: "Voice Fix", desc: "Dutch voices are now correctly identified regardless of region (NL/BE)." }
                                                 ]
                                             },
