@@ -85,3 +85,63 @@ export const isLocationOnPath = (location, pathCoordinates, toleranceKm = 0.03) 
 
     return false;
 };
+/**
+ * Calculates the progress (cumulative distance) along a path to the point closest to the given location.
+ * 
+ * @param {Object} location {lat, lng}
+ * @param {Array} pathCoordinates Array of [lat, lng] arrays
+ * @returns {number} Distance in km along the path from the start.
+ */
+export const getPointProgressOnPath = (location, pathCoordinates) => {
+    if (!location || !pathCoordinates || pathCoordinates.length < 2) return 0;
+
+    let minDistance = Infinity;
+    let totalProgress = 0;
+    let closestPointProgress = 0;
+
+    for (let i = 0; i < pathCoordinates.length - 1; i++) {
+        const start = { lat: pathCoordinates[i][0], lng: pathCoordinates[i][1] };
+        const end = { lat: pathCoordinates[i + 1][0], lng: pathCoordinates[i + 1][1] };
+
+        const segmentDist = calcDistance(start, end);
+
+        // Find closest point on this segment
+        const x = location.lng;
+        const y = location.lat;
+        const x1 = start.lng;
+        const y1 = start.lat;
+        const x2 = end.lng;
+        const y2 = end.lat;
+
+        const A = x - x1;
+        const B = y - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        let param = -1;
+        if (lenSq !== 0) param = dot / lenSq;
+
+        let xx, yy, progressOnSegment;
+        if (param < 0) {
+            xx = x1; yy = y1; progressOnSegment = 0;
+        } else if (param > 1) {
+            xx = x2; yy = y2; progressOnSegment = segmentDist;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+            progressOnSegment = param * segmentDist;
+        }
+
+        const d = calcDistance(location, { lat: yy, lng: xx });
+        if (d < minDistance) {
+            minDistance = d;
+            closestPointProgress = totalProgress + progressOnSegment;
+        }
+
+        totalProgress += segmentDist;
+    }
+
+    return closestPointProgress;
+};

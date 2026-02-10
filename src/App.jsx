@@ -4248,9 +4248,9 @@ function CityExplorerApp() {
         language
       );
 
-      // Filter: Keep only POIs within 50 meters of the actual route path
+      // Filter: Keep only POIs within 100 meters of the actual route path
       const discoveredPois = rawDiscoveredPois.filter(poi =>
-        isLocationOnPath({ lat: poi.lat, lng: poi.lng }, routeData.routePath, 0.05)
+        isLocationOnPath({ lat: poi.lat, lng: poi.lng }, routeData.routePath, 0.1)
       );
 
       if (!discoveredPois || discoveredPois.length === 0) {

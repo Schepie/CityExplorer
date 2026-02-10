@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.2] - 2026-02-10
+
+### Added
+- **Sequential Numbering**: Implemented a unified numbering system that interleaves manual stops and discovered POIs based on their actual order along the route.
+- **Diamond Markers**: Manual route markers (except Start) are now smaller and diamond-shaped to distinguish them from discovery POIs.
+
+### Changed
+- **Discovery Perimeter**: Increased the POI discovery range from 50m to 100m for better coverage.
+- **UI Consistency**: Hiden the "Discover Now" card in Classic mode to reduce clutter.
+
+### Fixed
+- **JSX Stability**: Resolved a rendering bug in `MapContainer.jsx` that could break marker displays.
+
+## [2.1.1] - 2026-02-09 (Internal)
+- Performance and stability fixes for route calculation.
+
 ## [2.1.0] - 2026-02-09
 
 ### Added

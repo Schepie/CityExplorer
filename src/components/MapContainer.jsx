@@ -7,6 +7,7 @@ import { Brain, MessageSquare } from 'lucide-react';
 import { SmartAutoScroller } from '../utils/AutoScroller';
 import PoiDetailContent from './PoiDetailContent';
 import BackgroundKeepAlive from './BackgroundKeepAlive';
+import { interleaveRouteItems } from '../utils/routeUtils';
 
 // Fix for default Leaflet marker icons in React
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -548,6 +549,17 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
     // Track active POI index for sequential navigation
     // Lifted to App.jsx: activePoiIndex
+
+    // Interleave manual markers and POIs for consistent numbering and display
+    const interleavedList = React.useMemo(() => {
+        if (!routeData) return [];
+        return interleaveRouteItems(persistentMarkers, pois, routePath);
+    }, [persistentMarkers, pois, routePath]);
+
+    // Helper: Find global index of an item in the interleaved list
+    const getGlobalIndex = (item) => {
+        return interleavedList.findIndex(i => i.id === item.id);
+    };
     const lastReachedPoiIndexRef = useRef(-1); // Separate ref to track navigation progress
 
     // Reset active index ONLY when the route's POIs change fundamentally.
@@ -1208,58 +1220,44 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                 // For persistent markers, skip the 0km label or show it differently if desired
                                 const distance = isRouteEditMode ? (cumulativeDistances[idx] || 0) : null;
 
-                                // Custom numbered marker icon
-                                const numberedIcon = L.divIcon({
-                                    className: 'route-edit-marker',
-                                    html: `
-                                    <div style="
-                                        position: relative;
-                                        display: flex;
-                                        flex-direction: column;
-                                        align-items: center;
-                                    ">
-                                        <div style="
-                                            width: ${isStart ? '40px' : '32px'};
-                                            height: ${isStart ? '40px' : '32px'};
-                                            border-radius: 50%;
-                                            background: ${isStart ? '#22c55e' : (isSelected ? '#f59e0b' : 'var(--primary)')};
-                                            border: 3px solid white;
-                                            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
-                                            display: flex;
-                                            align-items: center;
-                                            justify-content: center;
-                                            font-weight: 900;
-                                            font-size: ${isStart ? '10px' : '14px'};
-                                            color: white;
-                                            ${isSelected ? 'animation: pulse 1s infinite;' : ''}
-                                        ">
-                                            ${isStart ? 'START' : idx}
-                                        </div>
-                                        ${distance !== null ? `
-                                        <div style="
-                                            margin-top: 4px;
-                                            background: rgba(0,0,0,0.75);
-                                            color: white;
-                                            padding: 2px 6px;
-                                            border-radius: 4px;
-                                            font-size: 10px;
-                                            font-weight: bold;
-                                            white-space: nowrap;
-                                        ">
-                                            ${distance.toFixed(1)} km
-                                        </div>
-                                        ` : ''}
-                                    </div>
-                                `,
-                                    iconSize: [isStart ? 40 : 32, distance !== null ? 50 : 40],
-                                    iconAnchor: [isStart ? 20 : 16, isStart ? 20 : 16]
-                                });
-
                                 return (
                                     <Marker
                                         key={`route-marker-${point.id || idx}`}
                                         position={[point.lat, point.lng]}
-                                        icon={numberedIcon}
+                                        icon={L.divIcon({
+                                            className: 'route-edit-marker',
+                                            html: `
+                                            <div style="
+                                                position: relative;
+                                                display: flex;
+                                                flex-direction: column;
+                                                align-items: center;
+                                            ">
+                                                <div style="
+                                                    width: ${isStart ? '40px' : '22px'};
+                                                    height: ${isStart ? '40px' : '22px'};
+                                                    border-radius: ${isStart ? '50%' : '4px'};
+                                                    background: ${isStart ? '#22c55e' : (isSelected ? '#f59e0b' : 'var(--primary)')};
+                                                    border: 2px solid white;
+                                                    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+                                                    display: flex;
+                                                    align-items: center;
+                                                    justify-content: center;
+                                                    font-weight: 900;
+                                                    font-size: ${isStart ? '10px' : '9px'};
+                                                    color: white;
+                                                    ${isStart ? '' : 'transform: rotate(45deg);'}
+                                                    ${isSelected ? 'animation: pulse 1s infinite;' : ''}
+                                                ">
+                                                    <div style="${isStart ? '' : 'transform: rotate(-45deg);'}">
+                                                        ${isStart ? 'START' : getGlobalIndex(point)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `,
+                                            iconSize: [isStart ? 40 : 24, 24],
+                                            iconAnchor: [isStart ? 20 : 12, isStart ? 20 : 12]
+                                        })}
                                         zIndexOffset={isSelected ? 1100 : 1000}
                                         eventHandlers={{
                                             click: () => {
@@ -1456,7 +1454,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                             className: 'bg-transparent border-none',
                                             html: `<div style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: none;" class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
                                                  ${iconHtml ? `<div class="mb-[1px] -mt-1 scale-75">${iconHtml}</div>` : ''}
-                                                 ${searchMode === 'radius' ? '' : `<span class="text-[10px] font-bold leading-none">${idx + 1}</span>`}
+                                                 ${searchMode === 'radius' ? '' : `<span class="text-[10px] font-bold leading-none">${getGlobalIndex(poi)}</span>`}
                                                </div>`,
                                             iconAnchor: [20, 20]
                                         })}

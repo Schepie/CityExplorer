@@ -1,3 +1,5 @@
+import { getPointProgressOnPath } from './geometry';
+
 /**
  * Route Utilities
  * 
@@ -94,3 +96,33 @@ export const reverseCycle = (items) => {
  *   { id: 'D', name: 'POI D' }
  * ]
  */
+
+/**
+ * Interleaves manual route markers and discovered POIs based on their progress along the path.
+ * 
+ * @param {Array} manualMarkers - Manual points (persistentMarkers)
+ * @param {Array} pois - Discovered POIs
+ * @param {Array} routePath - The full polyline coordinates
+ * @returns {Array} Interleaved list starting with Start, then ordered points.
+ */
+export const interleaveRouteItems = (manualMarkers, pois, routePath) => {
+    if (!routePath || routePath.length < 2) {
+        // Fallback if no path (shouldn't happen with discovery results)
+        return [(manualMarkers[0] || {}), ...(manualMarkers.slice(1)), ...pois];
+    }
+
+    const startPoint = { ...manualMarkers[0], isSpecial: true, specialType: 'start' };
+    const intermediateMarkers = manualMarkers.slice(1).map(m => ({ ...m, isManualMarker: true }));
+    const allStops = [...intermediateMarkers, ...pois];
+
+    // Assign progress to each stop
+    const stopsWithProgress = allStops.map(stop => ({
+        ...stop,
+        progress: getPointProgressOnPath({ lat: stop.lat, lng: stop.lng }, routePath)
+    }));
+
+    // Sort by progress
+    stopsWithProgress.sort((a, b) => a.progress - b.progress);
+
+    return [startPoint, ...stopsWithProgress];
+};

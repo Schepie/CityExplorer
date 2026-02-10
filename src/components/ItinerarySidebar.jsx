@@ -4,6 +4,7 @@ import { SmartAutoScroller } from '../utils/AutoScroller';
 import ConfirmationModal from './ConfirmationModal';
 import RouteRefiner from './RouteRefiner';
 import PoiDetailContent from './PoiDetailContent';
+import { interleaveRouteItems } from '../utils/routeUtils';
 
 const SidebarInput = ({
     city, setCity,
@@ -1980,6 +1981,19 @@ const ItinerarySidebar = ({
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
                                             {
+                                                date: "10 Feb 2026",
+                                                version: "v2.1.2",
+                                                items: language === 'nl' ? [
+                                                    { title: "Gedeelde Nummering", desc: "Favorieten en eigen stops delen nu één doorlopende nummering (1, 2, 3...) in de juiste routevolgorde." },
+                                                    { title: "Kaart Iconen", desc: "Eigen routepunten zijn nu subtiele ruitvormige markers om ze te onderscheiden van ontdekkingen." },
+                                                    { title: "Ontdek Afstand", desc: "De zoekstraal rondom de route is vergroot naar 100 meter voor meer relevante resultaten." }
+                                                ] : [
+                                                    { title: "Shared Numbering", desc: "POIs and manual stops now share a single sequential numbering (1, 2, 3...) in route order." },
+                                                    { title: "Map Icons", desc: "Manual route points are now subtle diamond-shaped markers to distinguish them from discoveries." },
+                                                    { title: "Discovery Range", desc: "Increased the discovery perimeter to 100 meters for more relevant results." }
+                                                ]
+                                            },
+                                            {
                                                 date: "09 Feb 2026",
                                                 version: "v2.1.1",
                                                 items: language === 'nl' ? [
@@ -2575,7 +2589,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v2.1.1</span>
+                                            <span className="text-slate-300 text-sm font-medium">v2.1.2</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -2584,7 +2598,7 @@ const ItinerarySidebar = ({
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                        <span className="text-[var(--text-muted)] text-sm font-medium">09 Feb 2026</span>
+                                        <span className="text-[var(--text-muted)] text-sm font-medium">10 Feb 2026</span>
                                     </div>
                                 </div>
                             </div>
@@ -2700,7 +2714,7 @@ const ItinerarySidebar = ({
                                         className="flex-1 overflow-y-auto px-4 pb-4 custom-scrollbar"
                                     >
                                         {/* Discovery Trigger - Shown when we have a route but haven't discovered POIs yet */}
-                                        {routeData && routeData.routePath && routeData.routePath.length > 0 && !isDiscoveryTriggered && (
+                                        {routeData && routeData.routePath && routeData.routePath.length > 0 && !isDiscoveryTriggered && searchMode !== 'journey' && (
                                             <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
                                                 <div className="bg-gradient-to-br from-primary/10 to-blue-500/5 border border-primary/20 rounded-2x p-5 text-center relative overflow-hidden group">
                                                     <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 blur-3xl rounded-full -mr-8 -mt-8 group-hover:bg-primary/10 transition-colors" />
@@ -2806,36 +2820,38 @@ const ItinerarySidebar = ({
 
                                         <div className="space-y-3">
                                             {(() => {
-                                                const manualStops = (routeData.routeMarkers || []).slice(1).map(m => ({
-                                                    ...m,
-                                                    isManualStop: true,
-                                                    isFullyEnriched: true,
-                                                    short_description: language === 'nl' ? 'Ingepland punt' : 'Planned stop'
-                                                }));
-                                                const items = [...manualStops, ...routeData.pois];
-                                                const startPoint = {
-                                                    // Spread rich POI data if this start point is a POI
-                                                    ...(routeData.startIsPoi ? routeData.startPoi : {}),
-                                                    id: 'sidebar-start',
-                                                    name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
-                                                    isSpecial: true,
-                                                    specialType: 'start',
-                                                    // Use rich description if available, otherwise fallback to accessibility info
-                                                    // If it IS a POI, we prioritize its own description.
-                                                    // If we have both, we can show both in the detailed view.
-                                                    description: (routeData.startIsPoi && (routeData.startPoi?.description || routeData.startPoi?.structured_info?.short_description))
-                                                        ? (routeData.startPoi.description || routeData.startPoi?.structured_info?.short_description)
-                                                        : (routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info...")),
-                                                    arrivalInfo: routeData.startInfo,
-                                                    isFullyEnriched: routeData.startIsPoi ? (routeData.startPoi?.isFullyEnriched) : (!!routeData.startInfo)
-                                                };
+                                                const manualStops = (routeData.routeMarkers || []);
+                                                const interleaved = interleaveRouteItems(manualStops, routeData.pois || [], routeData.routePath);
 
-                                                const finalItems = [startPoint, ...items];
+                                                // Enrich the results with sidebar-specific metadata
+                                                const items = interleaved.map(item => {
+                                                    if (item.specialType === 'start') {
+                                                        return {
+                                                            ...(routeData.startIsPoi ? routeData.startPoi : {}),
+                                                            ...item,
+                                                            id: 'sidebar-start',
+                                                            name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
+                                                            description: (routeData.startIsPoi && (routeData.startPoi?.description || routeData.startPoi?.structured_info?.short_description))
+                                                                ? (routeData.startPoi.description || routeData.startPoi?.structured_info?.short_description)
+                                                                : (routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info...")),
+                                                            arrivalInfo: routeData.startInfo,
+                                                            isFullyEnriched: routeData.startIsPoi ? (routeData.startPoi?.isFullyEnriched) : (!!routeData.startInfo)
+                                                        };
+                                                    }
+                                                    if (item.isManualMarker) {
+                                                        return {
+                                                            ...item,
+                                                            isFullyEnriched: true,
+                                                            short_description: language === 'nl' ? 'Ingepland punt' : 'Planned stop'
+                                                        };
+                                                    }
+                                                    return item;
+                                                });
 
-                                                return finalItems.map((poi, index) => {
+                                                return items.map((poi, index) => {
                                                     const isExpanded = expandedPoi === poi.id;
-                                                    // Adjust index for display numbering (skipped for special nodes)
-                                                    const displayNum = poi.isSpecial ? null : (finalItems.slice(0, index).filter(i => !i.isSpecial).length + 1);
+                                                    // Display number is simply the index in this consolidated list, but START is special
+                                                    const displayNum = poi.isSpecial ? null : index;
 
                                                     return (
                                                         <div
@@ -2876,9 +2892,15 @@ const ItinerarySidebar = ({
                                                                     {poi.isSpecial ? (
                                                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                                                                     ) : (
-                                                                        searchMode === 'radius' ? (
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
-                                                                        ) : displayNum
+                                                                        poi.isManualMarker ? (
+                                                                            <div className="w-3.5 h-3.5 border-2 border-current rotate-45 flex items-center justify-center rounded-[2px]">
+                                                                                <span className="-rotate-45 block scale-[0.8]">{displayNum}</span>
+                                                                            </div>
+                                                                        ) : (
+                                                                            searchMode === 'radius' ? (
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" /></svg>
+                                                                            ) : displayNum
+                                                                        )
                                                                     )}
 
 
