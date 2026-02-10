@@ -4127,6 +4127,71 @@ function CityExplorerApp() {
   };
 
   /**
+   * Move a point and recalculate route
+   */
+  const handleMoveMarker = async (index, newLatLng) => {
+    if (index < 0 || index >= routeMarkers.length) return;
+
+    const newMarkers = [...routeMarkers];
+    newMarkers[index] = { ...newMarkers[index], lat: newLatLng.lat, lng: newLatLng.lng };
+    setRouteMarkers(newMarkers);
+
+    if (newMarkers.length >= 1) {
+      const startCoords = [newMarkers[0].lat, newMarkers[0].lng];
+      const activeMode = travelMode || 'walking';
+
+      try {
+        if (newMarkers.length >= 2) {
+          setIsLoading(true);
+          setLoadingText(language === 'nl' ? 'Route bijwerken...' : 'Updating route...');
+
+          const routeResult = await calculateRoutePath(
+            newMarkers.slice(1),
+            startCoords,
+            activeMode,
+            isRoundtrip ? startCoords : null
+          );
+
+          // Recalculate cumulative distances
+          const newDistances = [0];
+          let cumulative = 0;
+          if (routeResult.legs) {
+            routeResult.legs.forEach((leg) => {
+              cumulative += (leg.distance / 1000);
+              newDistances.push(cumulative);
+            });
+          }
+          setCumulativeDistances(newDistances);
+
+          setRouteData(prev => ({
+            ...prev,
+            center: startCoords,
+            routeMarkers: newMarkers,
+            routePath: routeResult.path,
+            legs: routeResult.legs,
+            stats: { ...prev.stats, totalDistance: routeResult.dist }
+          }));
+        } else {
+          // Only one point
+          setCumulativeDistances([0]);
+          setRouteData(prev => ({
+            ...prev,
+            center: startCoords,
+            routeMarkers: newMarkers,
+            routePath: [],
+            stats: { ...prev.stats, totalDistance: 0 }
+          }));
+        }
+
+      } catch (err) {
+        console.error("Route move failed:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  /**
    * Finalize route - close the loop and exit edit mode
    */
   const handleFinalizeRoute = async () => {
@@ -4423,6 +4488,7 @@ function CityExplorerApp() {
           selectedEditPointIndex={selectedEditPointIndex}
           onEditPointClick={(idx) => setSelectedEditPointIndex(idx)}
           onDeletePoint={handleDeleteMarker}
+          onMovePoint={handleMoveMarker}
           onOpenArMode={() => setIsArMode(true)}
         />
 
@@ -4554,7 +4620,7 @@ function CityExplorerApp() {
         onSkipDiscovery={() => {
           setIsDiscoveryTriggered(true);
           setIsSidebarOpen(false);
-          setIsNavigationOpen(true);
+          setIsNavigationOpen(false);
           setNavPhase(NAV_PHASES.ACTIVE_ROUTE);
         }}
         isDiscoveryTriggered={isDiscoveryTriggered}

@@ -475,6 +475,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     cumulativeDistances = [],
     isRouteEditMode = false,
     onDeletePoint,
+    onMovePoint,
     onOpenArMode
 }) => {
     const mapRef = useRef(null);
@@ -1259,10 +1260,16 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                             iconAnchor: [isStart ? 20 : 12, isStart ? 20 : 12]
                                         })}
                                         zIndexOffset={isSelected ? 1100 : 1000}
+                                        draggable={isRouteEditMode}
                                         eventHandlers={{
                                             click: () => {
                                                 if (isRouteEditMode && onEditPointClick) onEditPointClick(idx);
                                                 else if (!isRouteEditMode && onPoiClick) onPoiClick(point, 'medium');
+                                            },
+                                            dragend: (e) => {
+                                                const marker = e.target;
+                                                const position = marker.getLatLng();
+                                                if (onMovePoint) onMovePoint(idx, position);
                                             }
                                         }}
                                     >
@@ -1280,39 +1287,30 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                             </div>
                                         </Tooltip>
 
-                                        {!isRouteEditMode && (
-                                            <Popup className="glass-popup">
-                                                <div className="text-slate-900 font-bold mb-1">
-                                                    {point.name || (isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : `Stop ${idx}`)}
-                                                </div>
-                                                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
-                                                    {language === 'nl' ? 'Routepunt' : 'Route Marker'}
-                                                </div>
-                                                {point.description && <p className="text-xs text-slate-600 mb-2">{point.description}</p>}
-                                            </Popup>
-                                        )}
-
-                                        {isRouteEditMode && (
-                                            <Popup className="glass-popup">
-                                                <div className="text-slate-900 font-bold mb-2">
-                                                    {isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : point.name || `Stop ${idx}`}
-                                                </div>
-                                                {onDeletePoint && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            onDeletePoint(idx);
-                                                            map.closePopup();
-                                                        }}
-                                                        className="bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded-lg border border-red-200 transition-colors flex items-center justify-center shrink-0"
-                                                        title={language === 'nl' ? 'Verwijderen' : 'Delete'}
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-                                                    </button>
-                                                )}
-                                            </Popup>
-                                        )}
+                                        <Popup className="glass-popup">
+                                            <div className="text-slate-900 font-bold mb-1">
+                                                {point.name || (isStart ? (language === 'nl' ? 'Startpunt' : 'Start Point') : `Stop ${idx}`)}
+                                            </div>
+                                            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
+                                                {language === 'nl' ? 'Routepunt' : 'Route Marker'}
+                                            </div>
+                                            {point.description && <p className="text-xs text-slate-600 mb-2">{point.description}</p>}
+                                            {isRouteEditMode && onDeletePoint && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        onDeletePoint(idx);
+                                                        map.closePopup();
+                                                    }}
+                                                    className="mt-2 w-full bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded-lg border border-red-200 transition-colors flex items-center justify-center gap-2 font-bold text-xs"
+                                                    title={language === 'nl' ? 'Verwijderen' : 'Delete'}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                                                    {language === 'nl' ? 'VERWIJDEREN' : 'DELETE'}
+                                                </button>
+                                            )}
+                                        </Popup>
                                     </Marker>
                                 );
                             })}
