@@ -265,7 +265,7 @@ const ZoomControls = ({ language, isPopupOpen, setUserHasInteracted, map, isRout
 };
 
 // Helper to control map view
-const MapController = ({ center, positions, userLocation, focusedLocation, viewAction, onActionHandled, isNavigating, effectiveHeading, isPopupOpen }) => {
+const MapController = ({ center, positions, userLocation, focusedLocation, viewAction, onActionHandled, isNavigating, effectiveHeading, isPopupOpen, polyline, routeMarkers }) => {
     const map = useMap();
     const hasAutoFit = useRef(false);
     const prevPositionsKey = useRef('');
@@ -341,12 +341,32 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
             return;
         }
 
-        if (viewAction === 'ROUTE' && positions && positions.length > 0) {
+        if (viewAction === 'ROUTE') {
             // Disable auto-follow to allow looking at the whole route
             isAutoFollow.current = false;
             lastActionTime.current = Date.now();
-            const bounds = L.latLngBounds(positions);
-            map.fitBounds(bounds, { padding: [50, 50] });
+
+            // Collect all targets to fit in view
+            let boundsPoints = [];
+
+            // 1. If we have a polyline path, that's the primary target
+            if (polyline && polyline.length > 1) {
+                boundsPoints = polyline;
+            } else {
+                // 2. Otherwise, combine markers and POIs
+                if (positions && positions.length > 0) {
+                    boundsPoints = [...boundsPoints, ...positions];
+                }
+                if (routeMarkers && routeMarkers.length > 0) {
+                    boundsPoints = [...boundsPoints, ...routeMarkers.map(m => [m.lat, m.lng])];
+                }
+            }
+
+            if (boundsPoints.length > 0) {
+                const bounds = L.latLngBounds(boundsPoints);
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+
             if (onActionHandled) onActionHandled();
             return;
         }
@@ -391,21 +411,31 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
 
         // Priority 4: Auto-fit on initial load/route change
         if (!hasAutoFit.current) {
-            if (positions && positions.length > 0) {
-                const bounds = L.latLngBounds(positions);
+            let boundsPoints = [];
+            if (polyline && polyline.length > 1) {
+                boundsPoints = polyline;
+            } else {
+                if (positions && positions.length > 0) {
+                    boundsPoints = [...boundsPoints, ...positions];
+                }
+                if (routeMarkers && routeMarkers.length > 0) {
+                    boundsPoints = [...boundsPoints, ...routeMarkers.map(m => [m.lat, m.lng])];
+                }
+            }
+
+            if (boundsPoints.length > 0) {
+                const bounds = L.latLngBounds(boundsPoints);
                 map.fitBounds(bounds, { padding: [50, 50] });
                 hasAutoFit.current = true;
-            } else if (userLocation && !positions) {
+            } else if (userLocation) {
                 map.flyTo([userLocation.lat, userLocation.lng], 13, { duration: 2 });
-                // Don't set hasAutoFit true here if we want to follow user? 
-                // But normally we just center once.
                 hasAutoFit.current = true;
-            } else if (center && !positions) {
+            } else if (center) {
                 map.flyTo(center, 13, { duration: 2 });
                 hasAutoFit.current = true;
             }
         }
-    }, [center, positions, userLocation, focusedLocation, map, viewAction, onActionHandled]);
+    }, [center, positions, userLocation, focusedLocation, map, viewAction, onActionHandled, polyline, routeMarkers]);
     useEffect(() => {
         const container = map.getContainer();
         // DISABLE ROTATION per user request: Always reset transforms
@@ -1208,6 +1238,8 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                         isNavigating={isNavigating}
                         effectiveHeading={effectiveHeading}
                         isPopupOpen={isPopupOpen}
+                        polyline={polyline}
+                        routeMarkers={isRouteEditMode ? routeMarkers : persistentMarkers}
                     />
 
                     <MapClickHandler isMapPickMode={isMapPickMode} onMapPick={onMapPick} />
