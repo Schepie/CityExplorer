@@ -364,7 +364,10 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
 
             if (boundsPoints.length > 0) {
                 const bounds = L.latLngBounds(boundsPoints);
-                map.fitBounds(bounds, { padding: [50, 50] });
+                map.flyToBounds(bounds, {
+                    padding: [50, 50],
+                    duration: 1.5
+                });
             }
 
             if (onActionHandled) onActionHandled();
