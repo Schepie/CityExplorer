@@ -1981,6 +1981,21 @@ const ItinerarySidebar = ({
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
                                             {
+                                                date: "12 Feb 2026",
+                                                version: "v3.0.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Automatische Lus Routes", desc: "Handmatige routes (via 'Kies op kaart') sluiten nu automatisch als luswandelingen." },
+                                                    { title: "Slimme Sidebar", desc: "De zijbalk onthoudt je ontdekkingsvoorkeur en toont geen onnodige discovery prompts meer." },
+                                                    { title: "Verfijnde Kaart Controls", desc: "Kaartbesturingsknoppen hebben nu een subtielere transparantie voor een geïntegreerde look." },
+                                                    { title: "Route Berekening Fix", desc: "Verbeterde afstandsberekening voor roundtrip routes." }
+                                                ] : [
+                                                    { title: "Automatic Loop Routes", desc: "Manual routes (via 'Pick on map') now automatically close as loop hikes." },
+                                                    { title: "Smart Sidebar", desc: "Sidebar remembers your discovery preference and no longer shows unnecessary discovery prompts." },
+                                                    { title: "Refined Map Controls", desc: "Map control buttons now have a more subtle transparency for an integrated look." },
+                                                    { title: "Route Calculation Fix", desc: "Improved distance calculation for roundtrip routes." }
+                                                ]
+                                            },
+                                            {
                                                 date: "10 Feb 2026",
                                                 version: "v2.1.2",
                                                 items: language === 'nl' ? [
@@ -2589,7 +2604,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v2.1.2</span>
+                                            <span className="text-slate-300 text-sm font-medium">v3.0.0</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -2598,7 +2613,7 @@ const ItinerarySidebar = ({
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                        <span className="text-[var(--text-muted)] text-sm font-medium">10 Feb 2026</span>
+                                        <span className="text-[var(--text-muted)] text-sm font-medium">12 Feb 2026</span>
                                     </div>
                                 </div>
                             </div>
@@ -2713,8 +2728,8 @@ const ItinerarySidebar = ({
                                         onScroll={handleScroll}
                                         className="flex-1 overflow-y-auto px-4 pb-4 custom-scrollbar"
                                     >
-                                        {/* Discovery Trigger - Shown when we have a route but haven't discovered POIs yet */}
-                                        {routeData && routeData.routePath && routeData.routePath.length > 0 && !isDiscoveryTriggered && searchMode !== 'journey' && (
+                                        {/* Discovery Trigger - Shown when we have a route but haven't discovered POIs yet and NO manual POIs exist */}
+                                        {routeData && routeData.routePath && routeData.routePath.length > 0 && !isDiscoveryTriggered && searchMode !== 'journey' && (!routeData.pois || routeData.pois.length === 0) && (
                                             <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
                                                 <div className="bg-gradient-to-br from-primary/10 to-blue-500/5 border border-primary/20 rounded-2x p-5 text-center relative overflow-hidden group">
                                                     <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 blur-3xl rounded-full -mr-8 -mt-8 group-hover:bg-primary/10 transition-colors" />

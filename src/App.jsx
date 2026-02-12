@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PoiIntelligence } from './services/PoiIntelligence';
-import MapContainer from './components/MapContainer';
+import MapLibreContainer from './components/MapLibreContainer';
 import ItinerarySidebar from './components/ItinerarySidebar';
 import CitySelector from './components/CitySelector';
 import ArView from './components/ArView';
@@ -11,9 +11,12 @@ import LoginModal from './components/auth/LoginModal';
 import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle } from './utils/routeUtils';
 import { isLocationOnPath } from './utils/geometry';
+import { transformOSRMCoords, sanitizePath } from './utils/coordinateUtils';
+import { decodePolyline6 } from './utils/polyline';
 import PoiProposalModal from './components/PoiProposalModal';
 import DistanceRefineConfirmation from './components/DistanceRefineConfirmation';
 import RouteEditPanel from './components/RouteEditPanel';
+import { getBestVoice } from './utils/speechUtils';
 
 // Theme Definitions
 // Theme Definitions
@@ -95,6 +98,7 @@ function CityExplorerApp() {
   const [pendingDistanceRefinement, setPendingDistanceRefinement] = useState(null);
   const [isArMode, setIsArMode] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  const speechUtteranceRef = useRef(null);
 
   // Settings: Load from LocalStorage or Default
   const [language, setLanguage] = useState(() => localStorage.getItem('app_language') || 'nl');
@@ -110,7 +114,6 @@ function CityExplorerApp() {
 
   // Persist Simulation Setting
   useEffect(() => localStorage.setItem('app_simulation_enabled', isSimulationEnabled), [isSimulationEnabled]);
-
   // Apply Theme Effect
   useEffect(() => {
     const root = document.documentElement;
@@ -130,10 +133,27 @@ function CityExplorerApp() {
       // Update global text colors (default to light values if undefined)
       root.style.setProperty('--text-main', c.textMain || '#f8fafc');
       root.style.setProperty('--text-muted', c.textMuted || '#94a3b8');
-
-
     }
   }, [activeTheme]);
+
+  // Geolocation Tracking Effect
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        // console.log("[GPS] Position updated:", lat, lng);
+        setUserLocation({ lat, lng });
+      },
+      (err) => {
+        console.warn("[GPS] Watch failed or permission denied:", err.message);
+      },
+      { timeout: 30000, enableHighAccuracy: true, maximumAge: 5000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
 
   // Re-enrich POIs when Language changes
   useEffect(() => {
@@ -244,11 +264,15 @@ function CityExplorerApp() {
   // Note: This is an estimation using straight line or pre-calculated dists from POI list.
   // Since we don't store OSRM paths for past legs, we use haversine between POIs.
   const pastDistance = useMemo(() => {
-    if (!routeData || !routeData.pois || navPhase === NAV_PHASES.PRE_ROUTE || activePoiIndex === 0) return 0;
+    // Robustness check: if no routeData or pois, we can't calculate past distance.
+    if (!routeData || !routeData.pois || routeData.pois.length === 0 || navPhase === NAV_PHASES.PRE_ROUTE || activePoiIndex === 0) {
+      return 0;
+    }
 
     let total = 0;
     // Helper to calc dist
     const calcD = (p1, p2) => {
+      if (!p1 || !p2 || p1.lat === undefined || p2.lat === undefined) return 0;
       const R = 6371;
       const dLat = (p2.lat - p1.lat) * Math.PI / 180;
       const dLon = (p2.lng - p1.lng) * Math.PI / 180;
@@ -256,41 +280,28 @@ function CityExplorerApp() {
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     };
 
-    // 1. Distance from Start -> POI 0 (Approximation: Use User Location if available, else omit or assume close)
-    // Actually better to start from POI 0 -> POI 1 etc.
-    // If activePoiIndex is 0, we are at start.
-    // If activePoiIndex is 1, we finished Leg 0 (Start->POI0).
-
-    // We can't easily guess Start->POI0 distance without initial user loc stored.
-    // But we can sum POI 0 -> POI 1 -> ... POI [active-1].
-
+    // Sum distances up to the current active index
     for (let i = 0; i < activePoiIndex; i++) {
-      // Distance from Previous (or Start) to POI[i]
-      // If i=0, it's Start -> POI0. We roughly approximate this or ignore.
-      // Let's assume the user was near the first POI or use the first leg distance if routeData has it?
-      // routeData.navigationSteps is only current.
-
-      // BETTER: Sum distance between POI[i] and POI[i+1].
-      // If we are at POI 2 (index 2), we completed POI0->POI1 + POI1->POI2? No.
-      // activePoiIndex = target index.
-      // If activePoiIndex=0, target is POI0. Done=0.
-      // If activePoiIndex=1, target is POI1. We completed Start->POI0.
-      // If activePoiIndex=2, target is POI2. We completed Start->POI0 + POI0->POI1.
-
       if (i === 0) {
-        // Start->POI0. Hard to know. Let's assume a small value or 0 if unknown.
-        // OR: If we have routeData.pois[0].distFromCurr (calculated at search time), use that!
-        if (routeData.pois[0].distFromCurr) total += routeData.pois[0].distFromCurr;
+        // Start -> POI 0. 
+        // We use distFromCurr if available, which is calculated when the route is first generated.
+        const firstPoi = routeData.pois[0];
+        if (firstPoi && firstPoi.distFromCurr) {
+          total += firstPoi.distFromCurr;
+        }
       } else {
         // POI[i-1] -> POI[i]
         const p1 = routeData.pois[i - 1];
         const p2 = routeData.pois[i];
-        // Add 30% buffer for walking routes
-        total += calcD({ lat: p1.lat, lng: p1.lng }, { lat: p2.lat, lng: p2.lng }) * 1.3;
+
+        if (p1 && p2) {
+          // Add 30% buffer for walking/cycling actual distance vs straight line
+          total += calcD(p1, p2) * 1.3;
+        }
       }
     }
     return total;
-  }, [routeData, activePoiIndex]);
+  }, [routeData, activePoiIndex, navPhase]);
 
   // Haversine Distance Helper (km)
   const getDistance = (lat1, lon1, lat2, lon2) => {
@@ -306,40 +317,75 @@ function CityExplorerApp() {
   };
 
   // Helper: Calculate Route Path & Steps
-  const calculateRoutePath = async (pois, center, mode, endCenter = null) => {
+  const calculateRoutePath = async (pois, center, mode, endCenter = null, loopOverride = null, editModeOverride = null) => {
+    // Basic validation
+    if (!center || !Array.isArray(center) || center.length < 2) {
+      console.warn("calculateRoutePath: Invalid center coordinate", center);
+      return null;
+    }
+
+    // Determine values to use, prioritizing overrides
+    const actualRoundtrip = loopOverride !== null ? loopOverride : isRoundtrip;
+    const actualEditMode = editModeOverride !== null ? editModeOverride : isRouteEditMode;
+
     const waypoints = [
       `${center[1]},${center[0]}`,
       ...pois.map(p => `${p.lng},${p.lat}`)
     ];
-    if (endCenter) waypoints.push(`${endCenter[1]},${endCenter[0]}`);
-    else if (isRoundtrip) waypoints.push(`${center[1]},${center[0]}`);
 
+    // Explicitly handle loop closure: 
+    // If endCenter is provided, use it. 
+    // If NOT provided, ONLY use isRoundtrip loop closure if NOT in edit mode
+    // because in edit mode we want to see the "open" path as we add points.
+    if (endCenter) {
+      waypoints.push(`${endCenter[1]},${endCenter[0]}`);
+    } else if (actualRoundtrip && !actualEditMode) {
+      waypoints.push(`${center[1]},${center[0]}`);
+    }
+
+    // Remove the radiuses parameter as it can be too strict and cause NoRoute errors
+    // also remove lanes=true as it's non-standard.
     try {
-      const profile = mode === 'cycling' ? 'routed-bike' : 'routed-foot';
-      const osrmUrl = `https://routing.openstreetmap.de/${profile}/route/v1/driving/${waypoints.join(';')}?overview=full&geometries=geojson&steps=true`;
+      const profile = mode === 'cycling' ? 'bike' : 'foot';
+      const osrmUrl = `https://routing.openstreetmap.de/routed-${profile}/route/v1/${profile}/${waypoints.join(';')}?steps=true&geometries=geojson&overview=full`;
 
+      console.log(`[Routing] Requesting: ${osrmUrl}`);
       const res = await fetch(osrmUrl);
       const json = await res.json();
 
-      if (json.routes && json.routes.length > 0) {
+      if (json.code !== 'Ok') {
+        console.warn(`[Routing] OSRM Error for URL: ${osrmUrl}`, json);
+        // Fall through to fallback instead of throwing, to preserve old behavior but with warning
+      } else if (json.routes && json.routes.length > 0) {
         const route = json.routes[0];
+
+        // GeoJSON geometry is [lng, lat], we want [lat, lng] for internal 'path'
         const path = route.geometry.coordinates.map(c => [c[1], c[0]]);
+        console.log(`[Routing] Success! Path has ${path.length} points.`);
+
         const dist = route.distance / 1000;
         let walkDist = 0;
         let steps = [];
-        if (route.legs && route.legs.length > 1) {
-          const poiLegs = (isRoundtrip || endCenter) ? route.legs.slice(1, -1) : route.legs.slice(1);
+
+        if (route.legs && route.legs.length >= 1) {
+          const poiLegs = (actualRoundtrip || endCenter) ? route.legs.slice(1, -1) : route.legs.slice(1);
           walkDist = poiLegs.reduce((acc, leg) => acc + leg.distance, 0) / 1000;
-        }
-        if (route.legs) {
+
           route.legs.forEach(leg => {
-            if (leg.steps && leg.steps.length > 0) {
+            if (leg.steps) {
+              // Reconstruct leg geometry from steps if available, or use overview
               leg.geometry = {
                 type: 'LineString',
-                coordinates: leg.steps.flatMap((s, idx) =>
-                  idx === 0 ? s.geometry.coordinates : s.geometry.coordinates.slice(1)
-                )
+                coordinates: leg.steps.flatMap((s, idx) => {
+                  if (!s.geometry || !s.geometry.coordinates) return [];
+                  const coords = s.geometry.coordinates;
+                  return idx === 0 ? coords : coords.slice(1);
+                })
               };
+              // If steps had no geometry, fall back to something sensible
+              if (leg.geometry.coordinates.length === 0 && leg.location) {
+                // Fallback to overview or just points if needed, but usually OSRM provides this
+              }
             }
           });
           steps = route.legs.flatMap(l => l.steps);
@@ -363,7 +409,7 @@ function CityExplorerApp() {
         steps: [],
         geometry: {
           type: 'LineString',
-          coordinates: [[p[1], p[0]], [next[1], next[0]]]
+          coordinates: sanitizePath([[p[1], p[0]], [next[1], next[0]]], 'fallback_leg')
         }
       };
     });
@@ -400,12 +446,14 @@ function CityExplorerApp() {
 
   // Effect: Recalculate Route when Travel Mode changes
   useEffect(() => {
-    if (routeData && routeData.pois && routeData.pois.length > 0 && searchMode !== 'radius') {
-      calculateRoutePath(routeData.pois, routeData.center, travelMode).then(res => {
+    if (routeData && routeData.pois && routeData.pois.length > 0) {
+      calculateRoutePath(routeData.pois, routeData.center, travelMode, routeData.stopCenter, isRoundtrip, isRouteEditMode).then(res => {
+        if (!res) return;
         setRouteData(prev => ({
           ...prev,
           routePath: res.path,
           navigationSteps: res.steps,
+          legs: res.legs,
           stats: {
             ...prev.stats,
             totalDistance: res.dist.toFixed(1),
@@ -414,7 +462,7 @@ function CityExplorerApp() {
         }));
       });
     }
-  }, [travelMode]);
+  }, [travelMode, isRoundtrip, isRouteEditMode]);
 
   // Save Route
   const handleSaveRoute = () => {
@@ -466,6 +514,58 @@ function CityExplorerApp() {
     }
   }, [routeData, city]); // Re-run when data or city changes
 
+  // Centralized Sanitization for Route Data (Prevents MapLibre crashes with null/NaN)
+  const sanitizeRouteData = (data) => {
+    if (!data) return null;
+
+    // Helper: Ensure lat/lng are numbers
+    const isNum = (v) => typeof v === 'number' && !isNaN(v);
+
+    // 1. Sanitize Center
+    let cleanCenter = data.center;
+    if (!cleanCenter || !isNum(cleanCenter[0]) || !isNum(cleanCenter[1])) {
+      console.warn("[Sanitizer] Invalid center found, resetting to default.");
+      cleanCenter = [52.3676, 4.9041]; // Amsterdam default
+    }
+
+    // 2. Sanitize POIs
+    const cleanPois = (data.pois || []).map(p => ({
+      ...p,
+      lat: isNum(p.lat) ? p.lat : (isNum(parseFloat(p.lat)) ? parseFloat(p.lat) : cleanCenter[0]),
+      lng: isNum(p.lng) ? p.lng : (isNum(parseFloat(p.lng)) ? parseFloat(p.lng) : cleanCenter[1])
+    }));
+
+    // 3. Sanitize Route Path
+    const cleanRoutePath = (data.routePath || []).filter(coord =>
+      Array.isArray(coord) && isNum(coord[0]) && isNum(coord[1])
+    );
+
+    // 4. Sanitize Navigation Steps
+    const cleanSteps = (data.navigationSteps || []).map(step => {
+      if (step.maneuver && step.maneuver.location) {
+        const [lng, lat] = step.maneuver.location;
+        if (!isNum(lng) || !isNum(lat)) {
+          console.warn("[Sanitizer] Stripping maneuver location from step due to non-numeric data.");
+          return { ...step, maneuver: { ...step.maneuver, location: null } };
+        }
+      }
+      return step;
+    });
+
+    return {
+      ...data,
+      center: cleanCenter,
+      pois: cleanPois,
+      originalPois: data.originalPois ? data.originalPois.map(p => ({
+        ...p,
+        lat: isNum(p.lat) ? p.lat : (isNum(parseFloat(p.lat)) ? parseFloat(p.lat) : cleanCenter[0]),
+        lng: isNum(p.lng) ? p.lng : (isNum(parseFloat(p.lng)) ? parseFloat(p.lng) : cleanCenter[1])
+      })) : cleanPois,
+      routePath: cleanRoutePath,
+      navigationSteps: cleanSteps
+    };
+  };
+
   // Load Route
   const handleLoadRoute = async (file) => {
     try {
@@ -484,11 +584,9 @@ function CityExplorerApp() {
           lastAutoSavedKeyRef.current = currentKey;
         }
 
-        setRouteData({
-          ...data.routeData,
-          originalPois: data.routeData.originalPois || data.routeData.pois
-        });
-        setFoundPoisCount(data.routeData.pois ? data.routeData.pois.length : 0);
+        const sanitized = sanitizeRouteData(data.routeData);
+        setRouteData(sanitized);
+        setFoundPoisCount(sanitized.pois ? sanitized.pois.length : 0);
         setIsAiViewActive(false); // Switch to map view
         setIsSidebarOpen(true);   // Ensure sidebar is open
         setIsLoading(false);
@@ -753,7 +851,7 @@ function CityExplorerApp() {
     const engine = new PoiIntelligence({
       city: city,
       language: language,
-      lengthMode: descriptionLength,
+      lengthMode: poi.active_mode || descriptionLength,
       interests: interests,
       routeContext: routeCtx
     });
@@ -1064,6 +1162,7 @@ function CityExplorerApp() {
           };
           setValidatedCityData(resultData);
           setFocusedLocation({ lat: latitude, lng: longitude });
+          setUserLocation({ lat: latitude, lng: longitude });
         } else {
           // Absolute Fallback: Coordinates
           const name = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
@@ -1071,6 +1170,7 @@ function CityExplorerApp() {
           resultData = { lat: latitude, lon: longitude, name: name, display_name: name };
           setValidatedCityData(resultData);
           setFocusedLocation({ lat: latitude, lng: longitude });
+          setUserLocation({ lat: latitude, lng: longitude });
         }
 
         setIsLoading(false);
@@ -2055,7 +2155,7 @@ function CityExplorerApp() {
 
       try {
         const finalStopCenter = routeData?.stopCenter || null;
-        const routeResult = await calculateRoutePath(fullyEnriched, cityCenter, travelMode, finalStopCenter);
+        const routeResult = await calculateRoutePath(fullyEnriched, cityCenter, travelMode, finalStopCenter, isRoundtrip, isRouteEditMode);
         finalPath = routeResult.path;
         finalDist = routeResult.dist;
         finalSteps = routeResult.steps;
@@ -2306,7 +2406,7 @@ function CityExplorerApp() {
 
       // 3. Recalculate Path (OSRM)
       // Note: We use the existing POI descriptions/images, no need to re-enrich
-      const routeResult = await calculateRoutePath(optimizedPois, newStartCenter, travelMode);
+      const routeResult = await calculateRoutePath(optimizedPois, newStartCenter, travelMode, null, isRoundtrip, isRouteEditMode);
 
       // 4. Fetch New Start/End Instructions
       const cityName = validatedCityData?.address?.city || city;
@@ -2365,7 +2465,11 @@ function CityExplorerApp() {
 
   const loadMapWithCity = async (cityData, interestOverride = null, paramsOverride = null) => {
     const { lat, lon } = cityData;
-    let cityCenter = [parseFloat(lat), parseFloat(lon)];
+    const latNum = parseFloat(lat);
+    const lonNum = parseFloat(lon);
+    let cityCenter = (typeof latNum === 'number' && !isNaN(latNum) && typeof lonNum === 'number' && !isNaN(lonNum))
+      ? [latNum, lonNum]
+      : [52.3676, 4.9041];
 
     // Constraints object constructed from state OR override
     const activeParams = paramsOverride || {};
@@ -2683,7 +2787,7 @@ function CityExplorerApp() {
 
       // We might need to prune multiple times if the estimation was way off
       while (selectedPois.length > 0) {
-        const routeResult = await calculateRoutePath(selectedPois, cityCenter, travelMode, finalStopCenter);
+        const routeResult = await calculateRoutePath(selectedPois, cityCenter, travelMode, finalStopCenter, effectiveRoundtrip, isRouteEditMode);
         const dKm = routeResult.dist;
 
         // Check if this real distance fits our limit (with tolerance)
@@ -2772,7 +2876,7 @@ function CityExplorerApp() {
     try {
       // 2. Recalculate Route with remaining POIs
       const cityCenter = routeData.center;
-      const routeResult = await calculateRoutePath(updatedPois, cityCenter, travelMode);
+      const routeResult = await calculateRoutePath(updatedPois, cityCenter, travelMode, null, isRoundtrip, isRouteEditMode);
 
       // 3. Update Route Data
       setRouteData(prev => ({
@@ -2833,7 +2937,7 @@ function CityExplorerApp() {
 
     try {
       const cityCenter = routeData.center;
-      const routeResult = await calculateRoutePath(updatedPois, cityCenter, travelMode, routeData.stopCenter);
+      const routeResult = await calculateRoutePath(updatedPois, cityCenter, travelMode, routeData.stopCenter, isRoundtrip, isRouteEditMode);
 
       setRouteData(prev => ({
         ...prev,
@@ -2913,7 +3017,7 @@ function CityExplorerApp() {
 
         // 2. Case B: Drop original generic start and recalculate OSRM path (P1 -> ... -> P1)
         const newStartCenter = [newStartPoi.lat, newStartPoi.lng];
-        const routeResult = await calculateRoutePath(remainingPois, newStartCenter, travelMode);
+        const routeResult = await calculateRoutePath(remainingPois, newStartCenter, travelMode, null, isRoundtrip, isRouteEditMode);
 
         // 3. Fetch specific arrival instructions for this POI as a start point
         const cityName = validatedCityData?.address?.city || city;
@@ -2985,7 +3089,7 @@ function CityExplorerApp() {
       // Verify all legs have geometries before transforming
       if (rotatedLegs.every(l => l && l.geometry)) {
         newPath = rotatedLegs.flatMap((leg, idx) => {
-          const coords = leg.geometry.coordinates.map(c => [c[1], c[0]]);
+          const coords = transformOSRMCoords(leg.geometry.coordinates, `rotated_leg_${idx}`);
           return idx === 0 ? coords : coords.slice(1);
         });
 
@@ -3077,14 +3181,14 @@ function CityExplorerApp() {
           ...leg,
           geometry: {
             ...leg.geometry,
-            coordinates: [...leg.geometry.coordinates].reverse()
+            coordinates: sanitizePath([...leg.geometry.coordinates], `reverse_leg_coords`).reverse()
           },
           steps: [...leg.steps].reverse()
         }));
 
         // Reconstruct Path from leg geometries
         newPath = newLegs.flatMap((leg, idx) => {
-          const coords = leg.geometry.coordinates.map(c => [c[1], c[0]]);
+          const coords = transformOSRMCoords(leg.geometry.coordinates, `reversed_leg_${idx}`);
           return idx === 0 ? coords : coords.slice(1);
         });
 
@@ -3215,11 +3319,11 @@ function CityExplorerApp() {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.pois && parsed.pois.length > 0) {
             console.log("Restoring autosaved route...");
-            setRouteData(parsed);
-            if (parsed.cityName) setCity(parsed.cityName); // Assuming cityName is in routeData or needs to be added
-            // setNavPhase(NAV_PHASES.PRE_ROUTE); // Default on load
-            setIsAiViewActive(false); // Jump to itinerary
-            setIsSidebarOpen(true);   // Ensure sidebar is open
+            const sanitized = sanitizeRouteData(parsed);
+            setRouteData(sanitized);
+            if (sanitized.cityName) setCity(sanitized.cityName);
+            setIsAiViewActive(false);
+            setIsSidebarOpen(true);
           }
         } catch (e) {
           console.error("Failed to load autosaved route", e);
@@ -3258,7 +3362,10 @@ function CityExplorerApp() {
   }, []);
 
   const stopSpeech = () => {
-    window.speechSynthesis.cancel();
+    // Only cancel if we are actually tracking a POI speech, to avoid killing navigation
+    if (speakingId) {
+      window.speechSynthesis.cancel();
+    }
     setSpeakingId(null);
     setCurrentSpeakingPoi(null);
     setSpokenCharCount(0);
@@ -3348,62 +3455,50 @@ function CityExplorerApp() {
     }
 
     // Always stop previous before starting new
-    window.speechSynthesis.cancel();
-    setSpokenCharCount(0);
+    // Always stop previous before starting new - UNLESS it's a navigation prompt that we want to queue?
+    // Actually, for user clicks (handleSpeak), we usually DO want to interrupt.
+    // However, if we want to be robust against GC, we should use the Queue pattern here too.
 
+    // window.speechSynthesis.cancel(); // Removed aggressive cancel
+
+    setSpokenCharCount(0);
     setSpeakingId(uniqueId);
-    if (!isTextMode) setCurrentSpeakingPoi(poiOrText); // Only track POI for auto-restart
+    if (!isTextMode) setCurrentSpeakingPoi(poiOrText);
 
     const u = new SpeechSynthesisUtterance(textToRead);
 
+    // Robust Queueing for App.jsx too
+    if (!speechUtteranceRef.current) {
+      speechUtteranceRef.current = new Set();
+    }
+    // If it's a Set (from MapLibreContainer fix), use it. If it's a single ref (legacy), upgrade it.
+    if (speechUtteranceRef.current instanceof Set) {
+      speechUtteranceRef.current.add(u);
+      u.onend = () => {
+        speechUtteranceRef.current.delete(u);
+        setSpeakingId(null);
+        setCurrentSpeakingPoi(null);
+        setSpokenCharCount(0);
+        setIsSpeechPaused(false);
+      };
+      u.onerror = () => {
+        speechUtteranceRef.current.delete(u);
+        setSpeakingId(null);
+      };
+    } else {
+      // Fallback or Upgrade
+      const old = speechUtteranceRef.current;
+      speechUtteranceRef.current = new Set();
+      if (old) speechUtteranceRef.current.add(old);
+      speechUtteranceRef.current.add(u);
+    }
+
     // Voice Selection Logic
-    let targetLang = 'nl-NL';
-    if (voiceSettings.variant === 'en') targetLang = 'en-US';
-    else if (voiceSettings.variant === 'be') targetLang = 'nl-BE';
-
-    const targetGender = voiceSettings.gender;
-
-    // Helper to find gender match in a list of voices
-    const findGenderMatch = (voices) => {
-      return voices.find(v => {
-        const n = v.name.toLowerCase();
-        // Expanded heuristic list
-        const maleNames = ['male', 'man', 'xander', 'bart', 'arthur', 'david', 'frank', 'maarten', 'mark', 'stefan', 'rob', 'paul', 'daniel', 'george', 'james', 'microsoft david', 'microsoft mark'];
-        const femaleNames = ['female', 'woman', 'lady', 'ellen', 'claire', 'laura', 'google', 'zira', 'eva', 'katja', 'fenna', 'samantha', 'tessa', 'karen', 'fiona', 'moira', 'saskia', 'hazel', 'susan', 'heidi', 'elke', 'colette', 'microsoft zira'];
-
-        if (targetGender === 'female' && n.includes('male')) return false;
-        if (targetGender === 'male' && n.includes('female')) return false;
-
-        if (targetGender === 'male') return maleNames.some(name => n.includes(name));
-        if (targetGender === 'female') return femaleNames.some(name => n.includes(name));
-        return false;
-      });
-    };
-
-    // Strategy 1: Exact Locale Match (e.g. nl-NL)
-    let relevantVoices = availableVoices.filter(v => v.lang.toLowerCase() === targetLang.toLowerCase());
-    let selectedVoice = findGenderMatch(relevantVoices);
-
-    // Strategy 2: Broad Language Match (e.g. any 'nl') if no gender match found yet
-    if (!selectedVoice) {
-      const shortLang = targetLang.split('-')[0];
-      const broadVoices = availableVoices.filter(v => v.lang.toLowerCase().startsWith(shortLang));
-      selectedVoice = findGenderMatch(broadVoices);
-    }
-
-    // Strategy 3: Fallback to first available voice of target language (ignore gender)
-    if (!selectedVoice) {
-      // Reset relevance to exact or broad
-      relevantVoices = availableVoices.filter(v => v.lang.includes(targetLang));
-      if (relevantVoices.length === 0) {
-        const shortLang = targetLang.split('-')[0];
-        relevantVoices = availableVoices.filter(v => v.lang.includes(shortLang));
-      }
-      selectedVoice = relevantVoices[0];
-    }
+    const targetLang = voiceSettings.variant === 'en' ? 'en-US' : (voiceSettings.variant === 'be' ? 'nl-BE' : 'nl-NL');
+    const selectedVoice = getBestVoice(availableVoices, targetLang, voiceSettings.gender);
 
     // Log for debugging
-    console.log(`[TTS] Selected Voice for ${targetLang} (${targetGender}):`, selectedVoice ? `${selectedVoice.name} (${selectedVoice.lang})` : 'None found');
+    console.log(`[TTS] Selected Voice for ${targetLang} (${voiceSettings.gender}):`, selectedVoice ? `${selectedVoice.name} (${selectedVoice.lang})` : 'None found');
 
     if (selectedVoice) {
       u.voice = selectedVoice;
@@ -3605,7 +3700,7 @@ function CityExplorerApp() {
 
       // Recalculate the route with the new POI list
       const cityCenter = routeData.center;
-      const routeResult = await calculateRoutePath(newPois, cityCenter, travelMode, routeData.stopCenter);
+      const routeResult = await calculateRoutePath(newPois, cityCenter, travelMode, routeData.stopCenter, isRoundtrip, isRouteEditMode);
 
       // Update route data with new POI list and recalculated route
       setRouteData(prev => ({
@@ -3721,13 +3816,14 @@ function CityExplorerApp() {
   const handleStartMapPick = async (cityQuery, keepExisting = false) => {
     setIsMapPickMode(true);
     setIsSidebarOpen(false);
+    setIsRoundtrip(true); // Manual routes are always loops per user request
 
     // Enable Route Edit Mode
     setIsRouteEditMode(true);
     setRouteMarkers([]);
     setSelectedEditPointIndex(-1);
     setCumulativeDistances([]);
-    setIsDiscoveryTriggered(false); // Reset discovery state
+    setIsDiscoveryTriggered(keepExisting ? isDiscoveryTriggered : false); // Only reset if NOT keeping existing route
 
     if (keepExisting && routeData) {
       console.log("Initializing Map Pick Mode - Keeping Existing Route");
@@ -3752,9 +3848,9 @@ function CityExplorerApp() {
       // 2. Markers (formerly points/pois in edit mode)
       if (routeData.routeMarkers && routeData.routeMarkers.length > 0) {
         points.push(...routeData.routeMarkers);
-      } else if (routeData.pois) {
-        // Fallback for transition or if we want to turn existing POIs back into markers
-        points.push(...routeData.pois);
+      } else {
+        // NOTE: We used to copy routeData.pois here, but that loses their identity 
+        // as POIs. We now keep them separate so they remain active POIs.
       }
 
       setRouteMarkers(points);
@@ -3886,7 +3982,7 @@ function CityExplorerApp() {
           // Set as route center - use FRESH object, not spread from prev
           setRouteData({
             center: [poi.lat, poi.lng],
-            pois: [],
+            pois: routeData?.pois || [], // Preserve existing POIs even if starting fresh pick
             routeMarkers: [poi], // Initialize markers in routeData
             startPoi: poi,
             startName: poi.name,
@@ -3910,10 +4006,12 @@ function CityExplorerApp() {
           try {
             // Calculate full route through all markers (except we don't close the loop yet)
             const routeResult = await calculateRoutePath(
-              newMarkers.slice(1), // Exclude start, it's the center
+              newMarkers.slice(1),
               startCoords,
               activeMode,
-              null // Don't close loop yet
+              null,
+              isRoundtrip,
+              isRouteEditMode
             );
 
             // Calculate cumulative distances for each marker
@@ -3940,7 +4038,7 @@ function CityExplorerApp() {
               ...prev,
               center: [newMarkers[0].lat, newMarkers[0].lng],
               routeMarkers: newMarkers,
-              pois: [], // Clear POIs while editing/adding markers
+              pois: prev.pois || [], // Preserve POIs while editing/adding markers
               startPoi: newMarkers[0],
               startName: newMarkers[0].name,
               startIsPoi: true,
@@ -4009,7 +4107,7 @@ function CityExplorerApp() {
         const activeMode = travelMode || 'walking';
 
         try {
-          const routeResult = await calculateRoutePath(currentPois, startCoords, activeMode, null);
+          const routeResult = await calculateRoutePath(currentPois, startCoords, activeMode, null, isRoundtrip, isRouteEditMode);
 
           setRouteData(prev => ({
             ...prev,
@@ -4083,7 +4181,9 @@ function CityExplorerApp() {
           newMarkers.slice(1),
           startCoords,
           activeMode,
-          null
+          null,
+          isRoundtrip,
+          isRouteEditMode
         );
 
         // Recalculate cumulative distances
@@ -4149,7 +4249,9 @@ function CityExplorerApp() {
             newMarkers.slice(1),
             startCoords,
             activeMode,
-            isRoundtrip ? startCoords : null
+            isRoundtrip ? startCoords : null,
+            isRoundtrip,
+            isRouteEditMode
           );
 
           // Recalculate cumulative distances
@@ -4212,7 +4314,9 @@ function CityExplorerApp() {
         routeMarkers.slice(1),
         startCoords,
         activeMode,
-        startCoords // Close the loop by returning to start
+        startCoords, // Close the loop by returning to start
+        isRoundtrip,
+        isRouteEditMode
       );
 
       // We maintain routeMarkers separately in the routeData
@@ -4224,7 +4328,7 @@ function CityExplorerApp() {
         startName: routeMarkers[0].name,
         startIsPoi: true,
         routeMarkers: [...routeMarkers], // Store markers permanently in routeData
-        pois: [], // Initially empty, user must trigger discovery
+        pois: prev.pois || [], // Preserve existing POIs instead of clearing them
         routePath: routeResult.path,
         navigationSteps: routeResult.steps,
         legs: routeResult.legs,
@@ -4235,7 +4339,8 @@ function CityExplorerApp() {
         }
       }));
 
-      setIsDiscoveryTriggered(false); // Mode finalized, but discovery not yet run
+      setIsRoundtrip(true); // Force loop state on finalize
+
 
       // Exit edit mode
       setIsRouteEditMode(false);
@@ -4438,7 +4543,7 @@ function CityExplorerApp() {
 
       {/* Map Area */}
       <div className="flex-1 relative overflow-hidden">
-        <MapContainer
+        <MapLibreContainer
           routeData={routeData}
           searchMode={searchMode}
           focusedLocation={focusedLocation}
@@ -4454,6 +4559,8 @@ function CityExplorerApp() {
           isSpeechPaused={isSpeechPaused}
           onSpeak={handleSpeak}
           onStopSpeech={stopSpeech}
+          voiceSettings={voiceSettings}
+          availableVoices={availableVoices}
           spokenCharCount={spokenCharCount}
           isLoading={isLoading}
           loadingText={loadingText}
@@ -4614,6 +4721,7 @@ function CityExplorerApp() {
         onStartMapPick={handleStartMapPick}
         isRouteEditMode={isRouteEditMode}
         isEnriching={isBackgroundUpdating}
+        onEnrichSinglePoi={handleEnrichSinglePoi}
         onStartEnrichment={handleTriggerEnrichment}
         onPauseEnrichment={handlePauseEnrichment}
         onFindPoisAlongRoute={handleFindPoisAlongRoute}
@@ -4764,6 +4872,9 @@ function CityExplorerApp() {
           onScan={handleArScan}
           onClose={() => setIsArMode(false)}
           language={language}
+          pois={routeData?.pois || []}
+          userLocation={userLocation}
+          isSimulating={isSimulating}
         />
       )}
 

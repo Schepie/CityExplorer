@@ -3,11 +3,14 @@ import { MapContainer as LMapContainer, TileLayer, Marker, Popup, Polyline, useM
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { isLocationOnPath } from '../utils/geometry';
+import { transformOSRMCoords, sanitizePath } from '../utils/coordinateUtils';
 import { Brain, MessageSquare } from 'lucide-react';
 import { SmartAutoScroller } from '../utils/AutoScroller';
 import PoiDetailContent from './PoiDetailContent';
 import BackgroundKeepAlive from './BackgroundKeepAlive';
 import { interleaveRouteItems } from '../utils/routeUtils';
+import NavigationMap from './NavigationMap';
+import { Compass } from 'lucide-react';
 
 // Fix for default Leaflet marker icons in React
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -336,7 +339,20 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
             // Re-enable auto-follow
             isAutoFollow.current = true;
             lastActionTime.current = Date.now();
-            map.flyTo([userLocation.lat, userLocation.lng], 16, { duration: 1.5 });
+
+            const targetZoom = 16;
+            let centerLatLng = [userLocation.lat, userLocation.lng];
+
+            // If navigating, apply the 3/4th vertical offset
+            if (isNavigating) {
+                const size = map.getSize();
+                const shiftY = size.y * 0.25; // 25% shift up = 75% down the screen
+                const centerPoint = map.project(centerLatLng, targetZoom);
+                const newCenterPoint = centerPoint.subtract([0, shiftY]);
+                centerLatLng = map.unproject(newCenterPoint, targetZoom);
+            }
+
+            map.flyTo(centerLatLng, targetZoom, { duration: 1.5 });
             if (onActionHandled) onActionHandled();
             return;
         }
@@ -401,16 +417,6 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
             return;
         }
 
-        // Priority 3: Follow User in Navigation Mode (ONLY IF ENABLED)
-        if (isNavigating && userLocation && isAutoFollow.current && !isPopupOpen) {
-            // Don't fight with manual actions (fly To)
-            if (Date.now() - lastActionTime.current < 2000) return;
-
-            const currentZoom = map.getZoom();
-            // Center exactly on user (identical to Locate Me behavior) and use zoom 16 as base
-            map.setView([userLocation.lat, userLocation.lng], currentZoom < 16 ? 16 : currentZoom, { animate: true, duration: 1.0 });
-            return;
-        }
 
         // Priority 4: Auto-fit on initial load/route change
         if (!hasAutoFit.current) {
@@ -438,18 +444,16 @@ const MapController = ({ center, positions, userLocation, focusedLocation, viewA
                 hasAutoFit.current = true;
             }
         }
-    }, [center, positions, userLocation, focusedLocation, map, viewAction, onActionHandled, polyline, routeMarkers]);
+    }, [center, positions, userLocation, focusedLocation, map, viewAction, onActionHandled, polyline, routeMarkers, isNavigating, isPopupOpen]);
     useEffect(() => {
+        // ALWAYS North-Up: No container rotation or scaling needed.
+        // This fixes alignment shifts where SVG overlays (Polyline) misalign with tiles/markers.
         const container = map.getContainer();
-        // DISABLE ROTATION per user request: Always reset transforms
-        // if (isNavigating && effectiveHeading !== 0) { ... }
-
-        container.style.transition = 'transform 1.2s cubic-bezier(0.4, 0, 0.2, 1)';
-        container.style.transform = 'rotate(0deg) scale(1.0)';
-        container.style.setProperty('--map-rotation', '0deg');
-        container.style.setProperty('--map-scale', '1.0');
-
-    }, [map, isNavigating, effectiveHeading]);
+        container.style.transition = '';
+        container.style.transform = '';
+        container.style.removeProperty('--map-rotation');
+        container.style.removeProperty('--map-scale');
+    }, [map]);
     return null;
 };
 
@@ -815,7 +819,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                     // If we have geometry, enforce it
                     if (relevantLeg && relevantLeg.geometry && relevantLeg.geometry.coordinates) {
-                        const pathCoords = relevantLeg.geometry.coordinates.map(c => [c[1], c[0]]); // GeoJSON to [lat, lng]
+                        const pathCoords = transformOSRMCoords(relevantLeg.geometry.coordinates, 'poi_activation_leg'); // GeoJSON to [lat, lng]
                         // 35m tolerance for path adherence
                         // Using simple distance logic for now as 'isLocationOnPath' might need more robust segment matching
                         // But we imported isLocationOnPath, so let's use it if available
@@ -1121,9 +1125,9 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                 let baseUrl = 'https://router.project-osrm.org/route/v1/' + profile;
                 if (profile === 'foot') {
-                    baseUrl = 'https://routing.openstreetmap.de/routed-foot/route/v1/driving';
+                    baseUrl = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot';
                 } else if (profile === 'bicycle') {
-                    baseUrl = 'https://routing.openstreetmap.de/routed-bike/route/v1/driving';
+                    baseUrl = 'https://routing.openstreetmap.de/routed-bike/route/v1/bike';
                 }
 
                 const url = `${baseUrl}/${originLng},${originLat};${fLng},${fLat}?overview=full&geometries=geojson&steps=true`;
@@ -1133,7 +1137,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
                 if (data.routes && data.routes.length > 0) {
                     const route = data.routes[0];
-                    const path = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                    const path = transformOSRMCoords(route.geometry.coordinates, 'navigation_fetch');
 
                     // Force the path to end EXACTLY at the POI coordinate.
                     path.push([fLat, fLng]);
@@ -1177,10 +1181,10 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
     const userIcon = L.divIcon({
         className: 'custom-user-marker',
         html: isSimulating ?
-            `<div class="simulation-marker-inner" style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: transform 0.8s;">
+            `<div class="simulation-marker-inner" style="transition: transform 0.8s;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#3b82f6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="drop-shadow-lg"><path d="M19 1L5 17 10 21 17 5 19 1zM2 10l3-5" /></svg>
              </div>` :
-            `<div class="user-marker-inner" style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: transform 0.8s;">
+            `<div class="user-marker-inner" style="transition: transform 0.8s;">
                 <div class="user-marker-arrow" style="transform: translateX(-50%) translateY(-12px)"></div>
               </div>`,
         iconSize: isSimulating ? [32, 32] : [24, 24],
@@ -1218,6 +1222,8 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
 
 
     const [mapInstance, setMapInstance] = useState(null);
+    const [showRecenter, setShowRecenter] = useState(false);
+    const navMapRef = useRef(null);
 
     return (
         <>
@@ -1243,6 +1249,15 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                         isPopupOpen={isPopupOpen}
                         polyline={polyline}
                         routeMarkers={isRouteEditMode ? routeMarkers : persistentMarkers}
+                    />
+
+                    <NavigationMap
+                        isNavigating={isNavigating}
+                        userLocation={userLocation}
+                        polyline={polyline}
+                        onRecenterVisible={setShowRecenter}
+                        viewAction={viewAction}
+                        onActionHandled={() => setViewAction(null)}
                     />
 
                     <MapClickHandler isMapPickMode={isMapPickMode} onMapPick={onMapPick} />
@@ -1485,7 +1500,7 @@ const MapContainer = ({ routeData, searchMode, focusedLocation, language, onPoiC
                                         }}
                                         icon={L.divIcon({
                                             className: 'bg-transparent border-none',
-                                            html: `<div style="transform: rotate(var(--map-rotation, 0deg)) scale(calc(1 / var(--map-scale, 1))); transition: none;" class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
+                                            html: `<div class="w-10 h-10 rounded-full ${colorClass} text-white flex flex-col items-center justify-center border-2 border-white shadow-md shadow-black/30 ${isBreathing ? 'breathing-marker' : ''}">
                                                  ${iconHtml ? `<div class="mb-[1px] -mt-1 scale-75">${iconHtml}</div>` : ''}
                                                  ${searchMode === 'radius' ? '' : `<span class="text-[10px] font-bold leading-none">${getGlobalIndex(poi)}</span>`}
                                                </div>`,

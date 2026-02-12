@@ -55,7 +55,7 @@ body {
 }
 
 /* Allow zooming and panning on the map specifically */
-.leaflet-container {
+.maplibregl-canvas {
   touch-action: auto !important;
 }
 
@@ -137,7 +137,7 @@ body {
 .user-marker-inner {
   width: 20px;
   height: 20px;
-  background-color: #3b82f6;
+  background-color: var(--primary);
   border: 3px solid white;
   border-radius: 50%;
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
@@ -152,7 +152,7 @@ body {
   left: -10px;
   width: 34px;
   height: 34px;
-  background: #3b82f6;
+  background: var(--primary);
   border-radius: 50%;
   opacity: 0;
   animation: pulsate 2s ease-out infinite;
@@ -191,18 +191,94 @@ body {
   animation: breathing-poi 2s infinite ease-in-out;
 }
 
+/* Focused Marker Animation */
+@keyframes selection-pulse {
+  0% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+
+  50% {
+    opacity: 0.4;
+    filter: brightness(1.5);
+  }
+
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.selected-marker-focus {
+  animation: selection-pulse 1.5s infinite ease-in-out;
+  z-index: 1000 !important;
+}
+
+.custom-poi-popup {
+  z-index: 100 !important;
+}
+
 .user-marker-arrow {
   width: 0;
   height: 0;
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-bottom: 16px solid #3b82f6;
+  border-bottom: 16px solid var(--primary);
   position: absolute;
   top: -16px;
   left: 50%;
   transform: translateX(-50%);
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
 }
+
+/* 3D Navigation Marker */
+.navigation-marker-3d {
+  width: 40px;
+  height: 40px;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.3s ease-out;
+}
+
+.marker-3d-arrow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-bottom: 24px solid var(--primary);
+  transform: translate(-50%, -50%) rotateX(60deg);
+  filter: drop-shadow(0 0 10px rgba(var(--primary-rgb), 0.5));
+  transform-origin: bottom;
+}
+
+.marker-3d-arrow::after {
+  content: '';
+  position: absolute;
+  top: 24px;
+  left: -12px;
+  width: 24px;
+  height: 8px;
+  background: var(--primary-hover);
+  transform: rotateX(-90deg);
+  transform-origin: top;
+}
+
+.marker-3d-shadow {
+  position: absolute;
+  top: 60%;
+  left: 50%;
+  width: 24px;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(1.2);
+  filter: blur(4px);
+  z-index: -1;
+}
+
 
 
 
@@ -217,63 +293,36 @@ body {
   font-weight: bold;
 }
 
-/* --- LEAFLET POPUP CUSTOMIZATION --- */
-/* Remove forced auto z-index which breaks layering */
-/* .leaflet-pane { z-index: auto !important; } */
-
-.leaflet-popup-pane {
-  z-index: 2000 !important;
+/* Teardrop "Drip" Marker */
+.poi-drip-marker {
+  width: 40px;
+  height: 40px;
+  background-color: currentColor;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 2px solid white;
+  cursor: pointer;
+  transition: all 0.2s ease-out;
 }
 
-.leaflet-marker-pane {
-  z-index: 600 !important;
+.poi-drip-marker:hover {
+  transform: rotate(-45deg) scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+  z-index: 1000 !important;
 }
 
-.leaflet-popup-content-wrapper {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(8px);
-  border-radius: 12px;
-  padding: 0;
-  overflow: hidden;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-  min-width: 100px;
-}
-
-.glass-popup .leaflet-popup-content-wrapper {
-  min-width: auto !important;
-  display: inline-block !important;
-}
-
-.glass-popup .leaflet-popup-content {
-  width: auto !important;
-  padding: 10px 15px !important;
-  white-space: nowrap !important;
-}
-
-.leaflet-popup-content {
-  margin: 0 !important;
-  line-height: 1.6;
-  width: 480px !important;
-  /* Considerably wider */
-  max-width: calc(100vw - 40px) !important;
-  /* Responsive margin-aware width */
-  max-height: 50vh;
-  /* Reduced height to allow more map visibility on mobile */
-  overflow-y: auto;
-  /* Scrollable if text is very long */
-}
-
-/* On small screens, make popups almost full-width */
-@media (max-width: 640px) {
-  .leaflet-popup-content {
-    width: auto !important;
-    min-width: 280px;
-    max-width: calc(100vw - 32px) !important;
-  }
-
-  .leaflet-popup {
-    margin-bottom: 20px;
-  }
+.poi-drip-marker-content {
+  transform: rotate(45deg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
 /* Custom Scrollbar for Sidebar (Windows-style) */

@@ -34,7 +34,12 @@ const translateInstruction = (step, lang) => {
     // OSRM provides English text in step.name and step.maneuver.
     // Full translation is hard without a library, but we can do basic prefixes.
     const { maneuver, name, distance } = step;
-    const distStr = distance < 1000 ? `${Math.round(distance)}m` : `${(distance / 1000).toFixed(1)}km`;
+    const formatDist = (d, l) => {
+        if (d < 1000) return `${Math.round(d)}${l === 'nl' ? ' meter' : ' meters'}`;
+        const km = (d / 1000).toFixed(1).replace('.', l === 'nl' ? ',' : '.');
+        return `${km}${l === 'nl' ? ' kilometer' : ' kilometers'}`;
+    };
+    const distStr = formatDist(distance, language);
 
     if (lang === 'en') {
         if (maneuver.type === 'arrive') return `Arrive at destination`;
@@ -191,7 +196,7 @@ const NavigationOverlay = ({ steps, pois, language, isOpen, onClose, onToggle, u
                                         <div className="flex items-center gap-4 mt-1">
                                             {!step.isFallback && (
                                                 <span className="text-xs text-white font-black bg-black/20 px-1.5 py-0.5 rounded">
-                                                    {step.distance < 1000 ? `${Math.round(step.distance)}m` : `${(step.distance / 1000).toFixed(1)}km`}
+                                                    {formatDist(step.distance, language)}
                                                 </span>
                                             )}
                                             {step.name && <span className="text-xs text-blue-400 truncate">{step.name}</span>}

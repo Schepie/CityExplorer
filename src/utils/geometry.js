@@ -145,3 +145,32 @@ export const getPointProgressOnPath = (location, pathCoordinates) => {
 
     return closestPointProgress;
 };
+const toRad = (v) => v * Math.PI / 180;
+const toDeg = (v) => v * 180 / Math.PI;
+
+/**
+ * Calculates the bearing between two coordinates in degrees.
+ */
+export const calcBearing = (p1, p2) => {
+    if (!p1 || !p2) return 0;
+    const y = Math.sin(toRad(p2.lng - p1.lng)) * Math.cos(toRad(p2.lat));
+    const x = Math.cos(toRad(p1.lat)) * Math.sin(toRad(p2.lat)) - Math.sin(toRad(p1.lat)) * Math.cos(toRad(p2.lat)) * Math.cos(toRad(p2.lng - p1.lng));
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+};
+
+/**
+ * Gets a point at a distance and bearing from a center point.
+ */
+export const getPointAhead = (center, bearing, distanceOffsetKm) => {
+    const R = 6371;
+    const lat1 = toRad(center.lat);
+    const lon1 = toRad(center.lng);
+    const brng = toRad(bearing);
+
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distanceOffsetKm / R) +
+        Math.cos(lat1) * Math.sin(distanceOffsetKm / R) * Math.cos(brng));
+    const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(distanceOffsetKm / R) * Math.cos(lat1),
+        Math.cos(distanceOffsetKm / R) - Math.sin(lat1) * Math.sin(lat2));
+
+    return { lat: toDeg(lat2), lng: toDeg(lon2) };
+};
