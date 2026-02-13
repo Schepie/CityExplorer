@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { PoiIntelligence } from './services/PoiIntelligence';
-import MapLibreContainer from './components/MapLibreContainer';
-import ItinerarySidebar from './components/ItinerarySidebar';
-import CitySelector from './components/CitySelector';
-import ArView from './components/ArView';
+const MapLibreContainer = React.lazy(() => import('./components/MapLibreContainer'));
+const ItinerarySidebar = React.lazy(() => import('./components/ItinerarySidebar')); // Also lazy load sidebar
+import CitySelector from './components/CitySelector'; // Keep critical critical
+const ArView = React.lazy(() => import('./components/ArView'));
 import './index.css'; // Ensure styles are loaded
 import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -4592,61 +4592,63 @@ function CityExplorerApp() {
 
       {/* Map Area */}
       <div className="flex-1 relative overflow-hidden">
-        <MapLibreContainer
-          routeData={routeData}
-          searchMode={searchMode}
-          focusedLocation={focusedLocation}
-          userLocation={userLocation}
-          setUserLocation={setUserLocation}
-          language={language}
-          onPoiClick={handlePoiClick}
-          onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
-          activePoiIndex={activePoiIndex}
-          setActivePoiIndex={setActivePoiIndex}
-          pastDistance={pastDistance}
-          speakingId={speakingId}
-          isSpeechPaused={isSpeechPaused}
-          onSpeak={handleSpeak}
-          onStopSpeech={stopSpeech}
-          voiceSettings={voiceSettings}
-          availableVoices={availableVoices}
-          spokenCharCount={spokenCharCount}
-          isLoading={isLoading}
-          loadingText={loadingText}
-          loadingCount={foundPoisCount}
-          onUpdatePoiDescription={handleUpdatePoiDescription}
-          onNavigationRouteFetched={handleNavigationRouteFetched}
-          onToggleNavigation={() => setIsNavigationOpen(prev => !prev)}
-          autoAudio={autoAudio}
-          setAutoAudio={setAutoAudio}
-          spokenNavigationEnabled={spokenNavigationEnabled}
-          setSpokenNavigationEnabled={setSpokenNavigationEnabled}
-          isSimulating={isSimulating}
-          setIsSimulating={setIsSimulating}
-          isSimulationEnabled={isSimulationEnabled}
-          userSelectedStyle={travelMode}
-          onStyleChange={setTravelMode}
-          isAiViewActive={isAiViewActive}
-          onOpenAiChat={() => {
-            setIsAiViewActive(true);
-            setIsSidebarOpen(true);
-          }}
-          viewAction={viewAction}
-          setViewAction={setViewAction}
-          navPhase={navPhase}
-          setNavPhase={setNavPhase}
-          routeStart={routeData?.center}
-          isMapPickMode={isMapPickMode}
-          onMapPick={handleMapPick}
-          isRouteEditMode={isRouteEditMode}
-          routeMarkers={routeMarkers}
-          cumulativeDistances={cumulativeDistances}
-          selectedEditPointIndex={selectedEditPointIndex}
-          onEditPointClick={(idx) => setSelectedEditPointIndex(idx)}
-          onDeletePoint={handleDeleteMarker}
-          onMovePoint={handleMoveMarker}
-          onOpenArMode={() => setIsArMode(true)}
-        />
+        <Suspense fallback={<div className="flex items-center justify-center h-full w-full bg-slate-900 text-white">Loading Map...</div>}>
+          <MapLibreContainer
+            routeData={routeData}
+            searchMode={searchMode}
+            focusedLocation={focusedLocation}
+            userLocation={userLocation}
+            setUserLocation={setUserLocation}
+            language={language}
+            onPoiClick={handlePoiClick}
+            onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
+            activePoiIndex={activePoiIndex}
+            setActivePoiIndex={setActivePoiIndex}
+            pastDistance={pastDistance}
+            speakingId={speakingId}
+            isSpeechPaused={isSpeechPaused}
+            onSpeak={handleSpeak}
+            onStopSpeech={stopSpeech}
+            voiceSettings={voiceSettings}
+            availableVoices={availableVoices}
+            spokenCharCount={spokenCharCount}
+            isLoading={isLoading}
+            loadingText={loadingText}
+            loadingCount={foundPoisCount}
+            onUpdatePoiDescription={handleUpdatePoiDescription}
+            onNavigationRouteFetched={handleNavigationRouteFetched}
+            onToggleNavigation={() => setIsNavigationOpen(prev => !prev)}
+            autoAudio={autoAudio}
+            setAutoAudio={setAutoAudio}
+            spokenNavigationEnabled={spokenNavigationEnabled}
+            setSpokenNavigationEnabled={setSpokenNavigationEnabled}
+            isSimulating={isSimulating}
+            setIsSimulating={setIsSimulating}
+            isSimulationEnabled={isSimulationEnabled}
+            userSelectedStyle={travelMode}
+            onStyleChange={setTravelMode}
+            isAiViewActive={isAiViewActive}
+            onOpenAiChat={() => {
+              setIsAiViewActive(true);
+              setIsSidebarOpen(true);
+            }}
+            viewAction={viewAction}
+            setViewAction={setViewAction}
+            navPhase={navPhase}
+            setNavPhase={setNavPhase}
+            routeStart={routeData?.center}
+            isMapPickMode={isMapPickMode}
+            onMapPick={handleMapPick}
+            isRouteEditMode={isRouteEditMode}
+            routeMarkers={routeMarkers}
+            cumulativeDistances={cumulativeDistances}
+            selectedEditPointIndex={selectedEditPointIndex}
+            onEditPointClick={(idx) => setSelectedEditPointIndex(idx)}
+            onDeletePoint={handleDeleteMarker}
+            onMovePoint={handleMoveMarker}
+            onOpenArMode={() => setIsArMode(true)}
+          />
+        </Suspense>
 
         {/* Route Edit Panel - shown during route edit mode */}
         {isRouteEditMode && (
@@ -4919,14 +4921,16 @@ function CityExplorerApp() {
 
       {/* AR View Overlay */}
       {isArMode && (
-        <ArView
-          onScan={handleArScan}
-          onClose={() => setIsArMode(false)}
-          language={language}
-          pois={routeData?.pois || []}
-          userLocation={userLocation}
-          isSimulating={isSimulating}
-        />
+        <Suspense fallback={<div className="fixed inset-0 z-[2000] bg-black text-white flex items-center justify-center">Initializing AR...</div>}>
+          <ArView
+            onScan={handleArScan}
+            onClose={() => setIsArMode(false)}
+            language={language}
+            pois={routeData?.pois || []}
+            userLocation={userLocation}
+            isSimulating={isSimulating}
+          />
+        </Suspense>
       )}
 
       {/* Scan Result Modal */}

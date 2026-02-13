@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+
 import { apiFetch } from "../utils/api.js";
 
 /**

@@ -43,7 +43,17 @@ export default defineConfig({
     }
   },
   build: {
-    target: 'esnext'
+    target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'maplibre-vendor': ['maplibre-gl'],
+          'leaflet-vendor': ['leaflet', 'react-leaflet'],
+          'ui-vendor': ['lucide-react', 'framer-motion']
+        }
+      }
+    }
   },
   esbuild: {
     target: 'esnext'
