@@ -249,7 +249,8 @@ DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'En
                 }
 
                 if (!response.ok) {
-                    console.warn(`[AI] Arrival instructions fetch failed: ${response.status}`);
+                    const errorText = await response.text();
+                    console.error(`[AI] Arrival instructions fetch failed: ${response.status}`, errorText);
                     return null;
                 }
                 const data = await response.json();
