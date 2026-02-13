@@ -347,9 +347,9 @@ const RouteRefiner = ({
                                     {text.searching}
                                 </h3>
                                 <p className="text-sm text-slate-400">
-                                    {language === 'nl'
+                                    {loadingText || (language === 'nl'
                                         ? `Zoeken naar "${searchQuery}"...`
-                                        : `Searching for "${searchQuery}"...`}
+                                        : `Searching for "${searchQuery}"...`)}
                                 </p>
                             </div>
                         </div>
@@ -469,7 +469,7 @@ const RouteRefiner = ({
                             </div>
                             <div className="text-center">
                                 <h3 className="text-xl font-bold text-white mb-2">{text.searching}</h3>
-                                <p className="text-sm text-slate-400">{text.searchingSubtitle}</p>
+                                <p className="text-sm text-slate-400">{loadingText || text.searchingSubtitle}</p>
                             </div>
                             <div className="flex gap-1">
                                 <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms' }}></div>

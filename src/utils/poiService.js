@@ -225,7 +225,7 @@ const transformOverpassResults = (elements, cityName) => {
  * @param {string} language - Language code (default 'en')
  * @returns {Promise<Array>} Array of POI objects
  */
-export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, language = 'en') => {
+export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, language = 'en', onProgress = null) => {
     // try { removed to handle errors internally in the retry loop
     // Calculate bounding box if missing
     // Calculate radius-based bbox
@@ -275,8 +275,9 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, l
 
     // List of Overpass servers for failover
     const servers = [
-        'https://overpass.kumi.systems/api/interpreter',
         'https://overpass-api.de/api/interpreter',
+        'https://overpass.openstreetmap.fr/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
         'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
     ];
 
@@ -295,20 +296,23 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, l
 
         try {
             const controller = new AbortController();
-            // Increased timeout to 120s (2 min) due to complex queries
-            const timeoutId = setTimeout(() => controller.abort(), 120000);
+            // Increased timeout to 60s (was 120s)
+            const timeoutId = setTimeout(() => controller.abort(), 60000);
 
             console.log(`Querying Overpass Server: ${currentServer} (Attempt ${attempts + 1})`);
             const res = await fetch(url, { signal: controller.signal });
             clearTimeout(timeoutId);
 
-            // Handle Rate Limiting (429)
-            if (res.status === 429) {
-                const waitTime = 2000 * Math.pow(2, attempts); // 2s, 4s, 8s
-                console.warn(`Overpass 429 (Too Many Requests). Retrying in ${waitTime / 1000}s... (Attempt ${attempts + 1}/${maxAttempts})`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
+            // Handle Rate Limiting (429) or Server Error (5xx)
+            if (res.status === 429 || res.status >= 500) {
+                const msg = language === 'nl'
+                    ? `Server druk (${res.status}), wissel naar backup...`
+                    : `Server busy (${res.status}), switching to backup...`;
+                console.warn(`[Overpass] ${res.status} on ${currentServer}. ${msg}`);
+                if (onProgress) onProgress(msg);
+
                 attempts++;
-                continue;
+                continue; // IMMEDIATE FAILOVER (No sleep)
             }
 
             if (!res.ok) {
@@ -342,6 +346,7 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, l
 
             // Log and retry
             console.warn(`Overpass Error (${e.name}: ${e.message}). Retrying...`);
+            if (onProgress) onProgress(language === 'nl' ? "Verbinding optimaliseren..." : "Optimizing connection...");
             await new Promise(resolve => setTimeout(resolve, 2000));
             attempts++;
         }
@@ -435,7 +440,7 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000, languag
 }
 
 
-export const getCombinedPOIs = async (cityData, interestLine, cityName, constrainValueKm, sources, language = 'en') => {
+export const getCombinedPOIs = async (cityData, interestLine, cityName, constrainValueKm, sources, language = 'en', onProgress = null) => {
     // Determine Radius in Meters
     const radiusMeters = (constrainValueKm || 5) * 1000;
     const radiusKm = constrainValueKm || 5;
@@ -463,7 +468,7 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
     // Helper: Fetch for a SINGLE keyword
     const fetchForKeyword = async (keyword) => {
         const [osm, fs, google] = await Promise.all([
-            useOsm ? fetchOsmPOIs(cityData, keyword, cityName, radiusKm, language) : Promise.resolve([]),
+            useOsm ? fetchOsmPOIs(cityData, keyword, cityName, radiusKm, language, onProgress) : Promise.resolve([]),
             useFs ? fetchFoursquarePOIs(cityData.lat, cityData.lon, keyword, radiusMeters, language) : Promise.resolve([]),
             useGoogle ? fetchGooglePOIs(cityData.lat, cityData.lon, keyword, radiusMeters, language) : Promise.resolve([])
         ]);

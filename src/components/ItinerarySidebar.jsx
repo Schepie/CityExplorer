@@ -449,7 +449,7 @@ const SidebarInput = ({
                             )}
 
 
-                            {language === 'nl' ? 'Trip Genereren' : 'Generate Trip'}
+                            {isLoading ? (loadingText || (language === 'nl' ? 'Trip Genereren...' : 'Generating Trip...')) : (language === 'nl' ? 'Trip Genereren' : 'Generate Trip')}
                         </button>
                     </div>
                 </div>
@@ -1987,15 +1987,18 @@ const ItinerarySidebar = ({
                                                 date: "13 Feb 2026",
                                                 version: "v3.2.0",
                                                 items: language === 'nl' ? [
-                                                    { title: "Satellietweergave", desc: "Wissel tussen straat- en satellietkaarten (vereist MapTiler sleutel)." },
-                                                    { title: "Stabiliteit", desc: "Oplossing voor vastlopers en verbeterde coördinaatvalidatie." },
-                                                    { title: "Prestaties", desc: "Geoptimaliseerde kaartweergave voor soepelere navigatie." }
+                                                    { title: "Satellietweergave", desc: "Nieuwe 'Layers' knop om te wisselen tussen kaart- en satellietbeelden (vereist MapTiler sleutel)." },
+                                                    { title: "Slimme Zoekfeedback", desc: "Beter inzicht in wat de app doet: 'Zoeken...', 'Verrijken...', 'Optimaliseren...'." },
+                                                    { title: "Inline Zoeken", desc: "Voeg specifieke plekken (bv. restaurants) toe zonder het zijpaneel te verlaten." },
+                                                    { title: "Snellere Resultaten", desc: "Geoptimaliseerde Overpass-servers zorgen voor snellere POI-lading." }
                                                 ] : [
-                                                    { title: "Satellite View", desc: "Toggle between street and satellite maps (requires MapTiler key)." },
-                                                    { title: "Stability Fixes", desc: "Fixed map crashes and improved coordinate validation." },
-                                                    { title: "Performance", desc: "Optimized map rendering for smoother navigation." }
+                                                    { title: "Satellite View", desc: "New 'Layers' button to toggle between map and satellite imagery (requires MapTiler key)." },
+                                                    { title: "Smart Search Feedback", desc: "Better visibility into app actions: 'Searching...', 'Enriching...', 'Optimizing...'." },
+                                                    { title: "Inline Search", desc: "Add specific places (e.g. restaurants) without leaving the sidebar." },
+                                                    { title: "Faster Results", desc: "Optimized Overpass servers ensure faster POI loading." }
                                                 ]
                                             },
+
                                             {
                                                 date: "12 Feb 2026",
                                                 version: "v3.1.1",
@@ -2791,7 +2794,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v3.1.1</span>
+                                            <span className="text-slate-300 text-sm font-medium">v3.2.0</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -2800,7 +2803,7 @@ const ItinerarySidebar = ({
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                        <span className="text-[var(--text-muted)] text-sm font-medium">12 Feb 2026</span>
+                                        <span className="text-[var(--text-muted)] text-sm font-medium">13 Feb 2026</span>
                                     </div>
                                 </div>
                             </div>
@@ -2910,6 +2913,14 @@ const ItinerarySidebar = ({
                                             </button>
                                         </div>
                                     </div>
+                                    {isLoading && (
+                                        <div className="px-5 pb-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 flex items-center gap-3">
+                                                <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin shrink-0" />
+                                                <span className="text-xs font-bold text-primary">{loadingText || (language === 'nl' ? 'Bezig met verwerken...' : 'Processing...')}</span>
+                                            </div>
+                                        </div>
+                                    )}
                                     <div
                                         ref={scrollContainerRef}
                                         onScroll={handleScroll}

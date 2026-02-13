@@ -1773,11 +1773,11 @@ function CityExplorerApp() {
       const robustSources = { osm: true, foursquare: true, google: true };
 
       console.log(`[AI Search #${searchId}] Fetching for "${query}" at ${center} (Sources: All)`);
-      let candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, robustSources, language);
+      let candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, robustSources, language, (msg) => setLoadingText(msg));
 
       if ((!candidates || candidates.length === 0) && radius < 15) {
         console.log(`[AI Search #${searchId}] Retrying broader (15km) search...`);
-        candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", 15, robustSources, language);
+        candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", 15, robustSources, language, (msg) => setLoadingText(msg));
       }
 
       if (candidates && candidates.length > 0) {
@@ -1868,6 +1868,8 @@ function CityExplorerApp() {
       setIsLoading(false);
     }
   };
+
+
 
   const handleJourneyStart = async (e, interestOverride = null, promptOverride = null) => {
     e && e.preventDefault();
@@ -1973,7 +1975,7 @@ function CityExplorerApp() {
         console.log("AddJourney: Using direct candidates", newCandidates);
       } else {
         // FETCH NORMAL
-        newCandidates = await getCombinedPOIs(targetCityData, activeInterest, city, searchRadiusKm, searchSources, language);
+        newCandidates = await getCombinedPOIs(targetCityData, activeInterest, city, searchRadiusKm, searchSources, language, (msg) => setLoadingText(msg));
       }
 
       console.log(`AddJourney: Found ${newCandidates.length} candidates for ${activeInterest}`);
@@ -2624,7 +2626,7 @@ function CityExplorerApp() {
         searchRadiusKm = (constraints.value / 60) * speed;
       }
 
-      const candidates = await getCombinedPOIs(cityData, activeInterest, searchCityName, searchRadiusKm, searchSources, language);
+      const candidates = await getCombinedPOIs(cityData, activeInterest, searchCityName, searchRadiusKm, searchSources, language, (msg) => setLoadingText(msg));
       setFoundPoisCount(candidates.length);
 
       if (candidates.length === 0) {
@@ -3643,6 +3645,8 @@ function CityExplorerApp() {
    * Used by RouteRefiner's extra stop wizard
    */
   const handleSearchStopOptions = async (searchParams) => {
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Opties zoeken...' : 'Finding options...');
     const { stopType, afterStopIndex, referencePoi } = searchParams;
 
     if (!referencePoi || !routeData) {
@@ -3672,7 +3676,8 @@ function CityExplorerApp() {
         city || 'Nearby',
         searchRadiusKm,
         searchSources,
-        language
+        language,
+        (msg) => setLoadingText(msg)
       );
 
       // Filter out POIs already in the route
@@ -3691,6 +3696,8 @@ function CityExplorerApp() {
     } catch (err) {
       console.error('Stop search failed:', err);
       return [];
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -3783,6 +3790,8 @@ function CityExplorerApp() {
    */
   const handleSearchPOIs = async (searchParams) => {
     const { type, query } = searchParams;
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? `Zoeken naar "${query}"...` : `Searching for "${query}"...`);
 
     if (!query || !routeData) {
       console.warn('Missing query or route data for POI search');
@@ -3810,7 +3819,8 @@ function CityExplorerApp() {
         city || 'Nearby',
         searchRadiusKm,
         searchSources,
-        language
+        language,
+        (msg) => setLoadingText(msg)
       );
 
       // Filter out POIs already in the route
@@ -3841,6 +3851,8 @@ function CityExplorerApp() {
     } catch (err) {
       console.error('POI search failed:', err);
       return [];
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -4451,7 +4463,8 @@ function CityExplorerApp() {
         city,
         radiusKm,
         sources,
-        language
+        language,
+        (msg) => setLoadingText(msg)
       );
 
       // Filter: Keep only POIs within 100 meters of the actual route path

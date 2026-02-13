@@ -781,17 +781,19 @@ Je MOET antwoorden met een JSON object in dit formaat:
     async fetchOverpassTags(poi, externalSignal = null) {
         if (!poi.lat || !poi.lng) return null;
 
-        const safeName = poi.name.replace(/"/g, '\\"');
-        const query = `[out:json][timeout:5];nwr(around:50,${poi.lat},${poi.lng})["name"~"${safeName}",i];out tags;`;
+        // OPTIMIZATION: Fetch all named objects within 50m instead of using slow Regex on server
+        // We filter locally in JS which is much faster for small datasets
+        const query = `[out:json][timeout:4];nwr(around:50,${poi.lat},${poi.lng})["name"];out tags;`;
 
         const servers = [
-            'https://overpass.kumi.systems/api/interpreter',
             'https://overpass-api.de/api/interpreter',
+            'https://overpass.openstreetmap.fr/api/interpreter',
+            'https://overpass.kumi.systems/api/interpreter',
             'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
         ];
 
         let attempts = 0;
-        const maxAttempts = 3;
+        const maxAttempts = servers.length; // Try each server once
 
         while (attempts < maxAttempts) {
             const serverIndex = attempts % servers.length;
@@ -800,12 +802,9 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => {
-                    controller.abort();
-                    // If external signal is already aborted, this might be redundant but harmless
-                }, 8000);
+                // Short timeout for fast failover
+                const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-                // Combine with external signal if present
                 if (externalSignal) {
                     if (externalSignal.aborted) {
                         clearTimeout(timeoutId);
@@ -817,12 +816,10 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 const res = await fetch(url, { signal: controller.signal });
                 clearTimeout(timeoutId);
 
-                if (res.status === 429) {
-                    const waitTime = 2000 * Math.pow(2, attempts);
-                    console.warn(`[Overpass] Rate Limited (429) on ${currentServer}. Retrying in ${waitTime / 1000}s...`);
-                    await new Promise(r => setTimeout(r, waitTime));
+                if (res.status === 429 || res.status >= 500) {
+                    console.warn(`[Overpass] ${res.status} on ${currentServer}. Switching immediately...`);
                     attempts++;
-                    continue;
+                    continue; // IMMEDIATE FAILOVER (No sleep)
                 }
 
                 if (!res.ok) throw new Error(`Status ${res.status}`);
@@ -832,16 +829,25 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 try {
                     data = JSON.parse(text);
                 } catch (jsonErr) {
-                    // It's likely an XML error page from Overpass
-                    console.warn(`[Overpass] Invalid JSON from ${currentServer}. Response snippet: ${text.substring(0, 200)}...`);
-                    throw new Error(`Invalid JSON response: ${jsonErr.message}`);
+                    console.warn(`[Overpass] Invalid JSON from ${currentServer}. Switching...`);
+                    attempts++;
+                    continue;
                 }
 
                 if (data.elements && data.elements.length > 0) {
-                    const el = data.elements.find(e => e.tags && (e.tags['description:nl'] || e.tags.description || e.tags.website));
-                    if (el && el.tags) {
-                        const desc = el.tags['description:nl'] || el.tags.description || el.tags.comment;
-                        const web = el.tags.website || el.tags.url || el.tags['contact:website'];
+                    // Client-side fuzzy matching
+                    // Find the element that best matches the POI name
+                    const targetName = poi.name.toLowerCase();
+
+                    const match = data.elements.find(e => {
+                        const name = (e.tags.name || "").toLowerCase();
+                        return (name.includes(targetName) || targetName.includes(name)) &&
+                            (e.tags['description:nl'] || e.tags.description || e.tags.website);
+                    });
+
+                    if (match && match.tags) {
+                        const desc = match.tags['description:nl'] || match.tags.description || match.tags.comment;
+                        const web = match.tags.website || match.tags.url || match.tags['contact:website'];
 
                         if (desc) {
                             return {
@@ -863,26 +869,19 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         }
                     }
                 }
-                // If we got here but no elements, or no tags we want, just return null
                 return null;
 
             } catch (e) {
-                const isTimeout = e.name === 'AbortError' && !externalSignal?.aborted;
-                if (isTimeout) {
-                    console.warn(`[Overpass] Timeout (8s) on ${currentServer} for ${poi.name}`);
-                } else if (e.name === 'AbortError') {
-                    // Task cancelled by user/app
-                    return null;
-                } else {
-                    console.warn(`[Overpass] Attempt ${attempts + 1} failed on ${currentServer}: ${e.message}`);
+                if (e.name === 'AbortError' && !externalSignal?.aborted) {
+                    console.warn(`[Overpass] Timeout on ${currentServer}. Switching...`);
+                } else if (e.name !== 'AbortError') {
+                    console.warn(`[Overpass] Error on ${currentServer}: ${e.message}`);
                 }
             }
             attempts++;
-            if (attempts < maxAttempts && !externalSignal?.aborted) {
-                await new Promise(r => setTimeout(r, 1000));
-            }
+            // No sleep between attempts for maximum speed
         }
-        return null; // Return null if all attempts fail
+        return null;
     }
 
     async fetchLocalArchive(name) {
