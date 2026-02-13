@@ -50,7 +50,7 @@ export default defineConfig({
           'react-vendor': ['react', 'react-dom'],
           'maplibre-vendor': ['maplibre-gl'],
           'leaflet-vendor': ['leaflet', 'react-leaflet'],
-          'ui-vendor': ['lucide-react', 'framer-motion']
+          'ui-vendor': ['lucide-react']
         }
       }
     }
