@@ -19,15 +19,15 @@ export default defineConfig({
         orientation: 'portrait',
         icons: [
           {
-            src: 'logo.jpg',
+            src: 'app-icon-round.png',
             sizes: '192x192',
-            type: 'image/jpeg',
+            type: 'image/png',
             purpose: 'any maskable'
           },
           {
-            src: 'logo.jpg',
+            src: 'app-icon-round.png',
             sizes: '512x512',
-            type: 'image/jpeg',
+            type: 'image/png',
             purpose: 'any maskable'
           }
         ]
