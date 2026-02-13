@@ -187,7 +187,8 @@ Genereer de introductie voor de tocht in ${this.config.city}.
             });
 
             if (!response.ok) {
-                console.warn(`[AI] Welcome message fetch failed: ${response.status}`);
+                const errorText = await response.text();
+                console.warn(`[AI] Welcome message fetch failed: ${response.status}`, errorText);
                 return null;
             }
             const data = await response.json();
@@ -476,7 +477,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 }
 
                 if (!response.ok) {
-                    console.warn(`[AI] Short description fetch failed: ${response.status}`);
+                    const errorText = await response.text();
+                    console.warn(`[AI] Short description fetch failed: ${response.status}`, errorText);
                     return null;
                 }
                 const data = await response.json();
@@ -594,7 +596,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 }
 
                 if (!response.ok) {
-                    console.warn(`[AI] Full details fetch failed: ${response.status}`);
+                    const errorText = await response.text();
+                    console.warn(`[AI] Full details fetch failed: ${response.status}`, errorText);
                     return null;
                 }
                 const data = await response.json();
@@ -713,7 +716,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
             });
 
             if (!response.ok) {
-                console.warn(`[AI] Image analysis failed: ${response.status}`);
+                const errorText = await response.text();
+                console.warn(`[AI] Image analysis failed: ${response.status}`, errorText);
                 return null;
             }
             const data = await response.json();
