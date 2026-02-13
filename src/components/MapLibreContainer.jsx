@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import Map, { Source, Layer, Marker, Popup, useMap } from '@vis.gl/react-maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { LocateFixed, Maximize, Plus, Minus, X, Volume2, Play, Pause } from 'lucide-react';
+import { LocateFixed, Maximize, Plus, Minus, X, Volume2, Play, Pause, Layers } from 'lucide-react';
 import { calcDistance, calcBearing, getDistanceToSegment, getPointProgressOnPath } from '../utils/geometry';
 import PoiDetailContent from './PoiDetailContent';
 import BackgroundKeepAlive from './BackgroundKeepAlive';
@@ -12,7 +12,16 @@ import { maybeSpeakStep } from '../utils/navigationScheduler';
 import { getBestVoice } from '../utils/speechUtils';
 
 // Constants
-const MAP_STYLE = 'https://tiles.openfreemap.org/styles/bright';
+// Constants
+// const MAP_STYLE = 'https://tiles.openfreemap.org/styles/bright';
+// Constants
+// Use MapTiler if key is present, otherwise fallback to Carto Voyager
+const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
+// Base styles
+const STYLE_CARTO = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
+const STYLE_MAPTILER_STREETS = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
+const STYLE_MAPTILER_SATELLITE = `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`;
+
 const EMPTY_ARRAY = [];
 
 // Helper: Standard Coordinate Sanitizer
@@ -76,8 +85,11 @@ const MapLibreContainer = ({
     const [nearbyPoiIds] = useState(new Set());
     const [navigationPath, setNavigationPath] = useState(null);
     const [is3DMode, setIs3DMode] = useState(true);
+    // Style Mode: 'map' or 'satellite'
+    const [styleMode, setStyleMode] = useState('map');
     const [currentSpeed, setCurrentSpeed] = useState(0);
     const [selectedPoi, setSelectedPoi] = useState(null);
+    const [isFollowingUser, setIsFollowingUser] = useState(true); // Control auto-centering
 
     // Debug: Speech Log
     const [speechLog, setSpeechLog] = useState([]);
@@ -253,7 +265,7 @@ const MapLibreContainer = ({
         return {
             type: 'Feature',
             geometry: { type: 'LineString', coordinates: validCoords },
-            properties: {}
+            properties: { id: 'route' } // Ensure non-null properties
         };
     }, [routePath]);
 
@@ -263,7 +275,7 @@ const MapLibreContainer = ({
         if (validCoords.length < 2) return null;
 
         let displayCoords = validCoords;
-        if (isNavigating && userLocation) {
+        if (isNavigating && userLocation && isValidCoord([userLocation.lng, userLocation.lat])) {
             let minD = Infinity;
             let closestIdx = 0;
             for (let i = 0; i < validCoords.length; i++) {
@@ -279,7 +291,7 @@ const MapLibreContainer = ({
         return {
             type: 'Feature',
             geometry: { type: 'LineString', coordinates: displayCoords },
-            properties: {}
+            properties: { id: 'nav' } // Ensure non-null properties
         };
     }, [navigationPath, userLocation, isNavigating]);
 
@@ -384,9 +396,43 @@ const MapLibreContainer = ({
                 setViewAction(null);
             }
         } else if (viewAction === 'ROUTE' && routePath && routePath.length > 0) {
-            const firstPoint = [routePath[0][1], routePath[0][0]];
-            const bounds = routePath.reduce((acc, p) => acc.extend([p[1], p[0]]), new maplibregl.LngLatBounds(firstPoint, firstPoint));
-            map.fitBounds(bounds, { padding: 50, duration: 1500 });
+            console.log('[Zoom to Route] routePath sample:', routePath.slice(0, 3));
+
+            // Validate that we have at least one valid coordinate
+            // routePath is stored as [lat, lng], but MapLibre needs [lng, lat]
+            if (routePath[0] && isValidCoord([routePath[0][1], routePath[0][0]])) {
+                const firstPoint = [routePath[0][1], routePath[0][0]]; // [lng, lat]
+
+                // Filter and build bounds only from valid coordinates
+                const validPoints = routePath.filter(p => p && isValidCoord([p[1], p[0]]));
+
+                console.log('[Zoom to Route] Valid points count:', validPoints.length);
+                console.log('[Zoom to Route] First point [lng, lat]:', firstPoint);
+
+                if (validPoints.length > 0) {
+                    const bounds = validPoints.reduce((acc, p) => acc.extend([p[1], p[0]]), new maplibregl.LngLatBounds(firstPoint, firstPoint));
+                    const boundsArray = bounds.toArray();
+                    console.log('[Zoom to Route] Bounds SW [lng,lat]:', boundsArray[0], 'NE [lng,lat]:', boundsArray[1]);
+                    console.log('[Zoom to Route] Last point [lng, lat]:', [validPoints[validPoints.length - 1][1], validPoints[validPoints.length - 1][0]]);
+
+                    // Use smaller padding and maxZoom to prevent "cannot fit within canvas" errors
+                    try {
+                        console.log('[Zoom to Route] Calling fitBounds...');
+                        map.fitBounds(bounds, {
+                            padding: 20,  // Reduced from 50 to handle small routes
+                            duration: 1500,
+                            maxZoom: 18   // Prevent over-zooming on tiny routes
+                        });
+                        console.log('[Zoom to Route] fitBounds call completed');
+                    } catch (e) {
+                        console.error('[Zoom to Route] fitBounds failed:', e);
+                        // Fallback: just center on the middle of the route
+                        map.flyTo({ center: firstPoint, zoom: 15, duration: 1500 });
+                    }
+                }
+            } else {
+                console.warn('[Zoom to Route] First point invalid or missing:', routePath[0]);
+            }
             setViewAction(null);
         }
     }, [viewAction, userLocation, routePath]);
@@ -667,6 +713,12 @@ const MapLibreContainer = ({
         }
     }, []);
 
+    // Determine current Map Style URL
+    const currentMapStyle = useMemo(() => {
+        if (!MAPTILER_KEY) return STYLE_CARTO;
+        return styleMode === 'satellite' ? STYLE_MAPTILER_SATELLITE : STYLE_MAPTILER_STREETS;
+    }, [styleMode]);
+
     return (
         <div className="relative h-full w-full glass-panel overflow-hidden border-2 border-primary/20 shadow-2xl shadow-primary/10">
             <BackgroundKeepAlive isActive={isNavigating} language={language} />
@@ -676,9 +728,12 @@ const MapLibreContainer = ({
                 onMove={evt => setViewState(evt.viewState)}
                 ref={mapRef}
                 mapLibre={maplibregl?.default || maplibregl}
-                mapStyle={MAP_STYLE}
+                mapStyle={currentMapStyle}
                 style={{ width: '100%', height: '100%' }}
                 onStyleImageMissing={onStyleImageMissing}
+                onError={e => {
+                    console.error("[MapDebug] MapLibre Internal Error:", e.error);
+                }}
                 onClick={e => {
                     if (isMapPickMode && onMapPick) onMapPick(e.lngLat);
                     else setSelectedPoi(null);
@@ -695,7 +750,12 @@ const MapLibreContainer = ({
                         <Layer
                             id="route-line"
                             type="line"
-                            paint={{ 'line-color': '#6366f1', 'line-width': 4, 'line-dasharray': [2, 2], 'line-opacity': 0.6 }}
+                            paint={{
+                                'line-color': '#6366f1',
+                                'line-width': 4,
+                                'line-dasharray': [2, 2],
+                                'line-opacity': 0.6
+                            }}
                         />
                     </Source>
                 )}
@@ -706,7 +766,11 @@ const MapLibreContainer = ({
                             id="nav-line"
                             type="line"
                             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-                            paint={{ 'line-color': '#3b82f6', 'line-width': 8, 'line-opacity': 0.8 }}
+                            paint={{
+                                'line-color': '#3b82f6',
+                                'line-width': 8,
+                                'line-opacity': 0.8
+                            }}
                         />
                     </Source>
                 )}
@@ -896,6 +960,15 @@ border-2 border-white shadow-lg flex items-center justify-center font-black text
             )}
 
             <div className="absolute right-4 bottom-6 z-10 flex flex-col gap-2">
+                {MAPTILER_KEY && (
+                    <button
+                        onClick={() => setStyleMode(prev => prev === 'map' ? 'satellite' : 'map')}
+                        className={`bg-black/20 hover:bg-black/60 backdrop-blur-md rounded-full p-3 border border-white/10 text-white shadow-lg h-12 w-12 flex items-center justify-center ${styleMode === 'satellite' ? '!text-blue-400 !border-blue-400/50' : ''}`}
+                        title={styleMode === 'map' ? "Switch to Satellite" : "Switch to Map"}
+                    >
+                        <Layers size={20} className={styleMode === 'satellite' ? "fill-blue-400/20" : ""} />
+                    </button>
+                )}
                 <button onClick={() => { setIs3DMode(!is3DMode); setViewState(prev => ({ ...prev, pitch: !is3DMode ? 60 : 0 })); }} className="bg-black/20 hover:bg-black/60 backdrop-blur-md rounded-full p-3 border border-white/10 text-white shadow-lg font-bold text-xs h-12 w-12 flex items-center justify-center">{is3DMode ? '2D' : '3D'}</button>
                 <button onClick={() => setViewState(v => ({ ...v, zoom: Math.min((v.zoom || 13) + 1, 20) }))} className="bg-black/20 hover:bg-black/60 backdrop-blur-md rounded-full border border-white/10 text-white shadow-lg h-12 w-12 flex items-center justify-center"><Plus size={24} /></button>
                 <button onClick={() => setViewState(v => ({ ...v, zoom: Math.max((v.zoom || 13) - 1, 1) }))} className="bg-black/20 hover:bg-black/60 backdrop-blur-md rounded-full border border-white/10 text-white shadow-lg h-12 w-12 flex items-center justify-center"><Minus size={24} /></button>

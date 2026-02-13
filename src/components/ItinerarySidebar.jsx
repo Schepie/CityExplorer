@@ -1473,7 +1473,9 @@ const ItinerarySidebar = ({
     onEnrichSinglePoi,
     onFindPoisAlongRoute,
     onSkipDiscovery,
-    isDiscoveryTriggered
+    isDiscoveryTriggered,
+    aiProvider, setAiProvider,
+    searchProvider, setSearchProvider
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -1489,6 +1491,7 @@ const ItinerarySidebar = ({
     const [showVoiceSettings, setShowVoiceSettings] = useState(false);
     const [showThemeSettings, setShowThemeSettings] = useState(false);
     const [showTravelSettings, setShowTravelSettings] = useState(false);
+    const [showPoiSettings, setShowPoiSettings] = useState(false);
     const [selectedDiscoveryChips, setSelectedDiscoveryChips] = useState(new Set());
     const [customDiscoveryInterest, setCustomDiscoveryInterest] = useState('');
 
@@ -1980,6 +1983,63 @@ const ItinerarySidebar = ({
                                     /* Changelog View */
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
+                                            {
+                                                date: "13 Feb 2026",
+                                                version: "v3.2.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Satellietweergave", desc: "Wissel tussen straat- en satellietkaarten (vereist MapTiler sleutel)." },
+                                                    { title: "Stabiliteit", desc: "Oplossing voor vastlopers en verbeterde coördinaatvalidatie." },
+                                                    { title: "Prestaties", desc: "Geoptimaliseerde kaartweergave voor soepelere navigatie." }
+                                                ] : [
+                                                    { title: "Satellite View", desc: "Toggle between street and satellite maps (requires MapTiler key)." },
+                                                    { title: "Stability Fixes", desc: "Fixed map crashes and improved coordinate validation." },
+                                                    { title: "Performance", desc: "Optimized map rendering for smoother navigation." }
+                                                ]
+                                            },
+                                            {
+                                                date: "12 Feb 2026",
+                                                version: "v3.1.1",
+                                                items: language === 'nl' ? [
+                                                    { title: "Volledige Gratis Stack", desc: "Overstap naar Groq Cloud (AI) en Tavily (Zoeken) voor een 100% gratis ervaring." },
+                                                    { title: "Overpass Failover", desc: "Automatische mirror-selectie voorkomt foutmeldingen bij drukte op OpenStreetMap." },
+                                                    { title: "AI Foutreductie", desc: "Slimme retries en geoptimaliseerde prompts voorkomen 429-fouten in gids-beschrijvingen." },
+                                                    { title: "Provider Keuze", desc: "Kies zelf je favoriete AI en zoekmachine in de vernieuwde instellingen." }
+                                                ] : [
+                                                    { title: "Full Free API Stack", desc: "Migration to Groq Cloud (AI) and Tavily AI (Search) for a 100% free experience." },
+                                                    { title: "Overpass Failover", desc: "Automatic mirror switching prevents errors during high OpenStreetMap server load." },
+                                                    { title: "AI Error Reduction", desc: "Smart retries and optimized prompts prevent 429 errors in guide descriptions." },
+                                                    { title: "Provider Choice", desc: "Choose your preferred AI and search engine in the revamped settings." }
+                                                ]
+                                            },
+                                            {
+                                                date: "12 Feb 2026",
+                                                version: "v3.0.3",
+                                                items: language === 'nl' ? [
+                                                    { title: "Overpass API Integratie", desc: "OSM POI zoeken nu via Overpass API. Geen CORS fouten meer, volledig gratis en superieure POI data kwaliteit." }
+                                                ] : [
+                                                    { title: "Overpass API Integration", desc: "OSM POI search now uses Overpass API. No more CORS errors, completely free, and superior POI data quality." }
+                                                ]
+                                            },
+                                            {
+                                                date: "12 Feb 2026",
+                                                version: "v3.0.2",
+                                                items: language === 'nl' ? [
+                                                    { title: "Gratis POI Modus", desc: "Standaard gebruik van OSM (gratis) in plaats van Google Places. Schakel Google Places in via Instellingen indien gewenst." }
+                                                ] : [
+                                                    { title: "Free POI Mode", desc: "Defaults to OSM (free) instead of Google Places. Enable Google Places in Settings if desired." }
+                                                ]
+                                            },
+                                            {
+                                                date: "12 Feb 2026",
+                                                version: "v3.0.1",
+                                                items: language === 'nl' ? [
+                                                    { title: "Zoom naar Route Fix", desc: "De 'zoom naar route' knop werkt nu betrouwbaar, zelfs tijdens navigatie." },
+                                                    { title: "GPS Stabilisatie", desc: "Verbeterde sensor filtering voorkomt het schudden van de kaart bij onnauwkeurige GPS of kompas data." }
+                                                ] : [
+                                                    { title: "Zoom to Route Fix", desc: "The 'zoom to route' button now works reliably, even during navigation." },
+                                                    { title: "GPS Stabilization", desc: "Improved sensor filtering prevents map jitter when GPS or compass data is inaccurate." }
+                                                ]
+                                            },
                                             {
                                                 date: "12 Feb 2026",
                                                 version: "v3.0.0",
@@ -2522,6 +2582,133 @@ const ItinerarySidebar = ({
                                             </button>
                                         </div>
 
+                                        {/* 6c. POI Sources */}
+                                        <div className="space-y-1">
+                                            <button
+                                                onClick={() => setShowPoiSettings(!showPoiSettings)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                            >
+                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                    {language === 'nl' ? 'POI Bronnen' : 'POI Sources'}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    {!showPoiSettings && (
+                                                        <span className="text-[10px] text-primary/60 font-bold uppercase tracking-tighter">
+                                                            {[
+                                                                'OSM',
+                                                                searchSources?.foursquare && 'Foursquare',
+                                                                searchSources?.google && 'Google'
+                                                            ].filter(Boolean).join(' + ')}
+                                                        </span>
+                                                    )}
+                                                    <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showPoiSettings ? 'rotate-180' : ''}`}
+                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </div>
+                                            </button>
+                                            {showPoiSettings && (
+                                                <div className="flex flex-col gap-3 mt-1 animate-in slide-in-from-top-1 fade-in duration-200 p-3 bg-white/5 rounded-lg text-left">
+                                                    {/* AI Provider Toggle */}
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <div className="text-sm font-medium text-white">AI Engine</div>
+                                                            <div className="text-[10px] text-slate-400">
+                                                                {aiProvider === 'groq'
+                                                                    ? (language === 'nl' ? 'Groq (Snel & Gratis)' : 'Groq (Fast & Free)')
+                                                                    : (language === 'nl' ? 'Gemini (Google API)' : 'Gemini (Google API)')}
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setAiProvider(aiProvider === 'groq' ? 'gemini' : 'groq')}
+                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${aiProvider === 'groq' ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                                                        >
+                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${aiProvider === 'groq' ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Search Provider Toggle */}
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <div className="text-sm font-medium text-white">Search Engine</div>
+                                                            <div className="text-[10px] text-slate-400">
+                                                                {searchProvider === 'tavily'
+                                                                    ? (language === 'nl' ? 'Tavily (AI Search - Gratis)' : 'Tavily (AI Search - Free)')
+                                                                    : (language === 'nl' ? 'Google (Betaald)' : 'Google (Paid)')}
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setSearchProvider(searchProvider === 'tavily' ? 'google' : 'tavily')}
+                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchProvider === 'tavily' ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                                                        >
+                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchProvider === 'tavily' ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                        </button>
+                                                    </div>
+
+
+
+                                                    {/* POI Data Source Toggles */}
+                                                    {/* OpenStreetMap */}
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <div className="text-sm font-medium text-white">OpenStreetMap</div>
+                                                            <div className="text-[10px] text-slate-400">
+                                                                {language === 'nl' ? 'Basis data (Gratis)' : 'Base data (Free)'}
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setSearchSources({ ...searchSources, osm: !searchSources.osm })}
+                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.osm ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                                                        >
+                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.osm ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Foursquare */}
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <div className="text-sm font-medium text-white">Foursquare</div>
+                                                            <div className="text-[10px] text-slate-400">
+                                                                {language === 'nl' ? 'Extra POI data (Gratis)' : 'Extra POI data (Free)'}
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setSearchSources({ ...searchSources, foursquare: !searchSources.foursquare })}
+                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.foursquare ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                                                        >
+                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.foursquare ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Google Places */}
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <div className="text-sm font-medium text-white">Google Places</div>
+                                                            <div className="text-[10px] text-slate-400">
+                                                                {language === 'nl' ? 'Hoogste dekking (Betaald)' : 'Highest coverage (Paid)'}
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setSearchSources({ ...searchSources, google: !searchSources.google })}
+                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.google ? 'bg-blue-600' : 'bg-slate-700'}`}
+                                                        >
+                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.google ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Info message */}
+                                                    <div className="text-[10px] text-slate-400 bg-slate-800/50 p-2 rounded border border-white/5">
+                                                        {language === 'nl'
+                                                            ? '💡 Gebruik Groq, Tavily & Foursquare voor een gratis ervaring. Schakel Google in voor extra data.'
+                                                            : '💡 Use Groq, Tavily & Foursquare for a free experience. Enable Google APIs for extra data coverage.'}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
                                         {/* 7. Truthfulness Legend */}
                                         <div className="space-y-1">
                                             <div className="flex flex-col gap-1">
@@ -2604,7 +2791,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v3.0.0</span>
+                                            <span className="text-slate-300 text-sm font-medium">v3.1.1</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">

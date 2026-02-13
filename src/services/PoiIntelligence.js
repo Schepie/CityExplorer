@@ -18,12 +18,17 @@ import { apiFetch } from "../utils/api.js";
 
 export class PoiIntelligence {
     constructor(config) {
-        this.config = config; // City Context, Language, Interests, RouteContext
+        this.config = {
+            ...config,
+            aiProvider: config.aiProvider || 'groq', // Default to Groq (free, fast)
+            searchProvider: config.searchProvider || 'tavily' // Default to Tavily (free)
+        };
         this.trustScores = {
             "wikipedia": 0.9,
             "google_kg": 0.85,
             "visit_city": 0.8,
             "google_search": 0.75,
+            "tavily_search": 0.75,
             "foursquare": 0.7,
             "duckduckgo": 0.6,
             "generic_web": 0.4
@@ -94,16 +99,15 @@ export class PoiIntelligence {
         };
     }
 
-    async gatherSignals(poi) {
+    async gatherSignals(poi, signal = null) {
         const signals = [];
         const queries = [
             // Internal/External signals
             this.fetchLocalArchive(poi.name),
-            this.fetchWikipedia(poi.name),
-            // this.fetchGoogleKnowledgeGraph(poi.name), // Keeps these disabled if keys are issue
-            this.fetchGoogleSearch(poi),
-            this.fetchDuckDuckGo(poi.name),
-            this.fetchOverpassTags(poi),
+            this.fetchWikipedia(poi.name, signal),
+            this.fetchGoogleSearch(poi, signal),
+            this.fetchDuckDuckGo(poi.name, signal),
+            this.fetchOverpassTags(poi, signal),
         ];
 
         // Google Place Details disabled
@@ -127,7 +131,7 @@ export class PoiIntelligence {
     /**
      * Generates a personalized city welcome message for the tour.
      */
-    async fetchCityWelcomeMessage(poiList) {
+    async fetchCityWelcomeMessage(poiList, signal = null) {
         const poiNames = poiList.slice(0, 8).map(p => p.name).join(', ');
         const prompt = `
 Je bent "Je Gids", een ervaren, vriendelijke en enthousiaste digitale stadsgids die reizigers helpt een stad op een persoonlijke manier te ontdekken. 
@@ -175,7 +179,7 @@ Genereer de introductie voor de tocht in ${this.config.city}.
 `;
 
         try {
-            const url = '/api/gemini';
+            const url = this.config.aiProvider === 'gemini' ? '/api/gemini' : '/api/groq';
             const response = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -187,7 +191,10 @@ Genereer de introductie voor de tocht in ${this.config.city}.
                 return null;
             }
             const data = await response.json();
-            return data.text ? data.text.trim() : null;
+            let text = data.text || "";
+            // Strip Chain-of-Thought thinking blocks if present
+            text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            return text || null;
         } catch (e) {
             console.warn("City Welcome Generation Failed:", e);
             return null;
@@ -197,7 +204,7 @@ Genereer de introductie voor de tocht in ${this.config.city}.
     /**
      * Generates specific "How to reach" instructions (Transport/Parking) for a point.
      */
-    async fetchArrivalInstructions(locationName, city, language = 'nl') {
+    async fetchArrivalInstructions(locationName, city, language = 'nl', signal = null) {
         const prompt = `
 Je bent een lokale gids in ${city}. De gebruiker start zijn route aan: "${locationName}".
 GEEF SPECIFIEKE parkeer/reis instructies voor DEZE EXACTE locatie.
@@ -219,24 +226,45 @@ CRITICAl RULES:
 DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'Engels'}.
 `;
 
-        try {
-            const url = '/api/gemini';
-            const response = await apiFetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt })
-            });
+        const url = this.config.aiProvider === 'gemini' ? '/api/gemini' : '/api/groq';
+        let attempts = 0;
+        const maxAttempts = 3;
 
-            if (!response.ok) {
-                console.warn(`[AI] Arrival instructions fetch failed: ${response.status}`);
-                return null;
+        while (attempts < maxAttempts) {
+            if (signal?.aborted) return null;
+            try {
+                const response = await apiFetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt }),
+                    signal
+                });
+
+                if (response.status === 429) {
+                    const waitTime = 2000 * Math.pow(2, attempts);
+                    console.warn(`[AI] Rate Limited (429) on Instructions. Retrying in ${waitTime / 1000}s...`);
+                    await new Promise(r => setTimeout(r, waitTime));
+                    attempts++;
+                    continue;
+                }
+
+                if (!response.ok) {
+                    console.warn(`[AI] Arrival instructions fetch failed: ${response.status}`);
+                    return null;
+                }
+                const data = await response.json();
+                let text = data.text || "";
+                // Strip Chain-of-Thought thinking blocks
+                text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                return text || null;
+            } catch (e) {
+                if (e.name === 'AbortError') return null;
+                console.warn(`[AI] Arrival Instructions attempt ${attempts + 1} failed:`, e);
+                attempts++;
+                if (!signal?.aborted) await new Promise(r => setTimeout(r, 1000));
             }
-            const data = await response.json();
-            return data.text ? data.text.trim() : null;
-        } catch (e) {
-            console.warn("Arrival Instructions Generation Failed:", e);
-            return null;
         }
+        return null;
     }
 
     /**
@@ -336,7 +364,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 `;
 
         try {
-            const url = '/api/gemini';
+            const url = this.config.aiProvider === 'gemini' ? '/api/gemini' : '/api/groq';
             const response = await apiFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -425,42 +453,64 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         Start Nu.
                         `;
 
-        try {
-            const url = '/api/gemini';
-            const response = await apiFetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt }),
-                signal
-            });
+        const url = this.config.aiProvider === 'gemini' ? '/api/gemini' : '/api/groq';
+        let attempts = 0;
+        const maxAttempts = 5;
 
-            if (!response.ok) {
-                console.warn(`[AI] Short description fetch failed: ${response.status}`);
-                return null;
-            }
-            const data = await response.json();
-            const cleanText = data.text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const result = JSON.parse(cleanText);
+        while (attempts < maxAttempts) {
+            try {
+                const response = await apiFetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt }),
+                    signal
+                });
 
-            const analyzed = this.analyzeSignals(poi, signals || []);
-            const resolved = this.resolveConflicts(analyzed);
-
-            return {
-                short_description: result.description || "",
-                image: resolved.image,
-                images: resolved.images,
-                // Partial structure for compatibility
-                structured_info: {
-                    short_description: result.description || "",
-                    short_description_confidence: result.confidence || "Middel"
+                if (response.status === 429) {
+                    const waitTime = 3000 * Math.pow(2, attempts); // slightly more aggressive reset
+                    console.warn(`[AI] Rate Limited (429). Retrying in ${waitTime / 1000}s...`);
+                    await new Promise(r => setTimeout(r, waitTime));
+                    attempts++;
+                    continue;
                 }
-            };
-        } catch (e) {
-            if (e.name === 'AbortError') throw e;
-            return null;
+
+                if (!response.ok) {
+                    console.warn(`[AI] Short description fetch failed: ${response.status}`);
+                    return null;
+                }
+                const data = await response.json();
+                // Strip Chain-of-Thought thinking blocks and markdown
+                const cleanText = data.text
+                    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                    .replace(/```json/g, '')
+                    .replace(/```/g, '')
+                    .trim();
+                const result = JSON.parse(cleanText);
+
+                const analyzed = this.analyzeSignals(poi, signals || []);
+                const resolved = this.resolveConflicts(analyzed);
+
+                return {
+                    short_description: result.description || "",
+                    image: resolved.image,
+                    images: resolved.images,
+                    structured_info: {
+                        short_description: result.description || "",
+                    }
+                };
+            } catch (e) {
+                if (e.name === 'AbortError') throw e;
+                console.warn(`[AI] Attempt ${attempts + 1} failed:`, e);
+                attempts++;
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
+        return null;
     }
 
+    /**
+     * STAGE 2: Deep Fetch - Full Details
+     */
     /**
      * STAGE 2: Deep Fetch - Full Details
      */
@@ -494,7 +544,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         ### TAAK
                         Genereer de uitgebreide details in JSON formaat.
 
-                        ### OUTPUT JSON
+                        ### OUTPUT JSON (ALLEEN JSON, GEEN MARKDOWN, GEEN UITLEG)
+                        Zorg dat de JSON valide is. Geen tekst voor of na de JSON.
                         {
                             "standard_version": {
                                 "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
@@ -520,47 +571,85 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         }
                         `;
 
-        try {
-            const url = '/api/gemini';
-            const response = await apiFetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt }),
-                signal
-            });
+        const url = this.config.aiProvider === 'gemini' ? '/api/gemini' : '/api/groq';
+        let attempts = 0;
+        const maxAttempts = 5;
 
-            if (!response.ok) {
-                console.warn(`[AI] Full details fetch failed: ${response.status}`);
-                return null;
+        while (attempts < maxAttempts) {
+            try {
+                const response = await apiFetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt }),
+                    signal
+                });
+
+                if (response.status === 429) {
+                    const waitTime = 4000 * Math.pow(2, attempts); // Full details are heavier, wait longer
+                    console.warn(`[AI] Rate Limited (429) on Full Details. Retrying in ${waitTime / 1000}s...`);
+                    await new Promise(r => setTimeout(r, waitTime));
+                    attempts++;
+                    continue;
+                }
+
+                if (!response.ok) {
+                    console.warn(`[AI] Full details fetch failed: ${response.status}`);
+                    return null;
+                }
+                const data = await response.json();
+                // Strip Chain-of-Thought thinking blocks and markdown
+                const cleanText = data.text
+                    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                    .replace(/```json/g, '')
+                    .replace(/```/g, '')
+                    .trim();
+
+                let result;
+                try {
+                    // Try to find JSON object if embedded in text
+                    const jsonStart = cleanText.indexOf('{');
+                    const jsonEnd = cleanText.lastIndexOf('}');
+
+                    if (jsonStart !== -1 && jsonEnd !== -1) {
+                        result = JSON.parse(cleanText.substring(jsonStart, jsonEnd + 1));
+                    } else {
+                        result = JSON.parse(cleanText);
+                    }
+                } catch (jsonError) {
+                    console.warn("JSON Parse Failed, falling back to raw text:", cleanText.substring(0, 50) + "...");
+                    // Fallback structure
+                    result = {
+                        standard_version: { description: cleanText, confidence: "Laag" },
+                        extended_version: { full_description: cleanText, full_description_confidence: "Laag" }
+                    };
+                }
+
+                return {
+                    structured_info: {
+                        short_description: shortDesc || "", // Preserve short desc
+                        full_description: result.extended_version?.full_description || result.standard_version?.description || "",
+                        full_description_confidence: result.extended_version?.full_description_confidence || result.standard_version?.confidence || "Middel",
+                        matching_reasons: result.extended_version?.why_this_matches_your_interests || [],
+                        matching_reasons_confidence: result.extended_version?.interests_confidence || "Middel",
+                        fun_facts: result.extended_version?.fun_facts || [],
+                        fun_facts_confidence: result.extended_version?.fun_facts_confidence || "Middel",
+                        two_minute_highlight: result.extended_version?.if_you_only_have_2_minutes || "",
+                        two_minute_highlight_confidence: result.extended_version?.highlight_confidence || "Middel",
+                        visitor_tips: result.extended_version?.visitor_tips || "",
+                        visitor_tips_confidence: result.extended_version?.tips_confidence || "Middel",
+                        standard_description: result.standard_version?.description || "", // Duplicated for safety
+                        one_fun_fact: result.standard_version?.fun_fact || ""
+                    },
+                    ...this.resolveConflicts(this.analyzeSignals(poi, signals || []))
+                };
+            } catch (e) {
+                if (e.name === 'AbortError') throw e;
+                console.warn(`[AI] Full Details attempt ${attempts + 1} failed:`, e);
+                attempts++;
+                await new Promise(r => setTimeout(r, 1000));
             }
-            const data = await response.json();
-            const cleanText = data.text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const result = JSON.parse(cleanText);
-
-            return {
-                structured_info: {
-                    short_description: shortDesc || "", // Preserve short desc
-                    full_description: result.extended_version?.full_description || result.standard_version?.description || "",
-                    full_description_confidence: result.extended_version?.full_description_confidence || result.standard_version?.confidence || "Middel",
-                    matching_reasons: result.extended_version?.why_this_matches_your_interests || [],
-                    matching_reasons_confidence: result.extended_version?.interests_confidence || "Middel",
-                    fun_facts: result.extended_version?.fun_facts || [],
-                    fun_facts_confidence: result.extended_version?.fun_facts_confidence || "Middel",
-                    two_minute_highlight: result.extended_version?.if_you_only_have_2_minutes || "",
-                    two_minute_highlight_confidence: result.extended_version?.highlight_confidence || "Middel",
-                    visitor_tips: result.extended_version?.visitor_tips || "",
-                    visitor_tips_confidence: result.extended_version?.tips_confidence || "Middel",
-                    standard_description: result.standard_version?.description || "", // Duplicated for safety
-                    one_fun_fact: result.standard_version?.fun_fact || ""
-                },
-                ...this.resolveConflicts(this.analyzeSignals(poi, signals || []))
-            };
-
-        } catch (e) {
-            if (e.name === 'AbortError') throw e;
-            console.warn("Full Details Fetch Failed", e);
-            return null;
         }
+        return null;
     }
 
     // Legacy Support / Fallback wrapper
@@ -580,7 +669,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
     /**
      * STAGE 3: Image Analysis (Camera Scan)
      */
-    async analyzeImage(base64Image, userLocation = null) {
+    async analyzeImage(base64Image, userLocation = null, signal = null) {
         console.log(`[PoiIntelligence] analyzeImage called. Image length: ${base64Image?.length}`);
         if (!base64Image) {
             console.error("[PoiIntelligence] No image data received");
@@ -661,7 +750,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
         }
     }
 
-    async fetchGooglePlaceDetails(placeId) {
+    async fetchGooglePlaceDetails(placeId, signal = null) {
         try {
             if (!this.config.googleKey) return null;
             const pId = encodeURIComponent(placeId);
@@ -669,9 +758,9 @@ Je MOET antwoorden met een JSON object in dit formaat:
             const lang = this.config.language;
             const fields = "name,editorial_summary,website,url,rating";
             // Exact URL pattern requested by user
-            const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${pId}&fields=${fields}&language=${lang}&key=${key}`;
+            const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=${fields}&language=${lang}&key=${key}`;
 
-            const res = await fetch(url).then(r => r.json());
+            const res = await fetch(url, { signal }).then(r => r.json());
 
             if (res.result) {
                 const r = res.result;
@@ -689,62 +778,111 @@ Je MOET antwoorden met een JSON object in dit formaat:
         return null;
     }
 
-    async fetchOverpassTags(poi) {
+    async fetchOverpassTags(poi, externalSignal = null) {
         if (!poi.lat || !poi.lng) return null;
-        try {
-            // Radius 50m to find the specific building/node
-            // Regex name match (case insensitive)
-            const safeName = poi.name.replace(/"/g, '\\"');
-            const query = `[out:json][timeout:5];nwr(around:50,${poi.lat},${poi.lng})["name"~"${safeName}",i];out tags;`;
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s Timeout client-side
-            const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
-            const res = await fetch(url, { signal: controller.signal }).then(r => {
-                clearTimeout(timeoutId);
-                if (!r.ok) throw new Error(`Overpass status ${r.status}`);
-                return r.text();
-            }).then(text => {
-                try {
-                    return JSON.parse(text);
-                } catch (e) {
-                    throw new Error("Overpass returned non-JSON (likely timeout/error page)");
+        const safeName = poi.name.replace(/"/g, '\\"');
+        const query = `[out:json][timeout:5];nwr(around:50,${poi.lat},${poi.lng})["name"~"${safeName}",i];out tags;`;
+
+        const servers = [
+            'https://overpass.kumi.systems/api/interpreter',
+            'https://overpass-api.de/api/interpreter',
+            'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+        ];
+
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            const serverIndex = attempts % servers.length;
+            const currentServer = servers[serverIndex];
+            const url = `${currentServer}?data=${encodeURIComponent(query)}`;
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    controller.abort();
+                    // If external signal is already aborted, this might be redundant but harmless
+                }, 8000);
+
+                // Combine with external signal if present
+                if (externalSignal) {
+                    if (externalSignal.aborted) {
+                        clearTimeout(timeoutId);
+                        return null;
+                    }
+                    externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
                 }
-            });
 
-            if (res.elements && res.elements.length > 0) {
-                // Find element with best tags
-                const el = res.elements.find(e => e.tags && (e.tags['description:nl'] || e.tags.description || e.tags.website));
-                if (el && el.tags) {
-                    const desc = el.tags['description:nl'] || el.tags.description || el.tags.comment;
-                    const web = el.tags.website || el.tags.url || el.tags['contact:website'];
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
 
-                    if (desc) {
-                        return {
-                            type: 'description',
-                            source: 'OpenStreetMap',
-                            content: desc,
-                            link: web,
-                            confidence: 0.85
-                        };
+                if (res.status === 429) {
+                    const waitTime = 2000 * Math.pow(2, attempts);
+                    console.warn(`[Overpass] Rate Limited (429) on ${currentServer}. Retrying in ${waitTime / 1000}s...`);
+                    await new Promise(r => setTimeout(r, waitTime));
+                    attempts++;
+                    continue;
+                }
+
+                if (!res.ok) throw new Error(`Status ${res.status}`);
+
+                const text = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (jsonErr) {
+                    // It's likely an XML error page from Overpass
+                    console.warn(`[Overpass] Invalid JSON from ${currentServer}. Response snippet: ${text.substring(0, 200)}...`);
+                    throw new Error(`Invalid JSON response: ${jsonErr.message}`);
+                }
+
+                if (data.elements && data.elements.length > 0) {
+                    const el = data.elements.find(e => e.tags && (e.tags['description:nl'] || e.tags.description || e.tags.website));
+                    if (el && el.tags) {
+                        const desc = el.tags['description:nl'] || el.tags.description || el.tags.comment;
+                        const web = el.tags.website || el.tags.url || el.tags['contact:website'];
+
+                        if (desc) {
+                            return {
+                                type: 'description',
+                                source: 'OpenStreetMap',
+                                content: desc,
+                                link: web,
+                                confidence: 0.85
+                            };
+                        }
+                        if (web) {
+                            return {
+                                type: 'link_only',
+                                source: 'OpenStreetMap',
+                                content: null,
+                                link: web,
+                                confidence: 0.8
+                            };
+                        }
                     }
-                    // If no description but exists, can return Link signal?
-                    if (web) {
-                        return {
-                            type: 'link_only',
-                            source: 'OpenStreetMap',
-                            content: null,
-                            link: web,
-                            confidence: 0.8
-                        };
-                    }
+                }
+                // If we got here but no elements, or no tags we want, just return null
+                return null;
+
+            } catch (e) {
+                const isTimeout = e.name === 'AbortError' && !externalSignal?.aborted;
+                if (isTimeout) {
+                    console.warn(`[Overpass] Timeout (8s) on ${currentServer} for ${poi.name}`);
+                } else if (e.name === 'AbortError') {
+                    // Task cancelled by user/app
+                    return null;
+                } else {
+                    console.warn(`[Overpass] Attempt ${attempts + 1} failed on ${currentServer}: ${e.message}`);
                 }
             }
-        } catch (e) {
-            // Silent fail for optional signals
-            console.log(`Overpass signal skipped: ${e.message}`);
+            attempts++;
+            if (attempts < maxAttempts && !externalSignal?.aborted) {
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
-        return null;
+        return null; // Return null if all attempts fail
     }
 
     async fetchLocalArchive(name) {
@@ -779,18 +917,18 @@ Je MOET antwoorden met een JSON object in dit formaat:
         return null;
     }
 
-    async fetchWikipedia(name) {
+    async fetchWikipedia(name, signal = null) {
         try {
             // Strategy 1: Context-aware search
             let query = `${name} ${this.config.city}`;
             let url = `https://${this.config.language}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
-            let searchRes = await fetch(url).then(r => r.json());
+            let searchRes = await fetch(url, { signal }).then(r => r.json());
 
             // Strategy 2: Retry with raw name if Context failed (or returned just the city)
             if (!searchRes.query?.search?.length || (searchRes.query.search.length > 0 && searchRes.query.search[0].title.toLowerCase() === this.config.city.toLowerCase())) {
                 query = name;
                 url = `https://${this.config.language}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
-                searchRes = await fetch(url).then(r => r.json());
+                searchRes = await fetch(url, { signal }).then(r => r.json());
             }
 
             if (!searchRes.query?.search?.length) return null;
@@ -800,7 +938,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
             if (bestMatch.title.toLowerCase() === this.config.city.toLowerCase()) return null;
 
             const detailsUrl = `https://${this.config.language}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&exintro&explaintext&piprop=original&redirects=1&titles=${encodeURIComponent(bestMatch.title)}&format=json&origin=*`;
-            const details = await fetch(detailsUrl).then(r => r.json());
+            const details = await fetch(detailsUrl, { signal }).then(r => r.json());
             const pageId = Object.keys(details.query.pages)[0];
             const page = details.query.pages[pageId];
             const extract = page.extract;
@@ -820,11 +958,11 @@ Je MOET antwoorden met een JSON object in dit formaat:
         return null;
     }
 
-    async fetchGoogleKnowledgeGraph(name) {
+    async fetchGoogleKnowledgeGraph(name, signal = null) {
         try {
             if (!this.config.googleKey) return null;
             const url = `https://kgsearch.googleapis.com/v1/entities:search?query=${encodeURIComponent(name + " " + this.config.city)}&key=${this.config.googleKey}&limit=1&languages=${this.config.language}`;
-            const res = await fetch(url).then(r => r.json());
+            const res = await fetch(url, { signal }).then(r => r.json());
 
             if (res.itemListElement?.length) {
                 const entity = res.itemListElement[0].result;
@@ -842,7 +980,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
         return null;
     }
 
-    async fetchDuckDuckGo(name) {
+    async fetchDuckDuckGo(name, externalSignal = null) {
         try {
             // Use local proxy to avoid CORS errors
             const url = `/api/ddg?q=${encodeURIComponent(name + " " + this.config.city)}`;
@@ -850,6 +988,14 @@ Je MOET antwoorden met een JSON object in dit formaat:
             // Short timeout 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+            if (externalSignal) {
+                if (externalSignal.aborted) {
+                    clearTimeout(timeoutId);
+                    return null;
+                }
+                externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+            }
 
             const res = await apiFetch(url, { signal: controller.signal }).then(r => {
                 clearTimeout(timeoutId);
@@ -873,7 +1019,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
     // --- Analysis & Conflict Resolution ---
 
-    async fetchGoogleSearch(poi) {
+    async fetchGoogleSearch(poi, externalSignal = null) {
         try {
             const name = poi.name;
             const cleanName = name.replace(/\s*\([^)]*\)/g, '').trim(); // Remove " (Het Vlonderpad)"
@@ -916,8 +1062,9 @@ Je MOET antwoorden met een JSON object in dit formaat:
             // Try queries in order until we get a hit
             for (const q of queriesToTry) {
                 try {
-                    const searchUrl = `/api/google-search?q=${encodeURIComponent(q)}&num=5`;
-                    const attempt = await apiFetch(searchUrl).then(r => r.json());
+                    const endpoint = this.config.searchProvider === 'google' ? '/api/google-search' : '/api/tavily';
+                    const searchUrl = `${endpoint}?q=${encodeURIComponent(q)}&num=5`;
+                    const attempt = await apiFetch(searchUrl, { signal: externalSignal }).then(r => r.json());
 
                     // Simple Validation: If we got items, assume success and stop.
                     if (attempt.items && attempt.items.length > 0) {
@@ -933,7 +1080,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
             // Safety: Only for multi-word names to avoid searching for generic terms like "Park" globally.
             if ((!res.items || res.items.length === 0) && name.trim().split(/\s+/).length > 1) {
                 console.log(`POI Intelligence: Fallback to name-only search for "${name}"`);
-                url = `/api/google-search?q=${encodeURIComponent(name)}&num=5`;
+                const endpoint = this.config.searchProvider === 'google' ? '/api/google-search' : '/api/tavily';
+                url = `${endpoint}?q=${encodeURIComponent(name)}&num=5`;
                 res = await apiFetch(url).then(r => r.json());
             }
 
@@ -959,7 +1107,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     const img = s.image;
                     if (img) {
                         const low = img.toLowerCase();
-                        if (low.includes('logo') || low.includes('icon') || low.includes('placeholder') || low.includes('avatar') || low.includes('favicon')) {
+                        if (low.includes('logo') || low.includes('icon') || low.includes('placeholder') || low.includes('avatar') || low.includes('favicon') ||
+                            low.includes('profile') || low.includes('user') || low.includes('author') || low.includes('member') || low.includes('review') || low.includes('testimonial')) {
                             return { ...s, image: null };
                         }
                     }
@@ -968,7 +1117,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
                 return {
                     type: 'description',
-                    source: 'google_search',
+                    source: this.config.searchProvider === 'google' ? 'google_search' : 'tavily_search',
                     content: combinedSnippets.map(s => `[Link: ${s.link}] ${s.text}`).join('\n\n'),
                     link: res.items[0].link,
                     image: combinedSnippets.find(s => s.image)?.image,
@@ -1006,8 +1155,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 // Actually, if it's official it won't have this generic text.
             }
 
-            // Boost Google Search if it contains the exact name in the content
-            if (signal.source === 'google_search' && text.includes(poi.name.toLowerCase())) {
+            // Boost Search if it contains the exact name in the content
+            if ((signal.source === 'google_search' || signal.source === 'tavily_search') && text.includes(poi.name.toLowerCase())) {
                 score = Math.max(score, 0.9);
             }
 

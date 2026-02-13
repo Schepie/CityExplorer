@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.1.1] - 2026-02-12
+
+### Added
+- **Free API Migration**: Full switch to Groq Cloud (Llama 70B) and Tavily Search for a 100% free/open-source stack.
+- **Overpass Failover Logic**: Automatic rotation between 3 server mirrors on rate limits or timeouts.
+- **AI Retry System**: Implemented exponential backoff for AI description fetches to handle 429 errors.
+
+### Changed
+- **Overpass Optimization**: Switched to `nwr` geometry and UNION queries for faster results in large radii.
+- **Timeouts**: Increased server timeout to 90s and client timeout to 120s for complex searches.
+
+### Fixed
+- **Syntax Fixes**: Resolved various breakage in AI enrichment logic caused by partial updates.
+
 ## [2.1.2] - 2026-02-10
 
 ### Added

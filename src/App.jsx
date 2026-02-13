@@ -11,7 +11,7 @@ import LoginModal from './components/auth/LoginModal';
 import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle } from './utils/routeUtils';
 import { isLocationOnPath } from './utils/geometry';
-import { transformOSRMCoords, sanitizePath } from './utils/coordinateUtils';
+import { transformOSRMCoords, sanitizePath, isValidCoord } from './utils/coordinateUtils';
 import { decodePolyline6 } from './utils/polyline';
 import PoiProposalModal from './components/PoiProposalModal';
 import DistanceRefineConfirmation from './components/DistanceRefineConfirmation';
@@ -105,9 +105,26 @@ function CityExplorerApp() {
   const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem('app_theme') || 'tech');
   const [descriptionLength, setDescriptionLength] = useState('short'); // short, medium, max
 
+  // NEW PROVIDER SETTINGS
+  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('app_ai_provider') || 'groq');
+  const [searchProvider, setSearchProvider] = useState(() => localStorage.getItem('app_search_provider') || 'tavily');
+  const [searchSources, setSearchSources] = useState(() => {
+    const saved = localStorage.getItem('searchSources');
+    const defaults = { osm: true, foursquare: false, google: false };
+    if (!saved) return defaults;
+    try {
+      return { ...defaults, ...JSON.parse(saved) };
+    } catch (e) {
+      return defaults;
+    }
+  });
+
   // Persist Settings
   useEffect(() => localStorage.setItem('app_language', language), [language]);
   useEffect(() => localStorage.setItem('app_theme', activeTheme), [activeTheme]);
+  useEffect(() => localStorage.setItem('app_ai_provider', aiProvider), [aiProvider]);
+  useEffect(() => localStorage.setItem('app_search_provider', searchProvider), [searchProvider]);
+  useEffect(() => localStorage.setItem('searchSources', JSON.stringify(searchSources)), [searchSources]);
   const [isBackgroundUpdating, setIsBackgroundUpdating] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
   const [isSimulationEnabled, setIsSimulationEnabled] = useState(() => localStorage.getItem('app_simulation_enabled') === 'true');
@@ -200,9 +217,9 @@ function CityExplorerApp() {
   const [isRoundtrip, setIsRoundtrip] = useState(true);
   const [startPoint, setStartPoint] = useState('');
   const [stopPoint, setStopPoint] = useState('');
-  // Default to Google only as requested
+  // Default to OSM (free) instead of Google Places
   const [searchMode, setSearchMode] = useState('journey'); // 'radius', 'journey', or 'prompt'
-  const [searchSources, setSearchSources] = useState({ osm: false, foursquare: false, google: true });
+
   const [travelMode, setTravelMode] = useState('walking'); // 'walking' or 'cycling'
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiChatHistory, setAiChatHistory] = useState([
@@ -258,6 +275,11 @@ function CityExplorerApp() {
         });
     }
   }, [descriptionLength]); // Only trigger on length change
+
+  // Persist search sources preference
+  useEffect(() => {
+    localStorage.setItem('searchSources', JSON.stringify(searchSources));
+  }, [searchSources]);
 
   // Calculate Past Legs Distance (for Total Done)
   // Sum distance of all legs BEFORE the current activePoiIndex
@@ -359,9 +381,9 @@ function CityExplorerApp() {
       } else if (json.routes && json.routes.length > 0) {
         const route = json.routes[0];
 
-        // GeoJSON geometry is [lng, lat], we want [lat, lng] for internal 'path'
-        const path = route.geometry.coordinates.map(c => [c[1], c[0]]);
-        console.log(`[Routing] Success! Path has ${path.length} points.`);
+        // Validated Transform: OSRM returns [lng, lat], transformOSRMCoords validates and swaps to [lat, lng]
+        const path = transformOSRMCoords(route.geometry.coordinates, 'calculated_route');
+        console.log(`[Routing] Success! Path has ${path.length} validated points.`);
 
         const dist = route.distance / 1000;
         let walkDist = 0;
@@ -371,24 +393,30 @@ function CityExplorerApp() {
           const poiLegs = (actualRoundtrip || endCenter) ? route.legs.slice(1, -1) : route.legs.slice(1);
           walkDist = poiLegs.reduce((acc, leg) => acc + leg.distance, 0) / 1000;
 
-          route.legs.forEach(leg => {
+          route.legs.forEach((leg, legIdx) => {
             if (leg.steps) {
               // Reconstruct leg geometry from steps if available, or use overview
+              const rawCoords = leg.steps.flatMap((s, idx) => {
+                if (!s.geometry || !s.geometry.coordinates) return [];
+                const coords = s.geometry.coordinates; // [lng, lat]
+                return idx === 0 ? coords : coords.slice(1);
+              });
+
+              // sanitizePath removes invalid coords but keeps [lng, lat] format (needed for handleCycleStart)
               leg.geometry = {
                 type: 'LineString',
-                coordinates: leg.steps.flatMap((s, idx) => {
-                  if (!s.geometry || !s.geometry.coordinates) return [];
-                  const coords = s.geometry.coordinates;
-                  return idx === 0 ? coords : coords.slice(1);
-                })
+                coordinates: sanitizePath(rawCoords, `leg_${legIdx}_geometry`)
               };
-              // If steps had no geometry, fall back to something sensible
-              if (leg.geometry.coordinates.length === 0 && leg.location) {
-                // Fallback to overview or just points if needed, but usually OSRM provides this
-              }
             }
           });
-          steps = route.legs.flatMap(l => l.steps);
+          // Sanitize steps: ensure maneuver locations are valid
+          steps = route.legs.flatMap(l => l.steps).map(step => {
+            if (step.maneuver && step.maneuver.location && !isValidCoord(step.maneuver.location)) {
+              console.warn("[Routing] Invalid step maneuver location detected, nullifying:", step.maneuver.location);
+              return { ...step, maneuver: { ...step.maneuver, location: null } };
+            }
+            return step;
+          });
         }
         return { path, dist, walkDist, steps, legs: route.legs };
       }
@@ -622,7 +650,9 @@ function CityExplorerApp() {
       language: lang,
       lengthMode: lengthMode,
       interests: userInterests,
-      routeContext: routeCtx
+      routeContext: routeCtx,
+      aiProvider: aiProvider,
+      searchProvider: searchProvider
     });
 
     // --- NEW: STAGE 0: ENRICH START/END ---
@@ -634,7 +664,7 @@ function CityExplorerApp() {
       // Only fetch if missing
       if (!routeData?.startInfo) {
         const startLabel = startPoint || cityName;
-        const startInstr = await engine.fetchArrivalInstructions(startLabel, cityName, lang);
+        const startInstr = await engine.fetchArrivalInstructions(startLabel, cityName, lang, signal);
         if (!signal.aborted) {
           setRouteData(prev => prev ? {
             ...prev,
@@ -648,7 +678,7 @@ function CityExplorerApp() {
       // End Info (Only if not roundtrip)
       if (!isRound && pois.length > 0 && !routeData?.endInfo) {
         const lastPoi = pois[pois.length - 1];
-        const endInstr = await engine.fetchArrivalInstructions(lastPoi.name, cityName, lang);
+        const endInstr = await engine.fetchArrivalInstructions(lastPoi.name, cityName, lang, signal);
         if (!signal.aborted && endInstr) {
           setRouteData(prev => prev ? { ...prev, endInfo: endInstr } : prev);
         }
@@ -687,7 +717,7 @@ function CityExplorerApp() {
           if (signal.aborted) return;
 
           // Step 1: Gather Signals
-          const signals = await engine.gatherSignals(poi);
+          const signals = await engine.gatherSignals(poi, signal);
 
           if (signal.aborted) return;
 
@@ -719,6 +749,9 @@ function CityExplorerApp() {
               pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? updatedPoi : p) : []
             };
           });
+
+          // Add a "Pacer" delay to Stage 1 to avoid burst rate limiting
+          await new Promise(r => setTimeout(r, 1000));
         } catch (err) {
           if (err.name === 'AbortError') return;
           console.warn(`Stage 1 Failed for ${poi.name}`, err);
@@ -728,6 +761,9 @@ function CityExplorerApp() {
       // --- STAGE 2: DEEP FETCH (Full Details) ---
       // Now iterate again to get the heavy content
       for (const poi of pois) {
+        // Add a "Pacer" delay to Stage 2 to avoid burst rate limiting
+        await new Promise(r => setTimeout(r, 1500));
+
         if (signal.aborted) return; // Exit if reset
         // New: Skip if already done
         if (poi.isFullyEnriched) continue;
@@ -747,7 +783,7 @@ function CityExplorerApp() {
 
         try {
           // Retrieve stored signals or re-gather
-          const signals = await engine.gatherSignals(poi);
+          const signals = await engine.gatherSignals(poi, signal);
 
           if (signal.aborted) return;
 
@@ -4681,6 +4717,8 @@ function CityExplorerApp() {
         startPoint={startPoint} setStartPoint={setStartPoint}
         stopPoint={stopPoint} setStopPoint={setStopPoint}
         searchSources={searchSources} setSearchSources={setSearchSources}
+        aiProvider={aiProvider} setAiProvider={setAiProvider}
+        searchProvider={searchProvider} setSearchProvider={setSearchProvider}
         onJourneyStart={handleJourneyStart}
         onAddToJourney={handleAddToJourney}
         onSearchStopOptions={handleSearchStopOptions}

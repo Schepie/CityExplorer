@@ -8,20 +8,23 @@ export const handler = async (event, context) => {
         return { statusCode: auth.status, body: JSON.stringify({ error: auth.error }) };
     }
 
-    const { query, ll, radius, limit } = event.queryStringParameters;
+    const { query, ll, radius, limit, locale } = event.queryStringParameters;
     const FOURSQUARE_KEY = process.env.FOURSQUARE_KEY || process.env.VITE_FOURSQUARE_KEY;
 
     if (!FOURSQUARE_KEY) {
-        return { statusCode: 500, body: JSON.stringify({ error: 'Configuration Error' }) };
+        console.error("Foursquare Configuration Error: Missing FOURSQUARE_KEY in environment.");
+        console.log("Environment Keys available:", Object.keys(process.env).filter(k => k.startsWith('VITE_') || k.includes('KEY')));
+        return { statusCode: 500, body: JSON.stringify({ error: 'Configuration Error: Missing API Key' }) };
     }
 
-    const url = `https://api.foursquare.com/v3/places/search?query=${encodeURIComponent(query)}&ll=${ll}&radius=${radius}&limit=${limit}`;
+    const url = `https://places-api.foursquare.com/places/search?query=${encodeURIComponent(query)}&ll=${ll}&radius=${radius}&limit=${limit}&locale=${locale || 'en'}`;
 
     try {
         const response = await fetch(url, {
             headers: {
-                'Authorization': FOURSQUARE_KEY,
-                'Accept': 'application/json'
+                'Authorization': `Bearer ${FOURSQUARE_KEY}`,
+                'Accept': 'application/json',
+                'X-Places-Api-Version': '2025-06-17'
             }
         });
 

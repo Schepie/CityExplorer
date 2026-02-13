@@ -14,10 +14,10 @@ export const isValidCoord = (coord) => {
         coord.length >= 2 &&
         typeof coord[0] === 'number' &&
         typeof coord[1] === 'number' &&
-        !isNaN(coord[0]) &&
-        !isNaN(coord[1]) &&
-        isFinite(coord[0]) &&
-        isFinite(coord[1])
+        !Number.isNaN(coord[0]) &&
+        !Number.isNaN(coord[1]) &&
+        Number.isFinite(coord[0]) &&
+        Number.isFinite(coord[1])
     );
 };
 

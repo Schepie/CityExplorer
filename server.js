@@ -12,6 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 import { Resend } from 'resend';
+import Groq from 'groq-sdk';
 import jwt from 'jsonwebtoken';
 import {
     validateUser,
@@ -47,9 +48,51 @@ const GOOGLE_PLACES_KEY = process.env.VITE_GOOGLE_PLACES_KEY || process.env.GOOG
 const FOURSQUARE_KEY = process.env.VITE_FOURSQUARE_KEY || process.env.FOURSQUARE_KEY;
 
 // --- Health Check ---
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
-});
+app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '3.1.1' }));
+
+// --- Groq Model Discovery Registry ---
+let groqModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]; // Fallback defaults
+let stickyModelIndex = 0; // Remembers the first working model when others are exhausted
+
+async function refreshGroqModels() {
+    try {
+        const apiKey = process.env.GROQ_API_KEY;
+        if (!apiKey) return;
+
+        const groq = new Groq({ apiKey });
+        const list = await groq.models.list();
+
+        // Prioritize by capabilities and size keywords
+        // Ranking: 70b > 32b/mixtral > 8b > smaller/others
+        const ranked = list.data
+            .filter(m => m.active !== false && !m.id.includes('guard')) // Exclude guard models and inactive ones
+            .map(m => m.id)
+            .sort((a, b) => {
+                const getRank = (name) => {
+                    const n = name.toLowerCase();
+                    if (n.includes('70b') && n.includes('versatile')) return 100;
+                    if (n.includes('70b')) return 90;
+                    if (n.includes('mixtral') || n.includes('32b')) return 80;
+                    if (n.includes('8b')) return 70;
+                    if (n.includes('preview')) return 50; // Downrank previews
+                    return 10;
+                };
+                return getRank(b) - getRank(a);
+            });
+
+        if (ranked.length > 0) {
+            groqModels = ranked;
+            stickyModelIndex = 0; // Reset sticky index on discovery (daily refresh)
+            console.log(`[Groq Registry] Refreshed. Dynamic Fallback List: ${groqModels.join(' -> ')}`);
+        }
+    } catch (e) {
+        console.warn("[Groq Registry] Failed to refresh models:", e.message);
+    }
+}
+
+// Initial fetch and 12-hour refresh
+refreshGroqModels();
+setInterval(refreshGroqModels, 12 * 60 * 60 * 1000);
 
 // Middleware to protect internal API routes
 const authMiddleware = (req, res, next) => {
@@ -328,9 +371,6 @@ app.post('/api/google-places', authMiddleware, async (req, res) => {
             headers: {
                 'Content-Type': 'application/json',
                 'X-Goog-Api-Key': GOOGLE_PLACES_KEY,
-                // Prepare the request to Google Places API (New Text Search Basic)
-                // Fields: displayName, location, businessStatus, types...
-                // We only neeed Basic fields for now + editorialSummary
                 'X-Goog-FieldMask': 'places.displayName,places.location,places.types,places.editorialSummary,places.id,places.formattedAddress',
                 'Referer': 'http://localhost:5173/',
                 'Origin': 'http://localhost:5173'
@@ -367,17 +407,19 @@ app.post('/api/google-places', authMiddleware, async (req, res) => {
 // --- Foursquare Endpoint ---
 app.get('/api/foursquare', authMiddleware, async (req, res) => {
     try {
-        const { query, ll, radius, limit } = req.query;
+        const { query, ll, radius, limit, locale } = req.query;
         console.log(`[Proxy] Foursquare: "${query}" @ ${ll}`);
+        console.log(`[Proxy] Using FSQ Key: ${FOURSQUARE_KEY ? FOURSQUARE_KEY.substring(0, 10) + '...' : 'MISSING'}`);
 
         if (!FOURSQUARE_KEY) return res.status(500).json({ error: 'FOURSQUARE_KEY not configured' });
 
-        const url = `https://api.foursquare.com/v3/places/search?query=${encodeURIComponent(query)}&ll=${ll}&radius=${radius}&limit=${limit}`;
+        const url = `https://places-api.foursquare.com/places/search?query=${encodeURIComponent(query)}&ll=${ll}&radius=${radius}&limit=${limit}&locale=${locale || 'en'}`;
 
         const response = await fetch(url, {
             headers: {
-                'Authorization': FOURSQUARE_KEY,
-                'Accept': 'application/json'
+                'Authorization': `Bearer ${FOURSQUARE_KEY}`,
+                'Accept': 'application/json',
+                'X-Places-Api-Version': '2025-06-17'
             }
         });
 
@@ -429,6 +471,144 @@ app.get('/api/ddg', authMiddleware, async (req, res) => {
         res.json(data);
     } catch (error) {
         console.error("DDG Proxy Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Groq Endpoint ---
+app.post('/api/groq', authMiddleware, async (req, res) => {
+    try {
+        const { prompt } = req.body;
+        if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
+
+        const apiKey = process.env.GROQ_API_KEY;
+        if (!apiKey) {
+            console.error("GROQ_API_KEY missing in env");
+            return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
+        }
+
+        const groq = new Groq({ apiKey });
+        const attemptModels = [...groqModels]; // Use the dynamic list
+
+        let lastError = null;
+        // Start from the last known successful model index
+        for (let i = stickyModelIndex; i < attemptModels.length; i++) {
+            const model = attemptModels[i];
+            try {
+                // If we are retrying within the same request but after a previous TPD failure,
+                // we should update stickyModelIndex to avoid retrying the failed model for NEXT requests too.
+                console.log(`[Proxy] Attempting Groq request with model: ${model} (Index: ${i})`);
+                const completion = await groq.chat.completions.create({
+                    messages: [{ role: "user", content: prompt }],
+                    model: model,
+                    temperature: 0.7,
+                    max_tokens: 2048,
+                    top_p: 1
+                });
+
+                // Update sticky index to this successful model if it's different
+                if (stickyModelIndex !== i) {
+                    console.log(`[Proxy] Sticky index updated to: ${i} (${model})`);
+                    stickyModelIndex = i;
+                }
+
+                console.log(`[Proxy] Groq Success using model: ${model}`);
+                const text = completion.choices[0]?.message?.content || '';
+                return res.json({ text });
+            } catch (error) {
+                lastError = error;
+                // Specific Groq Error Types: https://console.groq.com/docs/errors
+                const isRateLimit = error.status === 429;
+
+                // Detection for "Tokens Per Day" (TPD) or "Requests Per Day" (RPD) limit specifically
+                const errorType = error.error?.error?.type;
+                const errorMsg = error.message || "";
+                const isDailyLimit = isRateLimit && (
+                    errorType === 'tokens' ||
+                    errorType === 'requests' ||
+                    errorMsg.includes('per day') ||
+                    errorMsg.includes('daily limit')
+                );
+
+                if (isDailyLimit && i < attemptModels.length - 1) {
+                    console.warn(`[Proxy] Groq Model ${model} daily limit reached. Moving to fallback...`);
+                    // Proactively increment sticky index so the VERY NEXT request doesn't even try this model
+                    stickyModelIndex = i + 1;
+                    continue;
+                }
+
+                // If it's a transient rate limit (TPM/RPM), we might want to wait, 
+                // but for simplicity in this proxy we just fail or try next if it looks blocked.
+                if (isRateLimit && i < attemptModels.length - 1) {
+                    console.warn(`[Proxy] Groq Model ${model} rate limited (429). Trying next...`);
+                    stickyModelIndex = i + 1;
+                    continue;
+                }
+
+                // If it's another error, or the last model, break and throw
+                break;
+            }
+        }
+
+        // If we reach here, it means all models failed or a non-TPD error occurred
+        console.error("Groq Proxy Error:", lastError);
+        const status = lastError.status || 500;
+        const message = lastError.error?.error?.message || lastError.message || 'Internal Server Error';
+        res.status(status).json({ error: message });
+    } catch (error) {
+        console.error("Groq Proxy Global Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Tavily Endpoint ---
+app.get('/api/tavily', authMiddleware, async (req, res) => { // Use POST if following pattern, but PoiIntelligence uses GET with query params? 
+    // Wait, PoiIntelligence uses apiFetch. apiFetch default is GET?
+    // Let's check PoiIntelligence again.
+    // It creates url with query params: `${endpoint}?q=...`
+    // It calls apiFetch(url).
+    // apiFetch uses fetch(url). Default is GET.
+    // So this should be app.get('/api/tavily'...) or handle both?
+    // Netlify function handler uses event.queryStringParameters which works for GET.
+    // So app.get is correct.
+    try {
+        const { q } = req.query;
+        if (!q) return res.status(400).json({ error: 'Query q is required' });
+
+        const apiKey = process.env.TAVILY_API_KEY;
+        if (!apiKey) return res.status(500).json({ error: 'Tavily API Key missing' });
+
+        const response = await fetch('https://api.tavily.com/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: apiKey,
+                query: q,
+                search_depth: "basic",
+                include_images: true,
+                include_answer: false,
+                max_results: 5
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Tavily API error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        const items = data.results.map((result, index) => ({
+            snippet: result.content,
+            link: result.url,
+            title: result.title,
+            pagemap: {
+                cse_image: data.images && data.images[index] ? [{ src: data.images[index] }] : []
+            }
+        }));
+
+        res.json({ items });
+    } catch (error) {
+        console.error("Tavily Proxy Error:", error);
         res.status(500).json({ error: error.message });
     }
 });

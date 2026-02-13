@@ -1,25 +1,246 @@
 
 
-
 import { apiFetch } from './api.js';
 
-export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, language = 'en') => {
-    let poiData = [];
+// ============================================================================
+// OVERPASS API IMPLEMENTATION (Replaces Nominatim)
+// ============================================================================
 
-    // Helper: Calculate bounding box if missing (for current location)
+/**
+ * Map interest keywords to Overpass OSM tags
+ * Supports both English and Dutch keywords
+ */
+/**
+ * Map interest keywords to Overpass QL filters (Regex/OR logic)
+ * Returns array of raw QL filter strings (e.g., '["tourism"~"museum|gallery"]')
+ */
+const mapInterestToTags = (interest) => {
+    const lowerInterest = interest.toLowerCase().trim();
+
+    // 1. POPULARITY FILTER (Wikipedia)
+    // If "must-see", "top", "famous", "highlight" -> requires wikipedia tag
+    const isPopular = ['must-see', 'top', 'famous', 'highlight', 'beroemd', 'populair'].some(k => lowerInterest.includes(k));
+    const wikiFilter = isPopular ? '["wikipedia"]' : '';
+
+    // 2. CATEGORY MAPPING (Using exact match '=' when possible for performance)
+    const mappings = [
+        {
+            keys: ['sight', 'bezienswaardig', 'attraction', 'landmark', 'toerist', 'tourist', 'monument', 'historic', 'historisch', 'castle', 'kasteel', 'church', 'kerk', 'chapel', 'kapel', 'ruin'],
+            filters: [
+                `["tourism"="attraction"]${wikiFilter}`,
+                `["historic"="monument"]${wikiFilter}`,
+                `["historic"="memorial"]${wikiFilter}`,
+                `["historic"="castle"]${wikiFilter}`,
+                `["historic"="ruins"]${wikiFilter}`,
+                `["historic"="city_gate"]${wikiFilter}`,
+                `["historic"="battlefield"]${wikiFilter}`,
+                `["historic"="fort"]${wikiFilter}`,
+                `["heritage"]${wikiFilter}`
+            ]
+        },
+        {
+            keys: ['museum', 'musea', 'art', 'kunst', 'gallery', 'galerij', 'culture', 'cultuur', 'exhibition', 'tentoonstelling'],
+            filters: [
+                `["tourism"="museum"]${wikiFilter}`,
+                `["tourism"="artwork"]${wikiFilter}`,
+                `["tourism"="gallery"]${wikiFilter}`,
+                `["amenity"="arts_centre"]${wikiFilter}`,
+                `["historic"="manor"]${wikiFilter}`
+            ]
+        },
+        {
+            keys: ['park', 'garden', 'tuin', 'nature', 'natuur', 'forest', 'bos', 'water', 'beach', 'strand', 'lake', 'meer'],
+            filters: [
+                `["leisure"="park"]${wikiFilter}`,
+                `["leisure"="garden"]${wikiFilter}`,
+                `["leisure"="nature_reserve"]${wikiFilter}`,
+                `["natural"="beach"]${wikiFilter}`,
+                `["natural"="water"]${wikiFilter}`,
+                `["natural"="wood"]${wikiFilter}`,
+                `["landuse"="forest"]${wikiFilter}`,
+                `["boundary"="national_park"]${wikiFilter}`
+            ]
+        },
+        {
+            keys: ['viewpoint', 'uitzicht', 'scenic', 'panorama'],
+            filters: [`["tourism"="viewpoint"]${wikiFilter}`]
+        },
+        {
+            keys: ['shop', 'winkel', 'market', 'markt'],
+            filters: [`["shop"]${wikiFilter}`, `["amenity"="marketplace"]${wikiFilter}`]
+        },
+        {
+            keys: ['food', 'eten', 'restaurant', 'cafe', 'bar', 'pub'],
+            filters: [
+                `["amenity"="restaurant"]${wikiFilter}`,
+                `["amenity"="cafe"]${wikiFilter}`,
+                `["amenity"="bar"]${wikiFilter}`,
+                `["amenity"="pub"]${wikiFilter}`,
+                `["amenity"="ice_cream"]${wikiFilter}`
+            ]
+        },
+        {
+            keys: ['drink', 'drank', 'alcohol'],
+            filters: [`["amenity"="bar"]${wikiFilter}`, `["amenity"="pub"]${wikiFilter}`, `["amenity"="biergarten"]${wikiFilter}`]
+        },
+        {
+            keys: ['entertainment', 'theater', 'cinema', 'bioscoop'],
+            filters: [
+                `["amenity"="theatre"]${wikiFilter}`,
+                `["amenity"="cinema"]${wikiFilter}`,
+                `["amenity"="casino"]${wikiFilter}`,
+                `["amenity"="nightclub"]${wikiFilter}`
+            ]
+        },
+        {
+            keys: ['sport', 'swimming', 'zwemmen', 'playground', 'speeltuin'],
+            filters: [
+                `["leisure"="sports_centre"]${wikiFilter}`,
+                `["leisure"="swimming_pool"]${wikiFilter}`,
+                `["leisure"="playground"]${wikiFilter}`,
+                `["leisure"="water_park"]${wikiFilter}`
+            ]
+        }
+    ];
+
+    // Find match
+    for (const mapping of mappings) {
+        if (mapping.keys.some(k => lowerInterest.includes(k))) {
+            return mapping.filters;
+        }
+    }
+
+    // Default Fallback (General Sights)
+    // If generic search or empty, return broad Sights/Historic/Museum categories
+    // This effectively filters out random shops/restaurants unless explicitly asked.
+    return [
+        `["tourism"="attraction"]${wikiFilter}`,
+        `["tourism"="museum"]${wikiFilter}`,
+        `["tourism"="viewpoint"]${wikiFilter}`,
+        `["tourism"="artwork"]${wikiFilter}`,
+        `["tourism"="gallery"]${wikiFilter}`,
+        `["historic"="monument"]${wikiFilter}`,
+        `["historic"="memorial"]${wikiFilter}`,
+        `["historic"="castle"]${wikiFilter}`,
+        `["historic"="ruins"]${wikiFilter}`,
+        `["historic"="city_gate"]${wikiFilter}`,
+        `["leisure"="park"]${wikiFilter}`,
+        `["leisure"="garden"]${wikiFilter}`,
+        `["leisure"="nature_reserve"]${wikiFilter}`
+    ];
+};
+
+/**
+ * Build Overpass QL query from bounding box and QL filters
+ */
+const buildOverpassQuery = (bbox, filters) => {
+    const [minLat, maxLat, minLon, maxLon] = bbox;
+    const bboxStr = `${minLat},${minLon},${maxLat},${maxLon}`;
+
+    // METHOD 1: Use 'nwr' (Nodes, Ways, Relations) for full coverage
+    // METHOD 2: Union the filters (OR Logic)
+    const unionParts = filters.map(filter => `nwr${filter}(${bboxStr});`).join('\n            ');
+
+    const query = `
+        [out:json][timeout:90];
+        (
+            ${unionParts}
+        );
+        out center 200;
+    `.trim();
+
+    return query;
+};
+
+/**
+ * Transform Overpass results to standard POI format
+ */
+const transformOverpassResults = (elements, cityName) => {
+    if (!elements || elements.length === 0) return [];
+
+    return elements
+        .filter(el => {
+            // Must have a name
+            if (!el.tags?.name) return false;
+
+            // EXCLUDE HOTELS/LODGING (unless historic/attraction)
+            const tourism = el.tags?.tourism;
+            if (tourism && ['hotel', 'hostel', 'guest_house', 'motel', 'apartment', 'camp_site', 'chalet'].includes(tourism)) {
+                // Allow if it has historic value or explicit attraction tag
+                const isHistoric = el.tags.historic || el.tags.heritage || el.tags.building === 'castle';
+                const isAttraction = el.tags.tourism === 'attraction'; // Unlikely if it's 'hotel', but maybe dual tagged?
+
+                if (!isHistoric && !isAttraction) return false;
+            }
+
+            // Get coordinates (nodes have lat/lon, ways/relations have center)
+            const lat = el.lat || el.center?.lat;
+            const lon = el.lon || el.center?.lon;
+
+            return lat && lon;
+        })
+        .map(el => {
+            const lat = el.lat || el.center?.lat;
+            const lon = el.lon || el.center?.lon;
+
+            // Extract description from tags
+            let description = '';
+            if (el.tags.tourism) description = el.tags.tourism;
+            else if (el.tags.historic) description = el.tags.historic;
+            else if (el.tags.amenity) description = el.tags.amenity;
+            else if (el.tags.leisure) description = el.tags.leisure;
+            else if (el.tags.shop) description = 'shop';
+
+            // Build address from tags
+            const address = [
+                el.tags['addr:street'],
+                el.tags['addr:housenumber'],
+                el.tags['addr:city'] || cityName
+            ].filter(Boolean).join(', ');
+
+            return {
+                name: el.tags.name,
+                lat: parseFloat(lat),
+                lng: parseFloat(lon),
+                description: description || 'point of interest',
+                id: `osm-${el.type}-${el.id}`,
+                source: 'OpenStreetMap',
+                address: address || cityName,
+                location_context: el.tags['addr:city'] || el.tags['addr:suburb'] || cityName,
+                address_components: {
+                    road: el.tags['addr:street'],
+                    house_number: el.tags['addr:housenumber'],
+                    city: el.tags['addr:city'] || cityName
+                }
+            };
+        }).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
+};
+
+/**
+ * Fetch POIs from OpenStreetMap using Overpass API
+ * @param {Object} cityData - City data with lat/lon and optional boundingbox
+ * @param {string} interest - Interest keyword (e.g., "museum", "park")
+ * @param {string} cityName - Name of the city
+ * @param {number} radiusKm - Search radius in kilometers (default 5)
+ * @param {string} language - Language code (default 'en')
+ * @returns {Promise<Array>} Array of POI objects
+ */
+export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, language = 'en') => {
+    // try { removed to handle errors internally in the retry loop
+    // Calculate bounding box if missing
+    // Calculate radius-based bbox
     let bbox = cityData.boundingbox;
-    if (!bbox && cityData.lat && cityData.lon) {
+    let radiusBbox = null;
+
+    if (cityData.lat && cityData.lon) {
         const lat = parseFloat(cityData.lat);
         const lon = parseFloat(cityData.lon);
-        const R = 6378.1; // Earth Radius km
-        const rad = radiusKm;
+        const R = 6378.1; // Earth radius in km
 
-        // Approx dLat dLon
-        const dLat = (rad / R) * (180 / Math.PI);
-        const dLon = (rad / R) * (180 / Math.PI) / Math.cos(lat * Math.PI / 180);
+        const dLat = (radiusKm / R) * (180 / Math.PI);
+        const dLon = (radiusKm / R) * (180 / Math.PI) / Math.cos(lat * Math.PI / 180);
 
-        // Nominatim format: [minLat, maxLat, minLon, maxLon]
-        bbox = [
+        radiusBbox = [
             (lat - dLat).toFixed(6),
             (lat + dLat).toFixed(6),
             (lon - dLon).toFixed(6),
@@ -27,98 +248,106 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, l
         ];
     }
 
-    // Helper strategies taken from original App.jsx
-    const searchStrategies = [
-        // Strategy 0: Direct Proximity (Bounded Viewbox) - Best for Current Location
-        () => {
-            if (!bbox) return null;
-            const [minLat, maxLat, minLon, maxLon] = bbox;
-            // Nominatim viewbox is: left,top,right,bottom -> minLon,maxLat,maxLon,minLat
-            // wait, docs say: <x1>,<y1>,<x2>,<y2> (left,top,right,bottom).
-            // Actually Nominatim API expects viewbox=minLon,maxLat,maxLon,minLat 
-            // (or minLon,minLat,maxLon,maxLat? Docs vary. Usually x1,y1,x2,y2 aka minLon,maxLat,maxLon,minLat for top-left bottom-right, but strictly it's a box).
-            // Let's rely on the standard pattern: minLon,maxLat,maxLon,minLat (Left-Top, Right-Bottom)
-            const viewbox = `${minLon},${maxLat},${maxLon},${minLat}`;
-            return { q: interest, viewbox, bounded: 1 };
-        },
+    // PRIORITIZE RADIUS IF LARGE (e.g. > 15km) to cover route area
+    // Otherwise use strict city bbox for precision
+    if (radiusKm > 15 && radiusBbox) {
+        bbox = radiusBbox;
+        console.log(`Using radius-based bbox (${radiusKm}km) instead of city boundary`);
+    } else if (!bbox && radiusBbox) {
+        bbox = radiusBbox;
+    }
 
-        // Strategy 1: "Interest in City" (Fallback if Strategy 0 fails or returns few)
-        () => `${interest} in ${cityName}`,
 
-        // Strategy 2: Bounding Box Search (Relaxed)
-        () => {
-            if (!bbox) return null;
-            const [minLat, maxLat, minLon, maxLon] = bbox;
-            const viewbox = `${minLon},${maxLat},${maxLon},${minLat}`;
-            return { q: interest, viewbox, bounded: 1 };
-        },
+    if (!bbox) {
+        console.warn('No bounding box available for Overpass query');
+        return [];
+    }
 
-        // Strategy 3: Relaxed Keywords
-        () => {
-            if (!bbox) return null;
-            const words = interest.split(' ');
-            if (words.length <= 1) return null;
-            const relaxedInterest = words.slice(1).join(' ');
-            const [minLat, maxLat, minLon, maxLon] = bbox;
-            const viewbox = `${minLon},${maxLat},${maxLon},${minLat}`;
-            return { q: relaxedInterest, viewbox, bounded: 1 };
-        }
+    // Map interest to OSM tags
+    const tags = mapInterestToTags(interest);
+    if (!tags || tags.length === 0) {
+        console.warn(`No tag mapping found for interest: ${interest}`);
+        return [];
+    }
+
+    // Build Overpass query
+    const query = buildOverpassQuery(bbox, tags);
+
+    // List of Overpass servers for failover
+    const servers = [
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://overpass-api.de/api/interpreter',
+        'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
     ];
 
-    for (const strategy of searchStrategies) {
-        const params = strategy();
-        if (!params) continue;
+    let attempts = 0;
+    const maxAttempts = 5;
 
-        let url = 'https://nominatim.openstreetmap.org/search?format=json&limit=30&addressdetails=1';
-        if (typeof params === 'string') {
-            url += `&q=${encodeURIComponent(params)}`;
-        } else {
-            url += `&q=${encodeURIComponent(params.q)}&viewbox=${params.viewbox}&bounded=${params.bounded}`;
-        }
-
-        // Add language parameter
-        url += `&accept-language=${language}`;
+    while (attempts < maxAttempts) {
+        // Round-robin or random server selection to distribute load?
+        // Or strictly failover? Let's use simple failover:
+        // Attempt 0 -> Server 0
+        // Attempt 1 -> Server 1
+        // Attempt 2 -> Server 0 (Retry) ...
+        const serverIndex = attempts % servers.length;
+        const currentServer = servers[serverIndex];
+        const url = `${currentServer}?data=${encodeURIComponent(query)}`;
 
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+            // Increased timeout to 120s (2 min) due to complex queries
+            const timeoutId = setTimeout(() => controller.abort(), 120000);
 
+            console.log(`Querying Overpass Server: ${currentServer} (Attempt ${attempts + 1})`);
             const res = await fetch(url, { signal: controller.signal });
             clearTimeout(timeoutId);
 
-            const data = await res.json();
-            if (data && data.length > 0) {
-                // Determine source for attribution
-                const source = 'OpenStreetMap';
-                const mapped = data.map(item => ({
-                    name: item.name || item.display_name.split(',')[0],
-                    lat: parseFloat(item.lat),
-                    lng: parseFloat(item.lon),
-                    description: item.type, // Nominatim 'type' is often a category like 'museum'
-                    id: `osm-${item.place_id}`,
-                    source: source,
-                    // Capture local context for better IQ searches
-                    address: item.display_name,
-                    location_context: item.address ? (item.address.village || item.address.town || item.address.suburb || item.address.hamlet || item.address.city_district || item.address.city || item.address.municipality) : null,
-                    address_components: item.address ? {
-                        road: item.address.road || item.address.pedestrian || item.address.footway || item.address.path,
-                        house_number: item.address.house_number,
-                        city: item.address.village || item.address.town || item.address.suburb || item.address.city
-                    } : null
-                }));
-
-                // Filter by distance if we generated the bbox (Strategy 0) to ensure they are actually close
-                // (Nominatim 'bounded' is decent but square box vs radius check)
-                // We'll trust the results for now to avoid over-filtering.
-                return mapped;
+            // Handle Rate Limiting (429)
+            if (res.status === 429) {
+                const waitTime = 2000 * Math.pow(2, attempts); // 2s, 4s, 8s
+                console.warn(`Overpass 429 (Too Many Requests). Retrying in ${waitTime / 1000}s... (Attempt ${attempts + 1}/${maxAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                attempts++;
+                continue;
             }
+
+            if (!res.ok) {
+                throw new Error(`Overpass API returned ${res.status}`);
+            }
+
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (jsonErr) {
+                console.warn(`[Overpass] Invalid JSON from ${currentServer}. Response snippet: ${text.substring(0, 200)}...`);
+                throw new Error(`Invalid JSON response: ${jsonErr.message}`);
+            }
+
+            // Transform and return results
+            const pois = transformOverpassResults(data.elements, cityName);
+
+            // Success log
+            if (pois.length > 0) {
+                console.log(`Overpass API found ${pois.length} POIs for "${interest}"`);
+            }
+            return pois;
+
         } catch (e) {
-            console.error("OSM Search strategy failed:", e);
+            // If last attempt, throw
+            if (attempts === maxAttempts - 1) {
+                console.error(`Overpass API failed after ${maxAttempts} attempts:`, e);
+                return []; // Return empty instead of crashing the whole Promise.all chain
+            }
+
+            // Log and retry
+            console.warn(`Overpass Error (${e.name}: ${e.message}). Retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            attempts++;
         }
     }
-
     return [];
-};
+}; // End of fetchOsmPOIs
 
 // ... (other functions)
 
@@ -149,7 +378,7 @@ export const fetchFoursquarePOIs = async (lat, lng, interest, radius = 5000, lan
                 description: place.categories?.map(c => c.name).join(', ') || 'Place of interest',
                 id: `fs-${place.fsq_id}`,
                 source: 'Foursquare'
-            }));
+            })).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
         }
     } catch (e) {
         console.error("Foursquare fetch failed:", e);
@@ -196,7 +425,7 @@ export const fetchGooglePOIs = async (lat, lng, interest, radius = 5000, languag
                 address: place.formattedAddress,
                 id: `google-${place.id}`,
                 source: 'Google Places'
-            }));
+            })).filter(p => !isNaN(p.lat) && !isNaN(p.lng));
         }
     } catch (e) {
         console.error("Google Places fetch failed:", e);
@@ -294,14 +523,21 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
             'restaurant', 'cafe', 'café', 'bistro', 'eatery', 'food', 'eten', 'diner', 'lunch',
             'snackbar', 'fastfood', 'fast food', 'pizzeria', 'grill', 'bar', 'pub', 'kroeg',
             // --- NEW: Bookstore exclusion ---
-            'boekwinkel', 'boekhandel', 'bookstore', 'boeken'
+            'boekwinkel', 'boekhandel', 'bookstore', 'boeken',
+            // --- NEW: Retail / Shopping exclusion (User Request) ---
+            'jewelry', 'juwelier', 'jewel', 'sieraad',
+            'shoe', 'schoen', 'footwear',
+            'clothing', 'kleding', 'fashion', 'mode', 'boutique', 'boetiek',
+            'store', 'winkel', 'shop', 'outlet', 'mall', 'shopping',
+            'furniture', 'meubel', 'electronics', 'elektronica', 'phone', 'telefoon'
         ];
 
         // Check if the user EXPLICITLY asked for food/drink in the search query
         // Check if the user EXPLICITLY asked for restricted items (food/bookstores) in the search query
         const specialTerms = [
             'restaurant', 'cafe', 'café', 'eten', 'food', 'drink', 'bar', 'pub', 'kroeg', 'koffie', 'coffee', 'lunch', 'diner', 'ontbijt', 'breakfast',
-            'boekwinkel', 'boekhandel', 'bookstore', 'boeken', 'books'
+            'boekwinkel', 'boekhandel', 'bookstore', 'boeken', 'books',
+            'jewelry', 'juwelier', 'shoe', 'schoen', 'clothing', 'kleding', 'boutique', 'boetiek', 'shop', 'winkel', 'store', 'shopping', 'mall'
         ];
         const explicitlyRequestedSpecial = interests.some(interest =>
             specialTerms.some(term => interest.toLowerCase().includes(term))
@@ -322,7 +558,8 @@ export const getCombinedPOIs = async (cityData, interestLine, cityName, constrai
             const isSpecialTerm = [
                 'restaurant', 'cafe', 'café', 'bistro', 'eatery', 'food', 'eten', 'diner', 'lunch',
                 'snackbar', 'fastfood', 'pizzeria', 'grill', 'bar', 'pub', 'kroeg',
-                'boekwinkel', 'boekhandel', 'bookstore', 'boeken'
+                'boekwinkel', 'boekhandel', 'bookstore', 'boeken',
+                'jewelry', 'juwelier', 'shoe', 'schoen', 'clothing', 'kleding', 'boutique', 'boetiek', 'shop', 'winkel', 'store', 'shopping', 'mall'
             ].some(t => normName.includes(t) || descriptionLower.includes(t) || typeLower.includes(t));
 
             if (isSpecialTerm && explicitlyRequestedSpecial) {
