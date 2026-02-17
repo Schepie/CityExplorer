@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.2] - 2026-02-17
+
+### Fixed
+- **App Restarts**: Resolved an issue where the application would restart unexpectedly during POI updates by ignoring log and temporary files in the Vite watcher.
+- **Log Management**: Moved server logs to a dedicated `logs/` directory for better organization and to avoid triggering development reloads.
+
 ## [3.3.1] - 2026-02-17
 
 ### Changed

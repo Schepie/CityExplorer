@@ -1428,7 +1428,6 @@ const ItinerarySidebar = ({
     speakingId, onSpeak, autoAudio, setAutoAudio,
     userLocation,
     spokenNavigationEnabled, setSpokenNavigationEnabled,
-    autoSaveEnabled, setAutoSaveEnabled,
     voiceSettings, setVoiceSettings,
     city, setCity, interests, setInterests,
     constraintType, setConstraintType,
@@ -2015,6 +2014,15 @@ const ItinerarySidebar = ({
                                     /* Changelog View */
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
+                                            {
+                                                date: "17 Feb 2026",
+                                                version: "v3.3.2",
+                                                items: language === 'nl' ? [
+                                                    { title: "App Herstarts Fix", desc: "Een bug opgelost waarbij de app herstartte tijdens het bijwerken van plekken." }
+                                                ] : [
+                                                    { title: "App Restarts Fix", desc: "Resolved an issue where the app would restart unexpectedly during POI updates." }
+                                                ]
+                                            },
                                             {
                                                 date: "17 Feb 2026",
                                                 version: "v3.3.1",
@@ -2621,22 +2629,7 @@ const ItinerarySidebar = ({
                                             </button>
                                         </div>
 
-                                        {/* 8. Autosave */}
-                                        <div className="space-y-1">
-                                            <button
-                                                onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
-                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
-                                            >
-                                                <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
-                                                    {language === 'nl' ? 'Autosave' : 'Autosave'}
-                                                </label>
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`text-[10px] font-bold uppercase tracking-tighter ${autoSaveEnabled ? 'text-primary' : 'text-slate-500'}`}>
-                                                        {autoSaveEnabled ? (language === 'nl' ? 'Aan' : 'On') : (language === 'nl' ? 'Uit' : 'Off')}
-                                                    </span>
-                                                </div>
-                                            </button>
-                                        </div>
+
 
 
                                         {/* 9. Advanced Section */}
@@ -2851,7 +2844,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v3.3.1</span>
+                                            <span className="text-slate-300 text-sm font-medium">v3.3.2</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">

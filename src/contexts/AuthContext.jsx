@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-
 import { setAuthToken, clearAuthToken } from '../utils/authStore.js';
 
 const AuthContext = createContext();
@@ -7,137 +6,51 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState({ id: 'guest', email: 'guest@cityexplorer.app', name: 'Guest' });
-    const [sessionToken, setSessionToken] = useState('guest-token');
-    const [isLoading, setIsLoading] = useState(false);
-    const [isBlocked, setIsBlocked] = useState(false);
+    // Auth disabled: always return a guest user
+    const [user] = useState({ id: 'guest', email: 'guest@cityexplorer.app', name: 'Guest', role: 'admin' });
+    const [sessionToken] = useState('guest-token');
+    const [isLoading] = useState(false);
+    const [isBlocked] = useState(false);
 
     useEffect(() => {
-        // Auth disabled: skipping validation logic
+        // Ensure the authStore has the guest token
         setAuthToken('guest-token');
     }, []);
 
-    const login = (token, userData) => {
-        localStorage.setItem('city_explorer_token', token);
-        localStorage.setItem('city_explorer_user', JSON.stringify(userData));
-        setAuthToken(token); // Sync external store
-        setSessionToken(token);
-        setUser(userData);
-        setIsBlocked(false);
+    const login = () => {
+        console.warn("Auth: login is disabled.");
     };
 
     const logout = () => {
-        localStorage.removeItem('city_explorer_token');
-        localStorage.removeItem('city_explorer_user');
-        clearAuthToken(); // Sync external store
-        setSessionToken(null);
-        setUser(null);
-        setIsBlocked(false);
-        window.location.href = '/'; // Hard reset
+        console.warn("Auth: logout is disabled.");
     };
 
-    // 2. Request Magic Link
-    const requestMagicLink = async (email) => {
-        try {
-            const res = await fetch('/api/auth-request-link', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
+    const requestMagicLink = async () => true;
+    const verifyMagicLink = async () => true;
+    const verifyAccessCode = async () => true;
 
-            if (res.status === 403) {
-                setIsBlocked(true);
-                return 'blocked';
-            }
-
-            if (!res.ok) throw new Error('Failed to send link');
-            return true;
-        } catch (err) {
-            console.error(err);
-            return false;
-        }
-    };
-
-    // 3. Verify Magic Link
-    const verifyMagicLink = async (token) => {
-        try {
-            const res = await fetch('/api/auth-verify-link', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token })
-            });
-            const data = await res.json();
-
-            if (res.status === 403) {
-                setIsBlocked(true);
-                return 'blocked';
-            }
-
-            if (!res.ok) throw new Error(data.error || 'Verification failed');
-
-            login(data.token, data.user);
-            return true;
-        } catch (err) {
-            console.error(err);
-            return false;
-        }
-    };
-
-    // 4. Verify Access Code
-    const verifyAccessCode = async (email, code) => {
-        try {
-            const res = await fetch('/api/auth-verify-code', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, code })
-            });
-            const data = await res.json();
-
-            if (res.status === 403) {
-                setIsBlocked(true);
-                return 'blocked';
-            }
-
-            if (!res.ok) throw new Error(data.error || 'Verification failed');
-
-            login(data.token, data.user);
-            return true;
-        } catch (err) {
-            console.error(err);
-            throw err;
-        }
-    };
-
-    // 5. AUTHENTICATED FETCH
-    // Wrapper for fetch that auto-injects the token
     const authFetch = async (url, options = {}) => {
-        const headers = options.headers || {};
-        if (sessionToken) {
-            headers['Authorization'] = `Bearer ${sessionToken}`;
-        }
-
-        const config = { ...options, headers };
-        const res = await fetch(url, config);
-
-        // Auto-logout on 401
-        if (res.status === 401) {
-            console.warn("Unauthorized! Logging out...");
-            logout();
-            throw new Error("Session expired. Please log in again.");
-        }
-
-        // Handle Blocked (403)
-        if (res.status === 403) {
-            console.warn("Access Revoked! Blocking UI...");
-            setIsBlocked(true);
-            throw new Error("Your account has been locked. Please contact geert.schepers@gmail.com");
-        }
-
-        return res;
+        const headers = {
+            ...options.headers,
+            'Authorization': `Bearer guest-token`,
+            'Content-Type': 'application/json'
+        };
+        return fetch(url, { ...options, headers });
     };
 
     return (
-        <AuthContext.Provider value={{ user, sessionToken, isLoading, isBlocked, login, logout, requestMagicLink, verifyMagicLink, verifyAccessCode, authFetch }}>
+        <AuthContext.Provider value={{
+            user,
+            sessionToken,
+            isLoading,
+            isBlocked,
+            login,
+            logout,
+            requestMagicLink,
+            verifyMagicLink,
+            verifyAccessCode,
+            authFetch
+        }}>
             {children}
         </AuthContext.Provider>
     );

@@ -40,6 +40,9 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true
       }
+    },
+    watch: {
+      ignored: ['**/service_logs.txt', '**/debug_log.txt', '**/temp/**']
     }
   },
   build: {

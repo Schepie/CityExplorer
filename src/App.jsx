@@ -7,7 +7,6 @@ const ArView = React.lazy(() => import('./components/ArView'));
 import './index.css'; // Ensure styles are loaded
 import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import LoginModal from './components/auth/LoginModal';
 import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle } from './utils/routeUtils';
 import { isLocationOnPath } from './utils/geometry';
@@ -62,23 +61,23 @@ import NavigationOverlay from './components/NavigationOverlay';
 import { apiFetch } from './utils/api.js';
 
 function CityExplorerApp() {
-  const { user, sessionToken, verifyMagicLink, isLoading: authLoading, isBlocked } = useAuth();
+  const { authFetch } = useAuth();
 
+  // Cleanup: Magic Link logic removed as auth is disabled
   useEffect(() => {
-    // Magic Link Verification
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    if (token) {
-      verifyMagicLink(token).then(status => {
-        if (status === true) window.history.replaceState({}, document.title, window.location.pathname);
-      });
+    if (params.get('token')) {
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
 
 
 
-  const [routeData, setRouteData] = useState(null);
-  const [isNavigationOpen, setIsNavigationOpen] = useState(false); // Navigation UI State
+  const [routeData, setRouteData] = useState(() => {
+    const saved = localStorage.getItem('app_route_data');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [isNavigationOpen, setIsNavigationOpen] = useState(() => localStorage.getItem('app_is_nav_open') === 'true'); // Navigation UI State
   // Map Pick Mode State
   const [isMapPickMode, setIsMapPickMode] = useState(false);
   const [isRouteEditMode, setIsRouteEditMode] = useState(false);
@@ -210,30 +209,36 @@ function CityExplorerApp() {
 
   // Lifted User Location (shared between Map and NavigationOverlay)
   const [userLocation, setUserLocation] = useState(null);
-  const [activePoiIndex, setActivePoiIndex] = useState(0);
+  const [activePoiIndex, setActivePoiIndex] = useState(() => parseInt(localStorage.getItem('app_active_poi_idx')) || 0);
 
-  // Form State (Lifted from JourneyInput)
-  const [city, setCity] = useState('');
-  const [validatedCityData, setValidatedCityData] = useState(null); // Store resolved city data
-  const [interests, setInterests] = useState('');
-  const [constraintType, setConstraintType] = useState('distance');
-  const [constraintValue, setConstraintValue] = useState(5);
-  const [isRoundtrip, setIsRoundtrip] = useState(true);
-  const [startPoint, setStartPoint] = useState('');
-  const [stopPoint, setStopPoint] = useState('');
-  // Default to OSM (free) instead of Google Places
-  const [searchMode, setSearchMode] = useState('journey'); // 'radius', 'journey', or 'prompt'
+  // Form State (Persistence enabled)
+  const [city, setCity] = useState(() => localStorage.getItem('app_city') || '');
+  const [validatedCityData, setValidatedCityData] = useState(() => {
+    const saved = localStorage.getItem('app_validated_city');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [interests, setInterests] = useState(() => localStorage.getItem('app_interests') || '');
+  const [constraintType, setConstraintType] = useState(() => localStorage.getItem('app_constraint_type') || 'distance');
+  const [constraintValue, setConstraintValue] = useState(() => parseFloat(localStorage.getItem('app_constraint_value')) || 5);
+  const [isRoundtrip, setIsRoundtrip] = useState(() => localStorage.getItem('app_is_roundtrip') !== 'false');
+  const [startPoint, setStartPoint] = useState(() => localStorage.getItem('app_start_point') || '');
+  const [stopPoint, setStopPoint] = useState(() => localStorage.getItem('app_stop_point') || '');
+  const [searchMode, setSearchMode] = useState(() => localStorage.getItem('app_search_mode') || 'journey');
+  const [aiChatHistory, setAiChatHistory] = useState(() => {
+    const saved = localStorage.getItem('app_chat_history');
+    if (saved) return JSON.parse(saved);
+    return [
+      {
+        role: 'brain', text: language === 'nl'
+          ? 'Hoi! Ik ben je gids van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wilt u verkennen?\n2. Gaat u **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wilt u gaan?\n4. Wat zijn uw **interesses**? (Indien leeg, toon ik de belangrijkste bezienswaardigheden).'
+          : 'Hi! I am your guide from CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. What are your **interests**? (If left empty, I will show you the main tourist highlights).'
+      }
+    ];
+  });
 
-  const [travelMode, setTravelMode] = useState('walking'); // 'walking' or 'cycling'
+  const [travelMode, setTravelMode] = useState(() => localStorage.getItem('app_travel_mode') || 'walking');
   const [aiPrompt, setAiPrompt] = useState('');
-  const [aiChatHistory, setAiChatHistory] = useState([
-    {
-      role: 'brain', text: language === 'nl'
-        ? 'Hoi! Ik ben je gids van CityExplorer. Om je ideale route te plannen, heb ik wat info nodig:\n\n1. Welke **stad** wil je verkennen?\n2. Ga je **wandelen** of **fietsen**?\n3. Hoe **lang** (min) of hoe **ver** (km) wil je gaan?\n4. Wat zijn je **interesses**? (Indien leeg, toon ik je de belangrijkste bezienswaardigheden).'
-        : 'Hi! I am your guide from CityExplorer. To plan your perfect route, I need a few details:\n\n1. Which **city** do you want to explore?\n2. Will you be **walking** or **cycling**?\n3. How **long** (min) or how **far** (km) would you like to go?\n4. What are your **interests**? (If left empty, I will show you the main tourist highlights).'
-    }
-  ]);
-  const [isAiViewActive, setIsAiViewActive] = useState(true);
+  const [isAiViewActive, setIsAiViewActive] = useState(() => localStorage.getItem('app_ai_view_active') !== 'false');
 
   // Disambiguation State
   const [disambiguationOptions, setDisambiguationOptions] = useState(null);
@@ -249,13 +254,13 @@ function CityExplorerApp() {
   const [showCitySelector, setShowCitySelector] = useState(false);
 
   // Sidebar Visibility State (Lifted)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => localStorage.getItem('app_sidebar_open') !== 'false');
 
   // View Action state (Lifted from MapContainer to coordinate with Sidebar)
   const [viewAction, setViewAction] = useState(null);
 
   // Navigation Phase State (Strict progress tracking)
-  const [navPhase, setNavPhase] = useState(NAV_PHASES.PRE_ROUTE);
+  const [navPhase, setNavPhase] = useState(() => localStorage.getItem('app_nav_phase') || NAV_PHASES.PRE_ROUTE);
 
   // Re-enrich POIs when Description Length changes
   useEffect(() => {
@@ -280,7 +285,37 @@ function CityExplorerApp() {
     }
   }, [descriptionLength]); // Only trigger on length change
 
-  // Persist search sources preference
+  // Persist State Changes
+  useEffect(() => localStorage.setItem('app_city', city), [city]);
+  useEffect(() => localStorage.setItem('app_interests', interests), [interests]);
+  useEffect(() => localStorage.setItem('app_search_mode', searchMode), [searchMode]);
+  useEffect(() => localStorage.setItem('app_constraint_type', constraintType), [constraintType]);
+  useEffect(() => localStorage.setItem('app_constraint_value', constraintValue), [constraintValue]);
+  useEffect(() => localStorage.setItem('app_is_roundtrip', isRoundtrip), [isRoundtrip]);
+  useEffect(() => localStorage.setItem('app_start_point', startPoint), [startPoint]);
+  useEffect(() => localStorage.setItem('app_stop_point', stopPoint), [stopPoint]);
+  useEffect(() => localStorage.setItem('app_travel_mode', travelMode), [travelMode]);
+  useEffect(() => {
+    if (routeData) {
+      // Deep sanitization before stringify to catch NaN/Infinity
+      const safeData = sanitizeRouteData(routeData);
+      localStorage.setItem('app_route_data', JSON.stringify(safeData));
+    } else {
+      localStorage.removeItem('app_route_data');
+    }
+  }, [routeData]);
+  useEffect(() => {
+    if (validatedCityData) localStorage.setItem('app_validated_city', JSON.stringify(validatedCityData));
+    else localStorage.removeItem('app_validated_city');
+  }, [validatedCityData]);
+  useEffect(() => {
+    localStorage.setItem('app_chat_history', JSON.stringify(aiChatHistory));
+  }, [aiChatHistory]);
+  useEffect(() => localStorage.setItem('app_active_poi_idx', activePoiIndex), [activePoiIndex]);
+  useEffect(() => localStorage.setItem('app_nav_phase', navPhase), [navPhase]);
+  useEffect(() => localStorage.setItem('app_ai_view_active', isAiViewActive), [isAiViewActive]);
+  useEffect(() => localStorage.setItem('app_is_nav_open', isNavigationOpen), [isNavigationOpen]);
+  useEffect(() => localStorage.setItem('app_sidebar_open', isSidebarOpen), [isSidebarOpen]);
   useEffect(() => {
     localStorage.setItem('searchSources', JSON.stringify(searchSources));
   }, [searchSources]);
@@ -544,24 +579,7 @@ function CityExplorerApp() {
     }
   };
 
-  // Auto-Save Effect: Triggers when all POIs are fully enriched
-  const lastAutoSavedKeyRef = useRef('');
-  useEffect(() => {
-    if (!autoSaveEnabled || !routeData || !routeData.pois || routeData.pois.length === 0) return;
 
-    // Check if all POIs are fully enriched (have full descriptions from Gemini/Stage 2)
-    const isAllEnriched = routeData.pois.every(p => p.isFullyEnriched);
-    if (!isAllEnriched) return;
-
-    // Create a unique key to prevent multiple auto-saves for the same finished route
-    const currentKey = `${city}_${routeData.pois.length}_${routeData.pois.map(p => p.id).join('_')}`;
-
-    if (lastAutoSavedKeyRef.current !== currentKey) {
-      console.log("[AutoSave] All POIs enriched. Saving route in background...");
-      handleSaveRoute();
-      lastAutoSavedKeyRef.current = currentKey;
-    }
-  }, [routeData, city]); // Re-run when data or city changes
 
   // Centralized Sanitization for Route Data (Prevents MapLibre crashes with null/NaN)
   const sanitizeRouteData = (data) => {
@@ -961,22 +979,6 @@ function CityExplorerApp() {
     }
   };
 
-
-  // Re-enrich POIs when Description Length changes
-  useEffect(() => {
-    if (routeData && routeData.pois && routeData.pois.length > 0) {
-      console.log("Description length changed to:", descriptionLength);
-
-      // Optimistically update ALL pois to the new mode so UI (popups/sidebar) reflects change immediately
-      setRouteData(prev => ({
-        ...prev,
-        pois: prev.pois.map(p => ({ ...p, active_mode: descriptionLength }))
-      }));
-
-      // Trigger automatic enrichment
-      handleTriggerEnrichment();
-    }
-  }, [descriptionLength]); // Only trigger on length change
 
   // Wrapper for city setter to invalidate validation on edit
   const handleSetCity = (val) => {
@@ -3451,42 +3453,6 @@ function CityExplorerApp() {
   useEffect(() => localStorage.setItem('app_auto_audio', autoAudio), [autoAudio]);
   useEffect(() => localStorage.setItem('app_spoken_navigation', spokenNavigationEnabled), [spokenNavigationEnabled]);
 
-  // Autosave State
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => localStorage.getItem('app_autosave_enabled') !== 'false'); // Default true
-
-  useEffect(() => localStorage.setItem('app_autosave_enabled', autoSaveEnabled), [autoSaveEnabled]);
-
-  // Autosave Logic
-  useEffect(() => {
-    if (autoSaveEnabled && routeData) {
-      localStorage.setItem('app_saved_route', JSON.stringify(routeData));
-    } else if (!autoSaveEnabled) {
-      localStorage.removeItem('app_saved_route');
-    }
-  }, [routeData, autoSaveEnabled]);
-
-  // Autoload Logic
-  useEffect(() => {
-    if (autoSaveEnabled) {
-      const saved = localStorage.getItem('app_saved_route');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.pois && parsed.pois.length > 0) {
-            console.log("Restoring autosaved route...");
-            const sanitized = sanitizeRouteData(parsed);
-            setRouteData(sanitized);
-            if (sanitized.cityName) setCity(sanitized.cityName);
-            setIsAiViewActive(false);
-            setIsSidebarOpen(true);
-          }
-        } catch (e) {
-          console.error("Failed to load autosaved route", e);
-        }
-      }
-    }
-  }, []); // Run once on mount
-
   const [voiceSettings, setVoiceSettings] = useState(() => {
     const saved = localStorage.getItem('app_voice_settings');
     return saved ? JSON.parse(saved) : { variant: 'nl', gender: 'female' };
@@ -3508,12 +3474,19 @@ function CityExplorerApp() {
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
-        setAvailableVoices(voices);
+        // Only update if count changed to avoid render loops
+        setAvailableVoices(prev => (prev.length === voices.length) ? prev : voices);
       }
     };
     loadVoices();
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    return () => {
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
   }, []);
 
   const stopSpeech = () => {
@@ -4801,8 +4774,6 @@ function CityExplorerApp() {
         setAutoAudio={setAutoAudio}
         spokenNavigationEnabled={spokenNavigationEnabled}
         setSpokenNavigationEnabled={setSpokenNavigationEnabled}
-        autoSaveEnabled={autoSaveEnabled}
-        setAutoSaveEnabled={setAutoSaveEnabled}
         focusedLocation={focusedLocation}
 
         isSimulating={isSimulating}

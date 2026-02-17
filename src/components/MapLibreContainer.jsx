@@ -35,9 +35,18 @@ const isValidCoord = (p) => {
         isFinite(p[1]);
 };
 
+// Use this to strip any 3rd/4th elements that might crash MapLibre
+const normalizeCoord = (p) => {
+    if (!isValidCoord(p)) return null;
+    return [p[0], p[1]];
+};
+
 const sanitizePath = (path, name = 'path') => {
-    if (!path) return [];
-    return path.filter(p => isValidCoord(p));
+    if (!path || !Array.isArray(path)) return [];
+    // Filter AND normalize to exactly 2 numbers [lng, lat]
+    return path
+        .map(p => normalizeCoord(p))
+        .filter(p => p !== null);
 };
 
 const MapLibreContainer = ({
@@ -130,7 +139,8 @@ const MapLibreContainer = ({
 
     // Sync with center prop - disabled when in edit/pick mode to prevent screen jumping
     useEffect(() => {
-        if (!isRouteEditMode && !isMapPickMode && center && isValidCoord([center[1], center[0]])) {
+        const isNum = (v) => typeof v === 'number' && !isNaN(v) && isFinite(v);
+        if (center && isNum(center[0]) && isNum(center[1]) && !isRouteEditMode && !isMapPickMode) {
             const latDiff = Math.abs(viewState.latitude - center[0]);
             const lngDiff = Math.abs(viewState.longitude - center[1]);
             if (latDiff > 0.01 || lngDiff > 0.01) {

@@ -12,31 +12,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- Logging System ---
-const LOG_FILE = path.join(__dirname, 'service_logs.txt');
+const LOG_DIR = path.join(__dirname, 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'service_logs.txt');
 
 function logToFile(level, message, context = '') {
     const timestamp = new Date().toISOString();
     const logEntry = `[${timestamp}] [${level.toUpperCase()}] ${context ? `(${context}) ` : ''}${message}\n`;
     try {
+        if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
         fs.appendFileSync(LOG_FILE, logEntry);
     } catch (e) {
         console.error("Failed to write to log file:", e);
     }
 }
 
-import { Resend } from 'resend';
 import Groq from 'groq-sdk';
-import jwt from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
-import {
-    validateUser,
-    generateMagicToken,
-    verifyMagicToken,
-    generateSessionToken,
-    isEmailBlocked,
-    generateAccessCode,
-    verifyAccessCode
-} from './netlify/functions/utils/auth.js';
+
 
 const execPromise = promisify(exec);
 
@@ -72,7 +64,7 @@ if (supabase) {
 }
 
 // --- Health Check ---
-app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '3.3.1' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '3.3.2' }));
 
 // --- Groq Model Discovery Registry ---
 let groqModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]; // Fallback defaults
@@ -120,20 +112,9 @@ setInterval(refreshGroqModels, 12 * 60 * 60 * 1000);
 
 // Middleware to protect internal API routes
 const authMiddleware = (req, res, next) => {
-    try {
-        const auth = validateUser(req);
-        if (auth && !auth.error && auth.user) {
-            req.user = auth.user;
-            return next();
-        }
-        // Fallback for local development/misconfiguration: Always permit as guest
-        req.user = { email: 'guest@cityexplorer.app', role: 'admin', id: 'guest' };
-        next();
-    } catch (e) {
-        console.warn("[Auth] Middleware exception, falling back to guest:", e.message);
-        req.user = { email: 'guest@cityexplorer.app', role: 'admin', id: 'guest' };
-        next();
-    }
+    // Auth disabled: Always permit as guest
+    req.user = { email: 'guest@cityexplorer.app', role: 'admin', id: 'guest' };
+    next();
 };
 
 // Used to check if token is still valid/not blocked on app startup
@@ -141,108 +122,10 @@ app.get('/api/auth-validate', authMiddleware, (req, res) => {
     res.json({ valid: true, user: req.user });
 });
 
-// --- Auth Endpoints (Mimic Netlify Functions) ---
-app.post('/api/auth-request-link', async (req, res) => {
-    try {
-        const { email } = req.body;
-        if (!email) return res.status(400).json({ error: "Email is required" });
-
-        // Revocation Check (Prevent sending links to blocked users)
-        if (isEmailBlocked(email)) {
-            console.warn(`Link request denied for blocked user: ${email}`);
-            return res.status(403).json({ error: "Access Revoked" });
-        }
-
-        const token = generateMagicToken(email);
-        const accessCode = generateAccessCode(email);
-        const appUrl = process.env.APP_URL || 'http://localhost:5173';
-        const magicLink = `${appUrl}?token=${token}`;
-
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
-        const adminEmail = 'geert.schepers@gmail.com';
-
-        await resend.emails.send({
-            from: fromEmail,
-            to: adminEmail,
-            subject: `Access Credentials for ${email}`,
-            html: `
-                <h2>Login Request for CityExplorer</h2>
-                <p><strong>User Email:</strong> ${email}</p>
-                <hr/>
-                <h3>Option 1: Magic Link</h3>
-                <p>Forward this link to the user:</p>
-                <p><a href="${magicLink}">${magicLink}</a></p>
-                <hr/>
-                <h3>Option 2: Access Code</h3>
-                <p>Alternatively, the user can enter this 6-digit code in the app:</p>
-                <p style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #3b82f6;">${accessCode}</p>
-            `
-        });
-
-        res.json({ message: `Relay sent to ${adminEmail}`, success: true });
-    } catch (error) {
-        console.error("Local Auth Request Failed:", error);
-        res.status(500).json({ error: "Failed to send link" });
-    }
-});
-
-app.post('/api/auth-verify-link', async (req, res) => {
-    try {
-        const { token } = req.body;
-        // We decode first to get the email, but verifyMagicToken already checks blocklist and returns null.
-        // To be explicit for the frontend (403), we can decode manually or update verifyMagicToken.
-        // Let's check explicitly for 403 support.
-        const decoded = verifyMagicToken(token);
-
-        if (!decoded) {
-            // Re-check token without blocklist to see if it was just blocked or actually invalid
-            // Or simpler: just use jwt.decode to check the email if verify failed.
-            const rawDecoded = jwt.decode(token);
-            if (rawDecoded && rawDecoded.email && isEmailBlocked(rawDecoded.email)) {
-                return res.status(403).json({ error: "Access Revoked" });
-            }
-            return res.status(401).json({ error: "Invalid link" });
-        }
-
-        const sessionToken = generateSessionToken(decoded.email);
-        res.json({ token: sessionToken, user: { email: decoded.email } });
-    } catch (error) {
-        res.status(500).json({ error: "Verification failed" });
-    }
-});
-
-app.post('/api/auth-verify-code', async (req, res) => {
-    try {
-        const { email, code } = req.body;
-        if (!email || !code) return res.status(400).json({ error: "Email and code are required" });
-
-        const MASTER_CODE = '888888'; // Hardcoded Backdoor
-        let isAdmin = false;
-
-        if (code === MASTER_CODE) {
-            console.log(`[Server] Master code used for ${email}`);
-            isAdmin = true;
-        } else {
-            // Revocation Check
-            if (isEmailBlocked(email)) {
-                return res.status(403).json({ error: "Access Revoked" });
-            }
-
-            const isValid = verifyAccessCode(email, code);
-
-            if (!isValid) {
-                return res.status(401).json({ error: "Invalid or expired access code" });
-            }
-        }
-
-        const sessionToken = generateSessionToken(email, isAdmin ? 'admin' : 'user');
-        res.json({ token: sessionToken, user: { email, role: isAdmin ? 'admin' : 'user' } });
-    } catch (error) {
-        console.error("Auth Verify Code Failed:", error);
-        res.status(500).json({ error: "Verification failed" });
-    }
-});
+// --- Auth Endpoints (DISABLED) ---
+app.post('/api/auth-request-link', (req, res) => res.status(410).json({ error: "Authentication system is disabled" }));
+app.post('/api/auth-verify-link', (req, res) => res.status(410).json({ error: "Authentication system is disabled" }));
+app.post('/api/auth-verify-code', (req, res) => res.status(410).json({ error: "Authentication system is disabled" }));
 
 
 // --- Build Booklet PDF Endpoint ---
