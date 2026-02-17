@@ -276,7 +276,9 @@ const MapLibreContainer = ({
 
     const navigationGeoJson = useMemo(() => {
         if (!navigationPath || !navigationPath.coordinates || navigationPath.coordinates.length < 2) return null;
-        const validCoords = sanitizePath(navigationPath.coordinates, 'navigationPath');
+        // Ensure coordinates are NOT null before sanitizePath
+        const cleanCoords = navigationPath.coordinates.filter(loc => Array.isArray(loc) && loc.length >= 2 && typeof loc[0] === 'number' && typeof loc[1] === 'number');
+        const validCoords = sanitizePath(cleanCoords, 'navigationPath');
         if (validCoords.length < 2) return null;
 
         let displayCoords = validCoords;

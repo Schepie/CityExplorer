@@ -515,7 +515,14 @@ Je MOET antwoorden met een JSON object in dit formaat:
             console.log("Raw AI Response Text:", text);
 
             // Strip Chain-of-Thought thinking blocks (<think>...</think>)
+            // 1. Remove all closed blocks
             let cleanText = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+            // 2. Handle a potentially unclosed trailing think block
+            const thinkStart = cleanText.indexOf('<think>');
+            if (thinkStart !== -1) {
+                cleanText = cleanText.substring(0, thinkStart).trim();
+            }
 
             // Handle markdown code blocks
             cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -525,6 +532,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
             const jsonEnd = cleanText.lastIndexOf('}');
             if (jsonStart !== -1 && jsonEnd !== -1) {
                 cleanText = cleanText.substring(jsonStart, jsonEnd + 1);
+            } else if (jsonStart !== -1) {
+                cleanText = cleanText.substring(jsonStart);
             }
 
             // Fix invalid backslashes (e.g. C:\Path) that are not part of valid escape sequences
@@ -1330,18 +1339,21 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     let attempt = await response.json().catch(() => ({ error: "Parsing failed" }));
 
                     if (provider !== 'google' && (response.status !== 200 || attempt.error)) {
-                        console.warn(`[Search] Tavily failed (${response.status}). marking as DEGRADED.`);
-                        logRemote('warning', `Tavily Search failed with status ${response.status}. Marking as degraded.`, `fetchWebSearch [${q}]`);
+                        console.warn(`[Search] ${provider} failed (${response.status}). marking as DEGRADED.`);
+                        logRemote('warning', `${provider} Search failed with status ${response.status}. Marking as degraded.`, `fetchWebSearch [${q}]`);
 
-                        // Mark as degraded if it's a structural error (Quota, Authentication, or Server Down)
-                        if (response.status >= 400 || attempt.error) {
-                            degradedProviders.tavily = true;
+                        // Mark as degraded if it's a structural error (Quota=429, Auth=401/403, Account=432, or Server Down=5xx)
+                        if (response.status >= 400 || response.status === 432 || attempt.error) {
+                            degradedProviders[provider] = true;
                         }
 
-                        endpoint = '/api/google-search';
-                        searchUrl = `${endpoint}?q=${encodeURIComponent(q)}&num=5`;
-                        response = await apiFetch(searchUrl, { signal: externalSignal });
-                        attempt = await response.json().catch(() => ({ error: "Google Parsing failed" }));
+                        // Fallback to Google if Tavily failed
+                        if (provider === 'tavily') {
+                            endpoint = '/api/google-search';
+                            searchUrl = `${endpoint}?q=${encodeURIComponent(q)}&num=5`;
+                            response = await apiFetch(searchUrl, { signal: externalSignal });
+                            attempt = await response.json().catch(() => ({ error: "Google Parsing failed" }));
+                        }
                     }
 
                     // Simple Validation: If we got items, assume success and stop.
