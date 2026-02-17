@@ -7,41 +7,14 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
-    const [sessionToken, setSessionToken] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [user, setUser] = useState({ id: 'guest', email: 'guest@cityexplorer.app', name: 'Guest' });
+    const [sessionToken, setSessionToken] = useState('guest-token');
+    const [isLoading, setIsLoading] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
 
     useEffect(() => {
-        // 1. Check LocalStorage on mount
-        const storedToken = localStorage.getItem('city_explorer_token');
-        const storedUser = localStorage.getItem('city_explorer_user');
-
-        if (storedToken) {
-            setSessionToken(storedToken);
-            setAuthToken(storedToken);
-            if (storedUser) setUser(JSON.parse(storedUser));
-
-            // 2. Startup validation ping (Check if still valid/not blocked)
-            fetch('/api/auth-validate', {
-                headers: { 'Authorization': `Bearer ${storedToken}` }
-            }).then(res => {
-                if (res.status === 200) setIsBlocked(false);
-                if (res.status === 403) setIsBlocked(true);
-                if (res.status === 401) logout();
-            })
-                .catch(() => { })
-                .finally(() => {
-                    setIsLoading(false);
-                });
-        } else {
-            setIsLoading(false);
-        }
-
-        // 3. Listen for external block events (from apiFetch)
-        const handleExternalBlock = () => setIsBlocked(true);
-        window.addEventListener('city-explorer-auth-blocked', handleExternalBlock);
-        return () => window.removeEventListener('city-explorer-auth-blocked', handleExternalBlock);
+        // Auth disabled: skipping validation logic
+        setAuthToken('guest-token');
     }, []);
 
     const login = (token, userData) => {

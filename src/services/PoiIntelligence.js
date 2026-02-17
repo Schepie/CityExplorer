@@ -514,7 +514,19 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
             console.log("Raw AI Response Text:", text);
 
-            const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            // Strip Chain-of-Thought thinking blocks (<think>...</think>)
+            let cleanText = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+            // Handle markdown code blocks
+            cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+            // Find the actual JSON object to be extra safe
+            const jsonStart = cleanText.indexOf('{');
+            const jsonEnd = cleanText.lastIndexOf('}');
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+                cleanText = cleanText.substring(jsonStart, jsonEnd + 1);
+            }
+
             // Fix invalid backslashes (e.g. C:\Path) that are not part of valid escape sequences
             const sanitized = cleanText.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
 
@@ -645,11 +657,18 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 }
                 const data = await response.json();
                 // Strip Chain-of-Thought thinking blocks and markdown
-                const cleanText = data.text
+                let cleanText = data.text
                     .replace(/<think>[\s\S]*?<\/think>/gi, '')
                     .replace(/```json/g, '')
                     .replace(/```/g, '')
                     .trim();
+
+                const jsonStartHeader = cleanText.indexOf('{');
+                const jsonEndHeader = cleanText.lastIndexOf('}');
+                if (jsonStartHeader !== -1 && jsonEndHeader !== -1) {
+                    cleanText = cleanText.substring(jsonStartHeader, jsonEndHeader + 1);
+                }
+
                 const result = JSON.parse(cleanText);
 
                 const analyzed = this.analyzeSignals(poi, signals || []);
@@ -932,9 +951,12 @@ Je MOET antwoorden met een JSON object in dit formaat:
             }
 
             try {
+                // Strip Chain-of-Thought thinking blocks
+                const rawText = (data.text || "").replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
                 // Find the JSON block boundaries
-                const startIndex = data.text.indexOf('{');
-                const endIndex = data.text.lastIndexOf('}');
+                const startIndex = rawText.indexOf('{');
+                const endIndex = rawText.lastIndexOf('}');
 
                 if (startIndex === -1 || endIndex === -1) {
                     throw new Error("No JSON object found in response text");

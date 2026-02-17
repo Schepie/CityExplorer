@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.1] - 2026-02-17
+
+### Changed
+- **POI Sources**: Foursquare Extra POI data is now enabled by default for a richer discovery experience.
+
+## [3.3.0] - 2026-02-16
+
+### Changed
+- **Open Access**: Disabled the login system to allow immediate access to all features without authentication.
+- **Improved Stability**: Implemented comprehensive data normalization for POI coordinates to prevent map worker crashes.
+- **Enhanced UI**: Refined the "About" section in settings and updated the changelog display for better clarity.
+
+### Fixed
+- **Map Crashes**: Resolved `TypeError` and worker crashes in MapLibre by ensuring null safety and numeric validation for all map data.
+- **Service Logs**: Fixed the service logs functionality in the advanced settings to correctly fetch and display server diagnostics.
+
 ## [3.2.0] - 2026-02-14
 
 ### Added

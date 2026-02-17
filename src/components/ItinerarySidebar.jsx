@@ -2016,6 +2016,28 @@ const ItinerarySidebar = ({
                                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                                         {[
                                             {
+                                                date: "17 Feb 2026",
+                                                version: "v3.3.1",
+                                                items: language === 'nl' ? [
+                                                    { title: "Foursquare Standaard", desc: "Extra POI data van Foursquare is nu standaard ingeschakeld voor rijkere resultaten." }
+                                                ] : [
+                                                    { title: "Foursquare Default", desc: "Foursquare Extra POI data is now enabled by default for richer discovery results." }
+                                                ]
+                                            },
+                                            {
+                                                date: "16 Feb 2026",
+                                                version: "v3.3.0",
+                                                items: language === 'nl' ? [
+                                                    { title: "Open Toegang", desc: "Het inlogsysteem is uitgeschakeld voor directe toegang tot alle functies." },
+                                                    { title: "Verbeterde Stabiliteit", desc: "Extra beveiliging voor kaartdata voorkomt crashes en verbetert de algemene snelheid." },
+                                                    { title: "Service Logs Fix", desc: "Het uitlezen van systeemlogboeken in de instellingen werkt nu weer correct." }
+                                                ] : [
+                                                    { title: "Open Access", desc: "Disabled the login system to allow immediate access to all features." },
+                                                    { title: "Improved Stability", desc: "Data normalization for map points prevents worker crashes and improves performance." },
+                                                    { title: "Service Logs Fix", desc: "System diagnostics in advanced settings are now fully functional." }
+                                                ]
+                                            },
+                                            {
                                                 date: "13 Feb 2026",
                                                 version: "v3.2.0",
                                                 items: language === 'nl' ? [
@@ -2829,7 +2851,7 @@ const ItinerarySidebar = ({
                                             >
                                                 {language === 'nl' ? 'WAT IS NIEUW?' : "WHAT'S NEW?"}
                                             </button>
-                                            <span className="text-slate-300 text-sm font-medium">v3.2.0</span>
+                                            <span className="text-slate-300 text-sm font-medium">v3.3.1</span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center">
@@ -2838,7 +2860,7 @@ const ItinerarySidebar = ({
                                     </div>
                                     <div className="flex justify-between items-center">
                                         <span className="text-[var(--text-muted)] text-sm">{language === 'nl' ? 'Laatst bijgewerkt' : 'Last Updated'}</span>
-                                        <span className="text-[var(--text-muted)] text-sm font-medium">13 Feb 2026</span>
+                                        <span className="text-[var(--text-muted)] text-sm font-medium">17 Feb 2026</span>
                                     </div>
                                 </div>
                             </div>
