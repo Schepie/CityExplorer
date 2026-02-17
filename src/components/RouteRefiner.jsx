@@ -19,7 +19,9 @@ const RouteRefiner = ({
     onSelectStopOption,  // callback when user selects a POI from results
     onStopsCountChange,
     onClose,
+    isLoading,
     setIsLoading,
+    loadingText,
     setLoadingText,
     primaryColor = '#3b82f6',
     onSpeak,
@@ -505,14 +507,17 @@ const RouteRefiner = ({
                                     {searchResults.map((poi, idx) => {
                                         const referencePoi = navPoints[parseInt(pendingStopLocation)];
                                         let distanceKm = null;
-                                        if (referencePoi && poi.lat && (poi.lng || poi.lon) && referencePoi.lat && (referencePoi.lng || referencePoi.lon)) {
+                                        const pLat = poi.lat !== undefined ? poi.lat : poi.latitude;
+                                        const pLng = poi.lng !== undefined ? poi.lng : (poi.lon || poi.longitude);
+                                        const rLat = referencePoi?.lat !== undefined ? referencePoi.lat : referencePoi?.latitude;
+                                        const rLng = referencePoi?.lng !== undefined ? referencePoi?.lng : (referencePoi?.lon || referencePoi?.longitude);
+
+                                        if (rLat !== undefined && rLng !== undefined && pLat !== undefined && pLng !== undefined) {
                                             const R = 6371; // Earth radius in km
-                                            const poiLng = poi.lng || poi.lon;
-                                            const refLng = referencePoi.lng || referencePoi.lon;
-                                            const dLat = (poi.lat - referencePoi.lat) * Math.PI / 180;
-                                            const dLon = (poiLng - refLng) * Math.PI / 180;
+                                            const dLat = (pLat - rLat) * Math.PI / 180;
+                                            const dLon = (pLng - rLng) * Math.PI / 180;
                                             const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                                                Math.cos(referencePoi.lat * Math.PI / 180) * Math.cos(poi.lat * Math.PI / 180) *
+                                                Math.cos(rLat * Math.PI / 180) * Math.cos(pLat * Math.PI / 180) *
                                                 Math.sin(dLon / 2) * Math.sin(dLon / 2);
                                             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
                                             distanceKm = R * c;
@@ -533,14 +538,14 @@ const RouteRefiner = ({
                                                     {/* Content */}
                                                     <div className="flex-1 min-w-0">
                                                         {/* Name - full width */}
-                                                        <h4 className="text-sm font-bold text-white mb-1.5 pr-2">{poi.name}</h4>
+                                                        <h4 className="text-sm font-bold text-white mb-1.5 pr-2">{poi.name || (language === 'nl' ? 'Onbekende plek' : 'Unknown place')}</h4>
 
                                                         {/* Type and distance row */}
                                                         <div className="flex items-center gap-2 flex-wrap">
                                                             <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
                                                                 {poi.type || poi.category || (pendingStopType === 'food' ? 'Restaurant' : 'Café')}
                                                             </span>
-                                                            {distanceKm !== null && (
+                                                            {distanceKm !== null && !isNaN(distanceKm) && (
                                                                 <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded whitespace-nowrap">
                                                                     +{distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m` : `${distanceKm.toFixed(1)}km`} {text.distanceLabel}
                                                                 </span>

@@ -16,6 +16,52 @@ import { apiFetch } from "../utils/api.js";
  */
 
 
+// Persistent module-level state for failure tracking (shares across instances)
+const degradedProviders = {
+    tavily: false,
+    overpass: false,
+    _lastUsageCheck: 0
+};
+
+/**
+ * Shared helper to check/update Tavily quota proactively
+ */
+async function checkTavilyQuota() {
+    // Only check once every 10 minutes to avoid spamming usage API
+    if (Date.now() - degradedProviders._lastUsageCheck < 600000) return;
+    degradedProviders._lastUsageCheck = Date.now();
+
+    try {
+        const response = await apiFetch('/api/tavily-usage');
+        if (response.ok) {
+            const usage = await response.json();
+            // Free tier usually has 1000 credits. If remaining < 5, disable.
+            if (usage.remaining_credits !== undefined && usage.remaining_credits < 5) {
+                console.warn(`[Tavily] Proactive Disable: Only ${usage.remaining_credits} credits left.`);
+                degradedProviders.tavily = true;
+            }
+        }
+    } catch (e) {
+        // If usage API fails, we don't necessarily disable search, just logs it
+        console.warn("[Tavily] Usage check failed:", e);
+    }
+}
+
+/**
+ * Shared helper to push critical logs to the server
+ */
+async function logRemote(level, message, context = '') {
+    try {
+        await apiFetch('/api/logs/push', {
+            method: 'POST',
+            body: JSON.stringify({ level, message, context: `PoiIntelligence: ${context}` })
+        });
+    } catch (e) {
+        // If logging itself fails, don't crash, just log locally
+        console.warn("Failed to push remote log:", e);
+    }
+}
+
 export class PoiIntelligence {
     constructor(config) {
         this.config = {
@@ -34,6 +80,66 @@ export class PoiIntelligence {
             "generic_web": 0.4
         };
         // SDK initialization removed.
+    }
+
+    // --- Caching Helpers ---
+    _getCacheKey(type, id, lang, variant = '') {
+        return `poi_${type}_${id}_${lang}${variant ? '_' + variant : ''}`;
+    }
+
+    _getLocalCache(key) {
+        try {
+            const item = localStorage.getItem(key);
+            if (!item) return null;
+            const parsed = JSON.parse(item);
+            // 60 Days Expiration (5184000000 ms)
+            if (Date.now() - parsed.timestamp > 5184000000) {
+                localStorage.removeItem(key);
+                console.log(`[Cache] Expired: ${key}`);
+                return null;
+            }
+            console.log(`[Cache] Hit (Local): ${key}`);
+            return parsed.data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _setLocalCache(key, data) {
+        try {
+            const payload = { data, timestamp: Date.now(), version: "1.0" };
+            localStorage.setItem(key, JSON.stringify(payload));
+        } catch (e) {
+            console.warn("Local Cache Write Error:", e);
+        }
+    }
+
+    async _getCloudCache(key) {
+        try {
+            const response = await apiFetch(`/api/cloud-cache?key=${encodeURIComponent(key)}`);
+            if (response.ok) {
+                return await response.json();
+            }
+        } catch (e) {
+            console.warn("Cloud Cache GET failure:", e);
+        }
+        return null; // Silent fail, fall back to AI
+    }
+
+    async _saveToCloud(key, data) {
+        try {
+            await apiFetch('/api/cloud-cache', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    key,
+                    data,
+                    language: this.config.language
+                })
+            });
+        } catch (e) {
+            console.error("Cloud Cache POST failure:", e);
+        }
     }
 
     /**
@@ -105,7 +211,7 @@ export class PoiIntelligence {
             // Internal/External signals
             this.fetchLocalArchive(poi.name),
             this.fetchWikipedia(poi.name, signal),
-            this.fetchGoogleSearch(poi, signal),
+            this.fetchWebSearch(poi, signal),
             this.fetchDuckDuckGo(poi.name, signal),
             this.fetchOverpassTags(poi, signal),
         ];
@@ -206,6 +312,19 @@ Genereer de introductie voor de tocht in ${this.config.city}.
      * Generates specific "How to reach" instructions (Transport/Parking) for a point.
      */
     async fetchArrivalInstructions(locationName, city, language = 'nl', signal = null) {
+        const cacheKey = this._getCacheKey('arrival', locationName.replace(/\s+/g, '_'), language);
+
+        // 1. Check Local Cache
+        const local = this._getLocalCache(cacheKey);
+        if (local) return local;
+
+        // 2. Check Cloud Cache
+        const cloud = await this._getCloudCache(cacheKey);
+        if (cloud) {
+            this._setLocalCache(cacheKey, cloud); // Sync back to local
+            return cloud;
+        }
+
         const prompt = `
 Je bent een lokale gids in ${city}. De gebruiker start zijn route aan: "${locationName}".
 GEEF SPECIFIEKE parkeer/reis instructies voor DEZE EXACTE locatie.
@@ -258,6 +377,13 @@ DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'En
                 let text = data.text || "";
                 // Strip Chain-of-Thought thinking blocks
                 text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+                // Save to caches
+                if (text) {
+                    this._setLocalCache(cacheKey, text);
+                    this._saveToCloud(cacheKey, text);
+                }
+
                 return text || null;
             } catch (e) {
                 if (e.name === 'AbortError') return null;
@@ -420,9 +546,45 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
 
     /**
+     * Helper: Check if short description is cached (sync)
+     */
+    getCachedShortDescription(poi) {
+        const cacheKey = this._getCacheKey('short', poi.id || poi.name.replace(/\s+/g, '_'), this.config.language);
+        return this._getLocalCache(cacheKey);
+    }
+
+    /**
+     * Helper: Check if full details are cached (sync)
+     */
+    getCachedFullDetails(poi) {
+        const cacheKey = this._getCacheKey('full', poi.id || poi.name.replace(/\s+/g, '_'), this.config.language, this.config.interests);
+        return this._getLocalCache(cacheKey);
+    }
+
+    /**
      * STAGE 1: Fast Fetch - Description Only
      */
     async fetchGeminiShortDescription(poi, signals, signal = null) {
+        const cacheKey = this._getCacheKey('short', poi.id || poi.name.replace(/\s+/g, '_'), this.config.language);
+
+        // 1. Check Local Cache
+        const local = this._getLocalCache(cacheKey);
+        if (local) {
+            console.log(`[Source] ${poi.name}: Local Cache Hit`);
+            return local;
+        }
+
+        // 2. Check Cloud Cache
+        const cloud = await this._getCloudCache(cacheKey);
+        if (cloud) {
+            console.log(`[Source] ${poi.name}: Cloud Cache Hit`);
+            this._setLocalCache(cacheKey, cloud);
+            return cloud;
+        }
+
+        // 3. API Call
+        console.log(`[Source] ${poi.name}: Fetching fresh data from AI...`);
+
         const contextData = signals.length > 0
             ? signals.map(s => `[Source: ${s.source}] ${s.content}`).join('\n\n')
             : "No external data signals found.";
@@ -493,7 +655,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 const analyzed = this.analyzeSignals(poi, signals || []);
                 const resolved = this.resolveConflicts(analyzed);
 
-                return {
+                const finalResult = {
                     short_description: result.description || "",
                     image: resolved.image,
                     images: resolved.images,
@@ -501,6 +663,12 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         short_description: result.description || "",
                     }
                 };
+
+                // Save to Cache
+                this._setLocalCache(cacheKey, finalResult);
+                this._saveToCloud(cacheKey, finalResult);
+
+                return finalResult;
             } catch (e) {
                 if (e.name === 'AbortError') throw e;
                 console.warn(`[AI] Attempt ${attempts + 1} failed:`, e);
@@ -514,10 +682,28 @@ Je MOET antwoorden met een JSON object in dit formaat:
     /**
      * STAGE 2: Deep Fetch - Full Details
      */
-    /**
-     * STAGE 2: Deep Fetch - Full Details
-     */
+
     async fetchGeminiFullDetails(poi, signals, shortDesc, signal = null) {
+        const cacheKey = this._getCacheKey('full', poi.id || poi.name.replace(/\s+/g, '_'), this.config.language, this.config.interests);
+
+        // 1. Check Local Cache
+        const local = this._getLocalCache(cacheKey);
+        if (local) {
+            console.log(`[Source] ${poi.name} (Full): Local Cache Hit`);
+            return local;
+        }
+
+        // 2. Check Cloud Cache
+        const cloud = await this._getCloudCache(cacheKey);
+        if (cloud) {
+            console.log(`[Source] ${poi.name} (Full): Cloud Cache Hit`);
+            this._setLocalCache(cacheKey, cloud);
+            return cloud;
+        }
+
+        // 3. API Call
+        console.log(`[Source] ${poi.name} (Full): Fetching fresh details from AI...`);
+
         const contextData = signals.length > 0
             ? signals.map(s => `[Source: ${s.source}] ${s.content} (Link: ${s.link})`).join('\n\n')
             : "No external data signals found.";
@@ -549,6 +735,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
                         ### OUTPUT JSON (ALLEEN JSON, GEEN MARKDOWN, GEEN UITLEG)
                         Zorg dat de JSON valide is. Geen tekst voor of na de JSON.
+                        Gebruik geen enters (\n) binnen strings tenzij noodzakelijk. Escape dubbele quotes (\") correct.
                         {
                             "standard_version": {
                                 "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
@@ -620,15 +807,25 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         result = JSON.parse(cleanText);
                     }
                 } catch (jsonError) {
-                    console.warn("JSON Parse Failed, falling back to raw text:", cleanText.substring(0, 50) + "...");
-                    // Fallback structure
+                    console.warn("JSON Parse Failed:", jsonError);
+                    console.warn("Raw Text was:", cleanText.substring(0, 100) + "...");
+
+                    // CRITICAL FIX: If the text looks like it was attempting to be JSON (contains brackets or keys),
+                    // DO NOT use it as a plain text description. It creates a bad user experience.
+                    // Instead, return null so the system falls back to Wikipedia/Google data.
+                    if (cleanText.includes('{') || cleanText.includes('"description"')) {
+                        return null;
+                    }
+
+                    // Only if it really looks like plain text (no JSON artifacts), accept it as a fallback.
+                    // This handles cases where the model ignores instructions and just chats.
                     result = {
                         standard_version: { description: cleanText, confidence: "Laag" },
                         extended_version: { full_description: cleanText, full_description_confidence: "Laag" }
                     };
                 }
 
-                return {
+                const finalResult = {
                     structured_info: {
                         short_description: shortDesc || "", // Preserve short desc
                         full_description: result.extended_version?.full_description || result.standard_version?.description || "",
@@ -646,6 +843,12 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     },
                     ...this.resolveConflicts(this.analyzeSignals(poi, signals || []))
                 };
+
+                // Save to Cache
+                this._setLocalCache(cacheKey, finalResult);
+                this._saveToCloud(cacheKey, finalResult);
+
+                return finalResult;
             } catch (e) {
                 if (e.name === 'AbortError') throw e;
                 console.warn(`[AI] Full Details attempt ${attempts + 1} failed:`, e);
@@ -788,27 +991,36 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
         // OPTIMIZATION: Fetch all named objects within 50m instead of using slow Regex on server
         // We filter locally in JS which is much faster for small datasets
-        const query = `[out:json][timeout:4];nwr(around:50,${poi.lat},${poi.lng})["name"];out tags;`;
+        const query = `[out:json][timeout:12];nwr(around:50,${poi.lat},${poi.lng})["name"];out tags;`;
 
         const servers = [
             'https://overpass-api.de/api/interpreter',
             'https://overpass.openstreetmap.fr/api/interpreter',
             'https://overpass.kumi.systems/api/interpreter',
-            'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+            'https://overpass.osm.ch/api/interpreter'
         ];
 
         let attempts = 0;
         const maxAttempts = servers.length; // Try each server once
+        // Randomize starting server to avoid hammering the first one
+        let serverIndex = Math.floor(Math.random() * servers.length);
+
+        if (degradedProviders.overpass) return null;
 
         while (attempts < maxAttempts) {
-            const serverIndex = attempts % servers.length;
             const currentServer = servers[serverIndex];
+            // Rotate to next server for subsequent attempts
+            serverIndex = (serverIndex + 1) % servers.length;
             const url = `${currentServer}?data=${encodeURIComponent(query)}`;
 
             try {
                 const controller = new AbortController();
-                // Short timeout for fast failover
-                const timeoutId = setTimeout(() => controller.abort(), 4000);
+                // Timeout 12s to match Overpass standard
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+                // Add jitter to prevent thundering herd (0-1000ms delay)
+                const jitter = Math.floor(Math.random() * 1000);
+                await new Promise(r => setTimeout(r, jitter));
 
                 if (externalSignal) {
                     if (externalSignal.aborted) {
@@ -818,7 +1030,13 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
                 }
 
-                const res = await fetch(url, { signal: controller.signal });
+                const res = await fetch(url, {
+                    signal: controller.signal,
+                    headers: {
+                        'User-Agent': 'CityExplorer/1.0 (Student Project; educational use)',
+                        'Accept': 'application/json'
+                    }
+                });
                 clearTimeout(timeoutId);
 
                 if (res.status === 429 || res.status >= 500) {
@@ -842,7 +1060,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 if (data.elements && data.elements.length > 0) {
                     // Client-side fuzzy matching
                     // Find the element that best matches the POI name
-                    const targetName = poi.name.toLowerCase();
+                    const targetName = (poi.name || "").toLowerCase();
 
                     const match = data.elements.find(e => {
                         const name = (e.tags.name || "").toLowerCase();
@@ -886,6 +1104,11 @@ Je MOET antwoorden met een JSON object in dit formaat:
             attempts++;
             // No sleep between attempts for maximum speed
         }
+
+        // If we reach here, all servers failed
+        console.error("[Overpass] All servers failed. Marking provider as degraded.");
+        logRemote('error', 'All Overpass servers failed. Circuit breaker active.', `fetchOverpassTags [${this.config.city}]`);
+        degradedProviders.overpass = true;
         return null;
     }
 
@@ -906,7 +1129,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
             }
         };
 
-        const n = name.toLowerCase();
+        const n = (name || "").toLowerCase();
         for (const [key, data] of Object.entries(ARCHIVE)) {
             if (n.includes(key)) {
                 return {
@@ -929,7 +1152,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
             let searchRes = await fetch(url, { signal }).then(r => r.json());
 
             // Strategy 2: Retry with raw name if Context failed (or returned just the city)
-            if (!searchRes.query?.search?.length || (searchRes.query.search.length > 0 && searchRes.query.search[0].title.toLowerCase() === this.config.city.toLowerCase())) {
+            const cityLower = (this.config.city || "").toLowerCase();
+            if (!searchRes.query?.search?.length || (searchRes.query.search.length > 0 && searchRes.query.search[0].title.toLowerCase() === cityLower)) {
                 query = name;
                 url = `https://${this.config.language}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
                 searchRes = await fetch(url, { signal }).then(r => r.json());
@@ -939,7 +1163,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
             const bestMatch = searchRes.query.search[0];
             // Semantic Check: Reject if title is JUST the City Name (Generic)
-            if (bestMatch.title.toLowerCase() === this.config.city.toLowerCase()) return null;
+            if (bestMatch.title.toLowerCase() === cityLower) return null;
 
             const detailsUrl = `https://${this.config.language}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&exintro&explaintext&piprop=original&redirects=1&titles=${encodeURIComponent(bestMatch.title)}&format=json&origin=*`;
             const details = await fetch(detailsUrl, { signal }).then(r => r.json());
@@ -1023,7 +1247,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
     // --- Analysis & Conflict Resolution ---
 
-    async fetchGoogleSearch(poi, externalSignal = null) {
+    async fetchWebSearch(poi, externalSignal = null) {
         try {
             const name = poi.name;
             const cleanName = name.replace(/\s*\([^)]*\)/g, '').trim(); // Remove " (Het Vlonderpad)"
@@ -1063,12 +1287,40 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
             let res = { items: [] };
 
+            // Proactively check quota if using Tavily
+            if (this.config.searchProvider === 'tavily' && !degradedProviders.tavily) {
+                checkTavilyQuota(); // Non-blocking
+            }
+
             // Try queries in order until we get a hit
             for (const q of queriesToTry) {
                 try {
-                    const endpoint = this.config.searchProvider === 'google' ? '/api/google-search' : '/api/tavily';
-                    const searchUrl = `${endpoint}?q=${encodeURIComponent(q)}&num=5`;
-                    const attempt = await apiFetch(searchUrl, { signal: externalSignal }).then(r => r.json());
+                    let provider = this.config.searchProvider;
+
+                    // CIRCUIT BREAKER: If Tavily is degraded, force Google silently
+                    if (provider === 'tavily' && degradedProviders.tavily) {
+                        provider = 'google';
+                    }
+
+                    let endpoint = provider === 'google' ? '/api/google-search' : '/api/tavily';
+                    let searchUrl = `${endpoint}?q=${encodeURIComponent(q)}&num=5`;
+                    let response = await apiFetch(searchUrl, { signal: externalSignal });
+                    let attempt = await response.json().catch(() => ({ error: "Parsing failed" }));
+
+                    if (provider !== 'google' && (response.status !== 200 || attempt.error)) {
+                        console.warn(`[Search] Tavily failed (${response.status}). marking as DEGRADED.`);
+                        logRemote('warning', `Tavily Search failed with status ${response.status}. Marking as degraded.`, `fetchWebSearch [${q}]`);
+
+                        // Mark as degraded if it's a structural error (Quota, Authentication, or Server Down)
+                        if (response.status >= 400 || attempt.error) {
+                            degradedProviders.tavily = true;
+                        }
+
+                        endpoint = '/api/google-search';
+                        searchUrl = `${endpoint}?q=${encodeURIComponent(q)}&num=5`;
+                        response = await apiFetch(searchUrl, { signal: externalSignal });
+                        attempt = await response.json().catch(() => ({ error: "Google Parsing failed" }));
+                    }
 
                     // Simple Validation: If we got items, assume success and stop.
                     if (attempt.items && attempt.items.length > 0) {
@@ -1084,8 +1336,14 @@ Je MOET antwoorden met een JSON object in dit formaat:
             // Safety: Only for multi-word names to avoid searching for generic terms like "Park" globally.
             if ((!res.items || res.items.length === 0) && name.trim().split(/\s+/).length > 1) {
                 console.log(`POI Intelligence: Fallback to name-only search for "${name}"`);
-                const endpoint = this.config.searchProvider === 'google' ? '/api/google-search' : '/api/tavily';
-                url = `${endpoint}?q=${encodeURIComponent(name)}&num=5`;
+
+                let provider = this.config.searchProvider;
+                if (provider === 'tavily' && degradedProviders.tavily) {
+                    provider = 'google';
+                }
+
+                const endpoint = provider === 'google' ? '/api/google-search' : '/api/tavily';
+                const url = `${endpoint}?q=${encodeURIComponent(name)}&num=5`;
                 res = await apiFetch(url).then(r => r.json());
             }
 
@@ -1138,6 +1396,9 @@ Je MOET antwoorden met een JSON object in dit formaat:
     // --- Analysis & Conflict Resolution ---
 
     analyzeSignals(poi, signals) {
+        if (!poi) return [];
+        const poiName = (poi.name || "Unknown Location").toLowerCase();
+
         return signals.map(signal => {
             // Heuristic: Penalize generic city descriptions
             let score = signal.confidence || 0.5;
@@ -1146,7 +1407,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
             // GENERIC FIX: Semantic Domain Matching
             // If the URL contains the POI name, it's highly likely the official site
-            if (this.isLikelyOfficialLink(poi.name, url)) {
+            if (this.isLikelyOfficialLink(poiName, url)) {
                 score = 0.95; // Maximum trust for official sites
             }
 

@@ -43,6 +43,7 @@ We have detailed documentation available in the `docs/` folder:
 *   **🧠 AI "Brain"**: Uses Large Language Models to interpret intent and rewrite POI descriptions.
 *   **🎧 Auto-Audio Guide**: Automatically reads stories when you approach a landmark.
 *   **🗑️ Dynamic Re-routing**: Remove a stop, and the route instantly recalculates.
+*   **✏️ Route Refinement**: Drag and drop to reorder stops, or click on the map to add new points significantly.
 *   **🌍 Universal Coverage**: Works anywhere with OpenStreetMap data.
 
 ## License

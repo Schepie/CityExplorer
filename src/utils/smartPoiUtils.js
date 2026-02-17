@@ -1,8 +1,28 @@
 
 /**
+ * Helper to safely extract coordinates
+ */
+const getLat = (p) => {
+    if (!p) return NaN;
+    if (typeof p.lat === 'number' && !isNaN(p.lat)) return p.lat;
+    if (typeof p.latitude === 'number' && !isNaN(p.latitude)) return p.latitude;
+    return parseFloat(p.lat || p.latitude || NaN);
+};
+const getLng = (p) => {
+    if (!p) return NaN;
+    if (typeof p.lng === 'number' && !isNaN(p.lng)) return p.lng;
+    if (typeof p.lon === 'number' && !isNaN(p.lon)) return p.lon;
+    if (typeof p.longitude === 'number' && !isNaN(p.longitude)) return p.longitude;
+    return parseFloat(p.lng || p.lon || p.longitude || NaN);
+};
+
+/**
  * Haversine distance between two points in km
  */
 export const getDistance = (lat1, lon1, lat2, lon2) => {
+    if (lat1 === undefined || lon1 === undefined || lat2 === undefined || lon2 === undefined ||
+        lat1 === null || lon1 === null || lat2 === null || lon2 === null ||
+        isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) return 0;
     const R = 6371; // km
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
@@ -44,7 +64,7 @@ export async function find_places_near(getCombinedPOIs, near_lat, near_lng, cate
  * route_distance_time: Basic point-to-point estimation
  */
 export function route_distance_time(origin, destination, mode = 'walk') {
-    const d = getDistance(origin.lat, origin.lng, destination.lat, destination.lng);
+    const d = getDistance(getLat(origin), getLng(origin), getLat(destination), getLng(destination));
     const t = getTimeEstimation(d, mode);
     return { distance_m: Math.round(d * 1000), duration_min: Math.round(t * 10) / 10 };
 }
@@ -53,22 +73,26 @@ export function route_distance_time(origin, destination, mode = 'walk') {
  * added_detour_if_inserted_after: Calculates how much distance is added by inserting a stop
  */
 export function added_detour_if_inserted_after(route, insert_after_index, new_stop, mode = 'walk') {
+    if (!route || !route.center || !new_stop) return { added_distance_m: 0, added_duration_min: 0 };
+
     const pois = route.pois || [];
     const startLoc = { lat: route.center[0], lng: route.center[1] };
 
     const prev = (insert_after_index === -1) ? startLoc : pois[insert_after_index];
     const next = pois[insert_after_index + 1] || null;
 
-    const d1 = getDistance(prev.lat, prev.lng, new_stop.lat, new_stop.lng);
+    if (!prev || getLat(prev) === undefined || getLng(prev) === undefined) return { added_distance_m: 0, added_duration_min: 0 };
 
-    if (!next) {
+    const d1 = getDistance(getLat(prev), getLng(prev), getLat(new_stop), getLng(new_stop));
+
+    if (!next || getLat(next) === undefined || getLng(next) === undefined) {
         // If it's the end of a one-way trip, detour is just the leg to the new stop
         // (Assuming the journey ends there now)
         return { added_distance_m: Math.round(d1 * 1000), added_duration_min: Math.round(getTimeEstimation(d1, mode) * 10) / 10 };
     }
 
-    const d2 = getDistance(new_stop.lat, new_stop.lng, next.lat, next.lng);
-    const base = getDistance(prev.lat, prev.lng, next.lat, next.lng);
+    const d2 = getDistance(getLat(new_stop), getLng(new_stop), getLat(next), getLng(next));
+    const base = getDistance(getLat(prev), getLng(prev), getLat(next), getLng(next));
 
     const addedKm = d1 + d2 - base;
     return {
@@ -81,6 +105,7 @@ export function added_detour_if_inserted_after(route, insert_after_index, new_st
  * distance_to_next_pois: Finds nearby POIs further along the route
  */
 export function distance_to_next_pois(candidate, next_pois, mode = 'walk') {
+    if (!candidate || !next_pois) return [];
     return next_pois.map(poi => {
         const res = route_distance_time(candidate, poi, mode);
         return {

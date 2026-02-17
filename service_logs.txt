@@ -1,0 +1,7 @@
+[2026-02-16T15:49:50.961Z] [INFO] Log file cleared by user.
+[2026-02-16T15:53:26.689Z] [WARNING] (Client: PoiIntelligence: fetchWebSearch [Florian Hasselt, België]) Tavily Search failed with status 432. Marking as degraded.
+[2026-02-16T16:04:44.552Z] [WARNING] (Client: PoiIntelligence: fetchWebSearch [LePopulaire Berlin]) Tavily Search failed with status 432. Marking as degraded.
+[2026-02-16T16:07:33.113Z] [WARNING] (Client: PoiIntelligence: fetchWebSearch [The blnd berlijn]) Tavily Search failed with status 432. Marking as degraded.
+[2026-02-16T16:08:41.847Z] [WARNING] (Client: PoiIntelligence: fetchWebSearch [LePopulaire Berlin]) Tavily Search failed with status 432. Marking as degraded.
+[2026-02-16T20:02:32.365Z] [WARNING] (Client: PoiIntelligence: fetchWebSearch [Macca Club Hasselt]) Tavily Search failed with status 432. Marking as degraded.
+[2026-02-16T20:03:53.438Z] [WARNING] (Client: PoiIntelligence: fetchWebSearch [Oishii Sushi Hasselt, België]) Tavily Search failed with status 432. Marking as degraded.

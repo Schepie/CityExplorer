@@ -1,0 +1,19 @@
+{
+  "data": {
+    "short_description": "Het Kunstuur in Hasselt biedt een unieke kunstervaring in het historisch stadhuis. Masterpieces van Belgische kunstenaars uit de periode 1850-1950 worden tentoongesteld met unieke verlichting en muziek van Dirk Brossé. Een uur lang wordt de bezoeker ondergedompeld in kunst. Het Kunstuur is ook beschikbaar in andere locaties zoals Roeselare en Mechelen.",
+    "image": "https://upload.wikimedia.org/wikipedia/commons/0/0f/Hans_Bourlon.jpg",
+    "images": [
+      "https://upload.wikimedia.org/wikipedia/commons/0/0f/Hans_Bourlon.jpg",
+      "https://www.chapeaumagazine.com/wp-content/uploads/2023/09/het-Kunstuur-Hasselt-scaled.jpg?v=1694437621",
+      "https://www.chapeaumagazine.com/wp-content/uploads/2023/09/Kunstuur-Afbeelding-Uitgelichte-afbeelding.jpg",
+      "https://hetkunstuur.com/sites/default/files/styles/location_image/public/20240625_103102~2.jpg?itok=RruII9LR",
+      "https://hetkunstuur.com/sites/default/files/styles/location_image/public/20230108_142448.jpg?itok=pyULZI5J",
+      "https://images.vrt.be/vrtnws_share/2022/04/01/c21109a1-b1a1-11ec-b07d-02b7b76bf47f.jpg"
+    ],
+    "structured_info": {
+      "short_description": "Het Kunstuur in Hasselt biedt een unieke kunstervaring in het historisch stadhuis. Masterpieces van Belgische kunstenaars uit de periode 1850-1950 worden tentoongesteld met unieke verlichting en muziek van Dirk Brossé. Een uur lang wordt de bezoeker ondergedompeld in kunst. Het Kunstuur is ook beschikbaar in andere locaties zoals Roeselare en Mechelen."
+    }
+  },
+  "timestamp": 1771064463287,
+  "version": "1.0"
+}

@@ -9,23 +9,23 @@ Tijdens het wandelen of fietsen fungeert de app als een echte gids: hij vertelt 
 
 ## Hoe begin ik?
 
-### 1. Starten
-Zodra je de app opent, zie je de kaart en aan de linkerkant (of onderaan op mobiel) het controlepaneel.
-De app begint in de **"AI Planner"** modus. Dit is je gesprekspartner.
+### 1. Stad Kiezen (Splash Screen)
+Zodra je de app opent, kom je op het **"Explore the World"** scherm.
+*   Typ de naam van een stad in (bijv. "Tokio" of "Parijs").
+*   Of kies een van de populaire steden onderaan.
+*   Klik op **"Let's Go"**.
 
-### 2. Praten met de Gids
-In het vakje "Hoe kan ik je trip nog verbeteren?" zie je een **Microfoon** knopje.
-*   Klik op de microfoon.
-*   Je browser kan om toestemming vragen voor je microfoon; klik op "Toestaan".
-*   Zeg gewoon wat je wilt doen. Bijvoorbeeld:
-    *   *"Ik wil wandelen in Hasselt, ongeveer 5 kilometer."*
-    *   *"Maak een fietsroute door Gent langs historische gebouwen."*
-    *   *"Ik zoek een korte route van 30 minuten."*
-*   Stop met praten. De app "hoort" wanneer je klaar bent, denkt even na (je ziet 3 puntjes) en geeft dan antwoord.
+### 2. Je planmethode kiezen
+Nadat je een stad hebt gekozen, verschijnt het controlepaneel aan de linkerkant. Je kunt kiezen uit drie manieren om je route te maken:
 
-### 3. De Route Bekijken
-Als de Gids (BRAIN) genoeg informatie heeft, sluit het chatvenster automatisch en zie je de blauwe lijn van je route op de kaart.
-Aan de zijkant zie je nu een lijst van alle stops (POI's - Point of Interests).
+*   **AI Gids**: Praat of typ in natuurlijke taal. Klik op de microfoon 🎙️ en zeg bijvoorbeeld: *"Ik wil een wandeling van 5km door Gent langs de leukste koffiebars."*
+*   **Vragenlijst**: Vul een simpel formulier in. Kies je interesses, de tripwijze (wandelen/fietsen) en de gewenste afstand.
+*   **Zelf Kiezen**: Klik op de knop **"Duid aan op Kaart"**. Klik vervolgens op de kaart om zelf bezienswaardigheden toe te voegen aan je route.
+
+### 3. De Trip Starten
+*   Bij de **AI Gids** en **Vragenlijst** klik je op **"Trip Genereren"**.
+*   De app berekent de beste route en toont deze als een blauwe lijn op de kaart.
+*   Alle bezienswaardigheden (POI's) verschijnen in een lijst aan de zijkant. van alle stops (POI's - Point of Interests).
 
 ---
 
@@ -34,32 +34,33 @@ Aan de zijkant zie je nu een lijst van alle stops (POI's - Point of Interests).
 ### Lezen of Luisteren?
 *   **Aanklikken**: Klik op een stop in de lijst om details te zien en het verhaal te lezen.
 *   **Luisteren**: Klik op het luidspreker-icoontje (🔊) bij een stop om het verhaal te laten voorlezen.
-*   **Auto Audio**: Bovenaan de lijst staat een knop **"AUDIO UIT / AAN"**. Zet deze op **AAN**. De app leest nu *automatisch* het verhaal voor wanneer je in de buurt komt van een bezienswaardigheid (of als je er op klikt).
+*   **Auto Audio**: Bovenaan de lijst staat een knop **"AUDIO UIT / AAN"**. Zet deze op **AAN**. De app leest nu *automatisch* het verhaal voor wanneer je binnen 40 meter van een bezienswaardigheid komt.
+*   **Pauzeren**: Wil je even geen nieuwe stops laten genereren? Klik op de **Pauze** knop naast de voortgangsbalk om het zoeken naar nieuwe bezienswaardigheden te stoppen.
 
 ### Route Aanpassen
-Vind je een stop niet leuk?
-1.  Beweeg je muis over het kaartje in de lijst.
-2.  Er verschijnt een **vuilbakje** 🗑️ rechtsboven.
-3.  Klik erop en bevestig.
-4.  De app verwijdert het punt en berekent direct de snelste route tussen de overgebleven punten.
+Je kunt je route simpel aanpassen via de **modus-knoppen** bovenaan de lijst:
+*   **Volgorde wijzigen**: Versleep de stops in de lijst om de volgorde te veranderen.
+*   **Verwijderen**: Gebruik het **vuilbakje** 🗑️ bij een stop.
+*   **Pas Route Aan**: Klik op de knop **"Pas Route Aan"** om de route te laten herberekenen, de afstand te wijzigen of de lus-modus aan te passen.
+*   **Zelf Kiezen**: Schakel over naar de tab **"Zelf Kiezen"** om handmatig punten op de kaart toe te voegen.
 
 ### De Gids iets vragen
-Wil je de route helemaal omgooien?
-1.  Klik op de knop **"PRAAT MET JE GIDS"** (onderaan de lijst).
+Wil je de route helemaal omgooien of iets extra's toevoegen?
+1.  Klik op de knop **"AI Gids"** bovenaan de lijst.
 2.  De chat opent weer.
-3.  Zeg bijvoorbeeld: *"Ik wil toch fietsen in plaats van wandelen"* of *"Voeg een pauze toe bij een koffiebar"*.
+3.  Zeg bijvoorbeeld: *"Ik wil toch fietsen in plaats van wandelen"* of *"Voeg een pauze toe bij een leuke koffiebar in de buurt"*.
 
 ---
 
 ## Problemen Oplossen
 
 *   **De app reageert niet op mijn stem**
-    *   Controleer of je microfoon aanstaat.
+    *   Controleer of je microfoon aanstaat en je browser toestemming heeft.
     *   Probeer de pagina te verversen.
-    *   Je kunt ook gewoon typen in het tekstvak!
+    *   Je kunt ook gewoon typen in het tekstvak van de AI Gids!
 *   **Ik hoor geen geluid**
     *   Controleer of het volume van je toestel open staat.
-    *   Klik eenmaal op een luidsprekertje om de audio te "activeren" (browsers blokkeren soms geluid dat uit het niets start).
+    *   Klik eenmaal op een luidsprekertje om de audio te "activeren" (browsers blokkeren soms automatisch afspelend geluid).
 *   **De locatie klopt niet**
     *   Druk op het vizier-icoontje op de kaart om terug te centreren op je positie.
 

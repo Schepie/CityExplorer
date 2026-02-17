@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.0] - 2026-02-14
+
+### Added
+-   **Route Refinement**: Added drag-and-drop functionality to reorder route points.
+-   **Map Point Picking**: Users can now click directly on the map to add new stops.
+-   **Auto-POI Activation**: POIs now automatically open and narrate when the user is within a 40m radius.
+-   **POI Control**: Added Play/Pause controls for POI fetching to manage data usage and performance.
+
+### Fixed
+-   **Foursquare Integration**: Resolved 401 Unauthorized errors by fixing the API proxy and authentication headers.
+-   **MapLibre Warnings**: Fixed console warnings regarding missing images and geolocation permissions.
+-   **Navigation Bugs**: Resolved `ReferenceError` in spoken navigation and coordinate validation issues.
+-   **UI Glitches**: Fixed polygon update issues on the map and made the "About" section static in settings.
+
 ## [3.1.1] - 2026-02-12
 
 ### Added

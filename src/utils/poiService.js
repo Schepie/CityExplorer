@@ -142,7 +142,7 @@ const buildOverpassQuery = (bbox, filters) => {
     const unionParts = filters.map(filter => `nwr${filter}(${bboxStr});`).join('\n            ');
 
     const query = `
-        [out:json][timeout:90];
+        [out:json][timeout:12];
         (
             ${unionParts}
         );
@@ -273,34 +273,64 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, l
     // Build Overpass query
     const query = buildOverpassQuery(bbox, tags);
 
+    // CACHE CHECK (Local Storage)
+    // We cache based on the generated Query string, which is unique to bbox + interest
+    const cacheKey = `overpass_search_${interest}_${bbox.join('_')}`;
+    try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+            const parsed = JSON.parse(cached);
+            // Cache valid for 24 hours (86400000 ms) for search results
+            if (Date.now() - parsed.timestamp < 86400000) {
+                console.log(`[Overpass] Cache Hit for "${interest}"`);
+                return parsed.data;
+            } else {
+                localStorage.removeItem(cacheKey);
+            }
+        }
+    } catch (e) {
+        console.warn("Cache read error", e);
+    }
+
     // List of Overpass servers for failover
     const servers = [
         'https://overpass-api.de/api/interpreter',
         'https://overpass.openstreetmap.fr/api/interpreter',
         'https://overpass.kumi.systems/api/interpreter',
-        'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+        'https://overpass.osm.ch/api/interpreter'
     ];
 
     let attempts = 0;
-    const maxAttempts = 5;
+    const maxAttempts = servers.length; // Try each server once
+
+    // Randomize starting server to avoid hammering the first one
+    let serverIndex = Math.floor(Math.random() * servers.length);
 
     while (attempts < maxAttempts) {
-        // Round-robin or random server selection to distribute load?
-        // Or strictly failover? Let's use simple failover:
-        // Attempt 0 -> Server 0
-        // Attempt 1 -> Server 1
-        // Attempt 2 -> Server 0 (Retry) ...
-        const serverIndex = attempts % servers.length;
         const currentServer = servers[serverIndex];
+        // Rotate to next server for subsequent attempts
+        serverIndex = (serverIndex + 1) % servers.length;
+
         const url = `${currentServer}?data=${encodeURIComponent(query)}`;
 
         try {
             const controller = new AbortController();
-            // Increased timeout to 60s (was 120s)
-            const timeoutId = setTimeout(() => controller.abort(), 60000);
+            // Timeout 12s to match Overpass standard
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+            // Add jitter to prevent thundering herd (0-1000ms delay)
+            const jitter = Math.floor(Math.random() * 1000);
+            await new Promise(r => setTimeout(r, jitter));
 
             console.log(`Querying Overpass Server: ${currentServer} (Attempt ${attempts + 1})`);
-            const res = await fetch(url, { signal: controller.signal });
+
+            const res = await fetch(url, {
+                signal: controller.signal,
+                headers: {
+                    'User-Agent': 'CityExplorer/1.0 (Student Project; educational use)',
+                    'Accept': 'application/json'
+                }
+            });
             clearTimeout(timeoutId);
 
             // Handle Rate Limiting (429) or Server Error (5xx)
@@ -334,6 +364,15 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, l
             // Success log
             if (pois.length > 0) {
                 console.log(`Overpass API found ${pois.length} POIs for "${interest}"`);
+                // CACHE WRITE
+                try {
+                    localStorage.setItem(cacheKey, JSON.stringify({
+                        data: pois,
+                        timestamp: Date.now()
+                    }));
+                } catch (e) {
+                    console.warn("Cache write error (quota?)", e);
+                }
             }
             return pois;
 

@@ -13,13 +13,12 @@ import { getBestVoice } from '../utils/speechUtils';
 
 // Constants
 // Constants
-// const MAP_STYLE = 'https://tiles.openfreemap.org/styles/bright';
-// Constants
+const STYLE_OPENFREEMAP = 'https://tiles.openfreemap.org/styles/bright';
+const STYLE_OPENFREEMAP_LIBERTY = 'https://tiles.openfreemap.org/styles/liberty';
 // Use MapTiler if key is present, otherwise fallback to Carto Voyager
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
 // Base styles
 const STYLE_CARTO = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
-const STYLE_MAPTILER_STREETS = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
 const STYLE_MAPTILER_SATELLITE = `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`;
 
 const EMPTY_ARRAY = [];
@@ -84,7 +83,7 @@ const MapLibreContainer = ({
     const [simulationSpeed, setSimulationSpeed] = useState(1);
     const [nearbyPoiIds] = useState(new Set());
     const [navigationPath, setNavigationPath] = useState(null);
-    const [is3DMode, setIs3DMode] = useState(true);
+    const [is3DMode, setIs3DMode] = useState(false);
     // Style Mode: 'map' or 'satellite'
     const [styleMode, setStyleMode] = useState('map');
     const [currentSpeed, setCurrentSpeed] = useState(0);
@@ -260,12 +259,18 @@ const MapLibreContainer = ({
 
     const routeGeoJson = useMemo(() => {
         if (!routePath || routePath.length < 2) return null;
-        const validCoords = sanitizePath(routePath, 'routePath').map(p => [p[1], p[0]]);
+        // Strict mapping with null checks before sanitizePath
+        const mapped = routePath.map(p => {
+            const lat = typeof p[0] === 'number' ? p[0] : parseFloat(p[0]);
+            const lng = typeof p[1] === 'number' ? p[1] : parseFloat(p[1]);
+            return [lng, lat];
+        });
+        const validCoords = sanitizePath(mapped, 'routePath');
         if (validCoords.length < 2) return null;
         return {
             type: 'Feature',
             geometry: { type: 'LineString', coordinates: validCoords },
-            properties: { id: 'route' } // Ensure non-null properties
+            properties: { id: 'route' }
         };
     }, [routePath]);
 
@@ -275,7 +280,7 @@ const MapLibreContainer = ({
         if (validCoords.length < 2) return null;
 
         let displayCoords = validCoords;
-        if (isNavigating && userLocation && isValidCoord([userLocation.lng, userLocation.lat])) {
+        if (isNavigating && userLocation && typeof userLocation.lng === 'number' && typeof userLocation.lat === 'number') {
             let minD = Infinity;
             let closestIdx = 0;
             for (let i = 0; i < validCoords.length; i++) {
@@ -291,7 +296,7 @@ const MapLibreContainer = ({
         return {
             type: 'Feature',
             geometry: { type: 'LineString', coordinates: displayCoords },
-            properties: { id: 'nav' } // Ensure non-null properties
+            properties: { id: 'nav' }
         };
     }, [navigationPath, userLocation, isNavigating]);
 
@@ -302,7 +307,11 @@ const MapLibreContainer = ({
             setPathDistances([]);
             return;
         }
-        const coordinates = routePath.map(p => [p[1], p[0]]);
+        const coordinates = sanitizePath(routePath.map(p => {
+            const lat = typeof p[0] === 'number' ? p[0] : parseFloat(p[0]);
+            const lng = typeof p[1] === 'number' ? p[1] : parseFloat(p[1]);
+            return [lng, lat];
+        }), 'navigationPathEffect');
         let total = 0;
         const distances = [0];
         for (let i = 0; i < coordinates.length - 1; i++) {
@@ -667,6 +676,17 @@ const MapLibreContainer = ({
 
     const onStyleImageMissing = React.useCallback((e) => {
         const id = e.id;
+        // Fix: MapLibre warns if we just return. We must add a dummy image to silence it.
+        if (!id || id.trim() === '') {
+            const map = e.target;
+            if (!map.hasImage(id)) {
+                // 1x1 transparent pixel
+                const pixel = new Uint8Array(4); // [0,0,0,0]
+                map.addImage(id, { width: 1, height: 1, data: pixel }, { pixelRatio: 1 });
+            }
+            return;
+        }
+
         const map = e.target;
         if (map.hasImage(id)) return;
 
@@ -715,9 +735,19 @@ const MapLibreContainer = ({
 
     // Determine current Map Style URL
     const currentMapStyle = useMemo(() => {
-        if (!MAPTILER_KEY) return STYLE_CARTO;
-        return styleMode === 'satellite' ? STYLE_MAPTILER_SATELLITE : STYLE_MAPTILER_STREETS;
-    }, [styleMode]);
+        // 1. Satellite always uses MapTiler (if key is present)
+        if (styleMode === 'satellite' && MAPTILER_KEY) {
+            return STYLE_MAPTILER_SATELLITE;
+        }
+
+        // 2. Use Liberty style in 3D mode if NOT in satellite mode
+        if (is3DMode) {
+            return STYLE_OPENFREEMAP_LIBERTY;
+        }
+
+        // 3. Default to OpenFreeMap Bright (Fast, High-performance, Keyless)
+        return STYLE_OPENFREEMAP;
+    }, [styleMode, is3DMode]);
 
     return (
         <div className="relative h-full w-full glass-panel overflow-hidden border-2 border-primary/20 shadow-2xl shadow-primary/10">

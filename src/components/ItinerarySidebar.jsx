@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { PoiIntelligence } from '../services/PoiIntelligence';
+import { apiFetch } from '../utils/api';
 import { SmartAutoScroller } from '../utils/AutoScroller';
 import ConfirmationModal from './ConfirmationModal';
 import RouteRefiner from './RouteRefiner';
@@ -846,8 +847,9 @@ const hexToRgba = (hex, alpha) => {
 };
 
 const getPoiCategoryIcon = (poi) => {
+    if (!poi) return null;
     const desc = (poi.description || "").toLowerCase();
-    const name = poi.name.toLowerCase();
+    const name = (poi.name || "").toLowerCase();
 
     // Mapping of keywords to Lucide-style icons
     if (desc.includes('restaurant') || desc.includes('food') || desc.includes('bistro') || desc.includes('brasserie')) {
@@ -907,7 +909,8 @@ const CityWelcomeCard = ({ city, center, stats, language, pois, speakingId, isSp
             .catch(e => console.warn("Weather Failed:", e));
 
         // 2. City Description via Intelligence Engine
-        const actualDist = stats?.totalDistance ? `${stats.totalDistance} km` : `${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}`;
+        const totalDistNum = stats?.totalDistance ? parseFloat(stats.totalDistance) : 0;
+        const actualDist = totalDistNum > 0 ? `${totalDistNum.toFixed(1)} km` : `${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}`;
         const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (Total Length: ${actualDist}, ${isRoundtrip ? 'roundtrip' : 'one-way'})`;
         const engine = new PoiIntelligence({
             city: city,
@@ -1492,6 +1495,10 @@ const ItinerarySidebar = ({
     const [showThemeSettings, setShowThemeSettings] = useState(false);
     const [showTravelSettings, setShowTravelSettings] = useState(false);
     const [showPoiSettings, setShowPoiSettings] = useState(false);
+    const [showServiceLogs, setShowServiceLogs] = useState(false);
+    const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+    const [serviceLogs, setServiceLogs] = useState("");
+    const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
     const [selectedDiscoveryChips, setSelectedDiscoveryChips] = useState(new Set());
     const [customDiscoveryInterest, setCustomDiscoveryInterest] = useState('');
 
@@ -1639,6 +1646,31 @@ const ItinerarySidebar = ({
         setIsOpen(true);
         setShowSettings(true);
         setSettingsOpenedFromMap(true);
+    };
+
+    const fetchServiceLogs = async () => {
+        setIsRefreshingLogs(true);
+        try {
+            const res = await apiFetch('/api/logs');
+            if (res.ok) {
+                const data = await res.json();
+                setServiceLogs(data.logs || (language === 'nl' ? "Geen logs gevonden." : "No logs found."));
+            }
+        } catch (e) {
+            console.error("Failed to fetch logs:", e);
+        } finally {
+            setIsRefreshingLogs(false);
+        }
+    };
+
+    const clearServiceLogs = async () => {
+        if (!confirm(language === 'nl' ? "Weet je zeker dat je de logs wilt wissen?" : "Are you sure you want to clear the logs?")) return;
+        try {
+            const res = await apiFetch('/api/logs/clear', { method: 'POST' });
+            if (res.ok) fetchServiceLogs();
+        } catch (e) {
+            console.error("Failed to clear logs:", e);
+        }
     };
 
     const onButtonTouchEnd = (mode) => {
@@ -2550,7 +2582,7 @@ const ItinerarySidebar = ({
                                             </button>
                                         </div>
 
-                                        {/* 6a. Spoken Navigation */}
+                                        {/* 7. Spoken Navigation */}
                                         <div className="space-y-1">
                                             <button
                                                 onClick={() => setSpokenNavigationEnabled(!spokenNavigationEnabled)}
@@ -2567,8 +2599,7 @@ const ItinerarySidebar = ({
                                             </button>
                                         </div>
 
-
-                                        {/* 6b. Autosave */}
+                                        {/* 8. Autosave */}
                                         <div className="space-y-1">
                                             <button
                                                 onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
@@ -2585,193 +2616,197 @@ const ItinerarySidebar = ({
                                             </button>
                                         </div>
 
-                                        {/* 6c. POI Sources */}
+
+                                        {/* 9. Advanced Section */}
                                         <div className="space-y-1">
                                             <button
-                                                onClick={() => setShowPoiSettings(!showPoiSettings)}
-                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
+                                                onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                                                className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group border border-white/5"
                                             >
                                                 <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
-                                                    {language === 'nl' ? 'POI Bronnen' : 'POI Sources'}
+                                                    {language === 'nl' ? 'Geavanceerd' : 'Advanced'}
                                                 </label>
                                                 <div className="flex items-center gap-2">
-                                                    {!showPoiSettings && (
-                                                        <span className="text-[10px] text-primary/60 font-bold uppercase tracking-tighter">
-                                                            {[
-                                                                'OSM',
-                                                                searchSources?.foursquare && 'Foursquare',
-                                                                searchSources?.google && 'Google'
-                                                            ].filter(Boolean).join(' + ')}
-                                                        </span>
-                                                    )}
                                                     <svg
                                                         xmlns="http://www.w3.org/2000/svg"
-                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showPoiSettings ? 'rotate-180' : ''}`}
+                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showAdvancedSettings ? 'rotate-180' : ''}`}
                                                         fill="none" viewBox="0 0 24 24" stroke="currentColor"
                                                     >
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                                                     </svg>
                                                 </div>
                                             </button>
-                                            {showPoiSettings && (
-                                                <div className="flex flex-col gap-3 mt-1 animate-in slide-in-from-top-1 fade-in duration-200 p-3 bg-white/5 rounded-lg text-left">
-                                                    {/* AI Provider Toggle */}
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <div className="text-sm font-medium text-white">AI Engine</div>
-                                                            <div className="text-[10px] text-slate-400">
-                                                                {aiProvider === 'groq'
-                                                                    ? (language === 'nl' ? 'Groq (Snel & Gratis)' : 'Groq (Fast & Free)')
-                                                                    : (language === 'nl' ? 'Gemini (Google API)' : 'Gemini (Google API)')}
-                                                            </div>
-                                                        </div>
+
+                                            {showAdvancedSettings && (
+                                                <div className="flex flex-col gap-4 mt-2 p-2 bg-white/5 rounded-xl border border-white/5 animate-in slide-in-from-top-2 fade-in duration-300">
+                                                    {/* Service Logs */}
+                                                    <div className="space-y-1">
                                                         <button
-                                                            onClick={() => setAiProvider(aiProvider === 'groq' ? 'gemini' : 'groq')}
-                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${aiProvider === 'groq' ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                                                            onClick={() => {
+                                                                const next = !showServiceLogs;
+                                                                setShowServiceLogs(next);
+                                                                if (next) fetchServiceLogs();
+                                                            }}
+                                                            className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                                         >
-                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${aiProvider === 'groq' ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                            <label className="text-[11px] uppercase tracking-wider text-white font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                                {language === 'nl' ? 'Service Logs' : 'Service Logs'}
+                                                            </label>
+                                                            <div className="flex items-center gap-2">
+                                                                <svg
+                                                                    xmlns="http://www.w3.org/2000/svg"
+                                                                    className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showServiceLogs ? 'rotate-180' : ''}`}
+                                                                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                                >
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                                </svg>
+                                                            </div>
                                                         </button>
+                                                        {showServiceLogs && (
+                                                            <div className="flex flex-col gap-2 mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
+                                                                <div className="bg-black/40 rounded-lg border border-white/5 p-2 font-mono text-[10px] text-slate-400 overflow-x-auto whitespace-pre min-h-[150px] max-h-[300px] custom-scrollbar focus-within:border-primary/50 transition-all">
+                                                                    {isRefreshingLogs ? (
+                                                                        <div className="flex items-center justify-center h-full py-10">
+                                                                            <div className="h-4 w-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                                                                        </div>
+                                                                    ) : (
+                                                                        serviceLogs || (language === 'nl' ? "Geen data." : "No data.")
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex gap-2">
+                                                                    <button onClick={fetchServiceLogs} className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white/5 hover:bg-white/10 text-[10px] font-bold text-white rounded-lg transition-all border border-white/5 shadow-sm">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 ${isRefreshingLogs ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /><polyline points="22 4 22 10 16 10" /></svg>
+                                                                        {language === 'nl' ? 'Verversen' : 'Refresh'}
+                                                                    </button>
+                                                                    <button onClick={() => window.open('/api/logs/download', '_blank')} className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white/5 hover:bg-white/10 text-[10px] font-bold text-white rounded-lg transition-all border border-white/5 shadow-sm">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                                                                        {language === 'nl' ? 'Laden' : 'Download'}
+                                                                    </button>
+                                                                    <button onClick={clearServiceLogs} className="flex items-center justify-center p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-all border border-red-500/20 shadow-sm" title={language === 'nl' ? 'Logs wissen' : 'Clear logs'}>
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
 
-                                                    {/* Search Provider Toggle */}
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <div className="text-sm font-medium text-white">Search Engine</div>
-                                                            <div className="text-[10px] text-slate-400">
-                                                                {searchProvider === 'tavily'
-                                                                    ? (language === 'nl' ? 'Tavily (AI Search - Gratis)' : 'Tavily (AI Search - Free)')
-                                                                    : (language === 'nl' ? 'Google (Betaald)' : 'Google (Paid)')}
-                                                            </div>
-                                                        </div>
+                                                    {/* POI Sources */}
+                                                    <div className="space-y-1">
                                                         <button
-                                                            onClick={() => setSearchProvider(searchProvider === 'tavily' ? 'google' : 'tavily')}
-                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchProvider === 'tavily' ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                                                            onClick={() => setShowPoiSettings(!showPoiSettings)}
+                                                            className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                                         >
-                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchProvider === 'tavily' ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                            <label className="text-[11px] uppercase tracking-wider text-white font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                                {language === 'nl' ? 'POI Bronnen' : 'POI Sources'}
+                                                            </label>
+                                                            <div className="flex items-center gap-2">
+                                                                <svg
+                                                                    xmlns="http://www.w3.org/2000/svg"
+                                                                    className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showPoiSettings ? 'rotate-180' : ''}`}
+                                                                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                                >
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                                </svg>
+                                                            </div>
                                                         </button>
+                                                        {showPoiSettings && (
+                                                            <div className="flex flex-col gap-3 mt-1 animate-in slide-in-from-top-1 fade-in duration-200 p-3 bg-white/5 rounded-lg text-left">
+                                                                <div className="flex items-center justify-between">
+                                                                    <div>
+                                                                        <div className="text-sm font-medium text-white">AI Engine</div>
+                                                                        <div className="text-[10px] text-slate-400">{aiProvider === 'groq' ? (language === 'nl' ? 'Groq (Snel & Gratis)' : 'Groq (Fast & Free)') : (language === 'nl' ? 'Gemini (Google API)' : 'Gemini (Google API)')}</div>
+                                                                    </div>
+                                                                    <button onClick={() => setAiProvider(aiProvider === 'groq' ? 'gemini' : 'groq')} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${aiProvider === 'groq' ? 'bg-emerald-500' : 'bg-blue-600'}`}>
+                                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${aiProvider === 'groq' ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="flex items-center justify-between">
+                                                                    <div>
+                                                                        <div className="text-sm font-medium text-white">Search Engine</div>
+                                                                        <div className="text-[10px] text-slate-400">{searchProvider === 'tavily' ? (language === 'nl' ? 'Tavily (AI Search - Gratis)' : 'Tavily (AI Search - Free)') : (language === 'nl' ? 'Google (Betaald)' : 'Google (Paid)')}</div>
+                                                                    </div>
+                                                                    <button onClick={() => setSearchProvider(searchProvider === 'tavily' ? 'google' : 'tavily')} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchProvider === 'tavily' ? 'bg-emerald-500' : 'bg-blue-600'}`}>
+                                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchProvider === 'tavily' ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="flex items-center justify-between">
+                                                                    <div>
+                                                                        <div className="text-sm font-medium text-white">OpenStreetMap</div>
+                                                                        <div className="text-[10px] text-slate-400">{language === 'nl' ? 'Basis data (Gratis)' : 'Base data (Free)'}</div>
+                                                                    </div>
+                                                                    <button onClick={() => setSearchSources({ ...searchSources, osm: !searchSources.osm })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.osm ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.osm ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="flex items-center justify-between">
+                                                                    <div>
+                                                                        <div className="text-sm font-medium text-white">Foursquare</div>
+                                                                        <div className="text-[10px] text-slate-400">{language === 'nl' ? 'Extra POI data (Gratis)' : 'Extra POI data (Free)'}</div>
+                                                                    </div>
+                                                                    <button onClick={() => setSearchSources({ ...searchSources, foursquare: !searchSources.foursquare })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.foursquare ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.foursquare ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="flex items-center justify-between">
+                                                                    <div>
+                                                                        <div className="text-sm font-medium text-white">Google Places</div>
+                                                                        <div className="text-[10px] text-slate-400">{language === 'nl' ? 'Hoogste dekking (Betaald)' : 'Highest coverage (Paid)'}</div>
+                                                                    </div>
+                                                                    <button onClick={() => setSearchSources({ ...searchSources, google: !searchSources.google })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.google ? 'bg-blue-600' : 'bg-slate-700'}`}>
+                                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.google ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="text-[10px] text-slate-400 bg-slate-800/50 p-2 rounded border border-white/5">{language === 'nl' ? '💡 Gebruik Groq, Tavily & Foursquare voor een gratis ervaring. Schakel Google in voor extra data.' : '💡 Use Groq, Tavily & Foursquare for a free experience. Enable Google APIs for extra data coverage.'}</div>
+                                                            </div>
+                                                        )}
                                                     </div>
 
-
-
-                                                    {/* POI Data Source Toggles */}
-                                                    {/* OpenStreetMap */}
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <div className="text-sm font-medium text-white">OpenStreetMap</div>
-                                                            <div className="text-[10px] text-slate-400">
-                                                                {language === 'nl' ? 'Basis data (Gratis)' : 'Base data (Free)'}
-                                                            </div>
-                                                        </div>
+                                                    {/* Confidence Legend */}
+                                                    <div className="space-y-1">
                                                         <button
-                                                            onClick={() => setSearchSources({ ...searchSources, osm: !searchSources.osm })}
-                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.osm ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                                                            onClick={() => setShowTruthfulnessLegend(!showTruthfulnessLegend)}
+                                                            className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
                                                         >
-                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.osm ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                            <label className="text-[11px] uppercase tracking-wider text-white font-bold ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
+                                                                {language === 'nl' ? 'Betrouwbaarheid' : 'Confidence'}
+                                                            </label>
+                                                            <svg
+                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showTruthfulnessLegend ? 'rotate-180' : ''}`}
+                                                                fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                                            >
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                                            </svg>
                                                         </button>
-                                                    </div>
 
-                                                    {/* Foursquare */}
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <div className="text-sm font-medium text-white">Foursquare</div>
-                                                            <div className="text-[10px] text-slate-400">
-                                                                {language === 'nl' ? 'Extra POI data (Gratis)' : 'Extra POI data (Free)'}
+                                                        {showTruthfulnessLegend && (
+                                                            <div className="mt-1 bg-black/20 rounded-xl p-3 border border-white/5 space-y-3 animate-in slide-in-from-top-2 fade-in duration-300">
+                                                                <div className="flex gap-3">
+                                                                    <div className="p-1.5 rounded-full bg-emerald-400/10 text-emerald-400 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg></div>
+                                                                    <div>
+                                                                        <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Hoge Betrouwbaarheid' : 'High Confidence'}</div>
+                                                                        <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Geverifieerd via officiële bronnen of Wikipedia.' : 'Verified via official sources or Wikipedia.'}</div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex gap-3">
+                                                                    <div className="p-1.5 rounded-full bg-blue-400/10 text-blue-400 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></div>
+                                                                    <div>
+                                                                        <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Gemiddelde Betrouwbaarheid' : 'Medium Confidence'}</div>
+                                                                        <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Gebaseerd op algemene AI-kennis of zoekresultaten.' : 'Based on general AI knowledge or search results.'}</div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex gap-3">
+                                                                    <div className="p-1.5 rounded-full bg-amber-400/10 text-amber-400 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m10.29 3.86 7.98 13.9a2 2 0 0 1-1.71 3H3.44a2 2 0 0 1-1.71-3l7.98-13.9a2 2 0 0 1 3.44 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
+                                                                    <div>
+                                                                        <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Lage Betrouwbaarheid' : 'Low Confidence'}</div>
+                                                                        <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Beperkte data gevonden, interpretatie is vereist.' : 'Limited data found, interpretation is required.'}</div>
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => setSearchSources({ ...searchSources, foursquare: !searchSources.foursquare })}
-                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.foursquare ? 'bg-emerald-500' : 'bg-slate-700'}`}
-                                                        >
-                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.foursquare ? 'translate-x-6' : 'translate-x-1'}`} />
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Google Places */}
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <div className="text-sm font-medium text-white">Google Places</div>
-                                                            <div className="text-[10px] text-slate-400">
-                                                                {language === 'nl' ? 'Hoogste dekking (Betaald)' : 'Highest coverage (Paid)'}
-                                                            </div>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => setSearchSources({ ...searchSources, google: !searchSources.google })}
-                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${searchSources?.google ? 'bg-blue-600' : 'bg-slate-700'}`}
-                                                        >
-                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${searchSources?.google ? 'translate-x-6' : 'translate-x-1'}`} />
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Info message */}
-                                                    <div className="text-[10px] text-slate-400 bg-slate-800/50 p-2 rounded border border-white/5">
-                                                        {language === 'nl'
-                                                            ? '💡 Gebruik Groq, Tavily & Foursquare voor een gratis ervaring. Schakel Google in voor extra data.'
-                                                            : '💡 Use Groq, Tavily & Foursquare for a free experience. Enable Google APIs for extra data coverage.'}
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
-                                        </div>
-
-                                        {/* 7. Truthfulness Legend */}
-                                        <div className="space-y-1">
-                                            <div className="flex flex-col gap-1">
-                                                <button
-                                                    onClick={() => setShowTruthfulnessLegend(!showTruthfulnessLegend)}
-                                                    className="flex items-center justify-between w-full hover:bg-white/5 py-1 px-1 rounded-lg transition-all group"
-                                                >
-                                                    <label className="text-xs uppercase tracking-wider text-white font-black ml-1 cursor-pointer group-hover:text-slate-300 transition-colors">
-                                                        {language === 'nl' ? 'Betrouwbaarheid' : 'Truthfulness'}
-                                                    </label>
-                                                    <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        className={`h-3 w-3 text-slate-500 transition-transform duration-300 ${showTruthfulnessLegend ? 'rotate-180' : ''}`}
-                                                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                                    >
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                                                    </svg>
-                                                </button>
-
-                                                {showTruthfulnessLegend && (
-                                                    <div className="mt-1 bg-black/20 rounded-xl p-3 border border-white/5 space-y-3 animate-in slide-in-from-top-2 fade-in duration-300">
-                                                        <div className="flex gap-3">
-                                                            <div className="p-1.5 rounded-full bg-emerald-400/10 text-emerald-400 shrink-0">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Hoge Betrouwbaarheid' : 'High Confidence'}</div>
-                                                                <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Geverifieerd via officiële bronnen of Wikipedia.' : 'Verified via official sources or Wikipedia.'}</div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex gap-3">
-                                                            <div className="p-1.5 rounded-full bg-blue-400/10 text-blue-400 shrink-0">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Gemiddelde Betrouwbaarheid' : 'Medium Confidence'}</div>
-                                                                <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Gebaseerd op algemene AI-kennis of zoekresultaten.' : 'Based on general AI knowledge or search results.'}</div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex gap-3">
-                                                            <div className="p-1.5 rounded-full bg-amber-400/10 text-amber-400 shrink-0">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m10.29 3.86 7.98 13.9a2 2 0 0 1-1.71 3H3.44a2 2 0 0 1-1.71-3l7.98-13.9a2 2 0 0 1 3.44 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-xs font-bold text-slate-200">{language === 'nl' ? 'Lage Betrouwbaarheid' : 'Low Confidence'}</div>
-                                                                <div className="text-[10px] text-slate-400 leading-tight mt-0.5">{language === 'nl' ? 'Beperkte data gevonden, interpretatie is vereist.' : 'Limited data found, interpretation is required.'}</div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="pt-2 border-t border-white/5">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                                                <div className="text-[10px] font-bold text-slate-200 uppercase tracking-tighter">100% Photo Rule</div>
-                                                            </div>
-                                                            <div className="text-[10px] text-slate-400 leading-tight mt-1">{language === 'nl' ? 'Foto\'s worden alleen getoond bij een betrouwbaarheid van 90%+. Geen generieke placeholders.' : 'Photos are only displayed if source trust is 90%+. No generic placeholders.'}</div>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-
-                                            </div>
                                         </div>
 
                                     </div>
@@ -2834,6 +2869,7 @@ const ItinerarySidebar = ({
                             onClose={() => setIsAiViewActive(false)}
                             setIsLoading={setIsLoading}
                             setLoadingText={setLoadingText}
+                            loadingText={loadingText}
                             primaryColor={availableThemes?.[activeTheme]?.colors?.primary || '#3b82f6'}
                             onSpeak={onSpeak}
                         />

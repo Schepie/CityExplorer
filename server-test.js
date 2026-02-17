@@ -11,23 +11,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Logging System ---
-const LOG_FILE = path.join(__dirname, 'service_logs.txt');
-
-function logToFile(level, message, context = '') {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] [${level.toUpperCase()}] ${context ? `(${context}) ` : ''}${message}\n`;
-    try {
-        fs.appendFileSync(LOG_FILE, logEntry);
-    } catch (e) {
-        console.error("Failed to write to log file:", e);
-    }
-}
-
 import { Resend } from 'resend';
 import Groq from 'groq-sdk';
 import jwt from 'jsonwebtoken';
-import { createClient } from '@supabase/supabase-js';
 import {
     validateUser,
     generateMagicToken,
@@ -50,26 +36,16 @@ app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // Debug Logger
 app.use((req, res, next) => {
-    // console.log(`[Server] ${req.method} ${req.url}`);
+    console.log(`[Server] ${req.method} ${req.url}`);
     next();
 });
 
-const PORT = 3001;
+const PORT = 3002;
 
 // Access Keys (support VITE_ prefix for backward compat with .env file, but prefer standard)
 const GEMINI_KEY = process.env.VITE_GEMINI_API_KEY || process.env.VITE_GEMINI_KEY || process.env.GEMINI_KEY;
 const GOOGLE_PLACES_KEY = process.env.VITE_GOOGLE_PLACES_KEY || process.env.GOOGLE_PLACES_KEY;
 const FOURSQUARE_KEY = process.env.VITE_FOURSQUARE_KEY || process.env.FOURSQUARE_KEY;
-
-// --- Supabase Setup ---
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
-if (supabase) {
-    console.log(`[Server] Supabase Cloud Cache: Initialized (${supabaseUrl})`);
-} else {
-    console.warn(`[Server] Supabase Cloud Cache: DISABLED (Missing keys in .env)`);
-}
 
 // --- Health Check ---
 app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '3.1.1' }));
@@ -616,12 +592,7 @@ app.get('/api/tavily', authMiddleware, async (req, res) => { // Use POST if foll
         });
 
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            console.error(`Tavily API Error ${response.status}:`, errData);
-            return res.status(response.status).json({
-                error: `Tavily API error: ${response.statusText}`,
-                details: errData
-            });
+            throw new Error(`Tavily API error: ${response.statusText}`);
         }
 
         const data = await response.json();
@@ -638,23 +609,6 @@ app.get('/api/tavily', authMiddleware, async (req, res) => { // Use POST if foll
         res.json({ items });
     } catch (error) {
         console.error("Tavily Proxy Error:", error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// --- Tavily Usage Endpoint ---
-app.get('/api/tavily-usage', authMiddleware, async (req, res) => {
-    try {
-        const apiKey = process.env.TAVILY_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Tavily API Key missing' });
-
-        const response = await fetch(`https://api.tavily.com/usage?api_key=${apiKey}`);
-        if (!response.ok) {
-            return res.status(response.status).json({ error: 'Failed to fetch Tavily usage' });
-        }
-        const data = await response.json();
-        res.json(data);
-    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
@@ -708,8 +662,8 @@ app.all('/api/poi-cache', authMiddleware, async (req, res) => {
             if (fs.existsSync(filePath)) {
                 const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
                 // Check expiration (optional, but good for sim)
-                // 60 days = 60 * 24 * 60 * 60 * 1000 = 5184000000 ms
-                if (Date.now() - data.timestamp > 5184000000) {
+                // 7 days = 604800000 ms
+                if (Date.now() - data.timestamp > 604800000) {
                     return res.json({ found: false });
                 }
                 return res.json({ found: true, data: data.data });
@@ -735,97 +689,6 @@ app.all('/api/poi-cache', authMiddleware, async (req, res) => {
         console.error("Local Cache Error:", e);
         res.status(500).json({ error: e.message });
     }
-});
-
-// --- Cloud Cache (Supabase Proxy) ---
-app.all('/api/cloud-cache', authMiddleware, async (req, res) => {
-    if (!supabase) {
-        return res.status(500).json({ error: "Supabase not configured locally." });
-    }
-
-    try {
-        if (req.method === 'GET') {
-            const key = req.query.key;
-            if (!key) return res.status(400).json({ error: "Missing key" });
-
-            const { data, error } = await supabase
-                .from('poi_cache')
-                .select('data')
-                .eq('cache_key', key)
-                .single();
-
-            if (error && error.code !== 'PGRST116') {
-                console.error("Supabase GET Error:", error);
-                return res.status(500).json({ error: error.message });
-            }
-
-            return res.json(data ? data.data : null);
-        }
-
-        if (req.method === 'POST') {
-            const { key, data, language } = req.body;
-            if (!key || !data) return res.status(400).json({ error: "Missing key or data" });
-
-            const { error } = await supabase
-                .from('poi_cache')
-                .upsert({
-                    cache_key: key,
-                    data: data,
-                    language: language || 'nl',
-                    created_at: new Date().toISOString()
-                }, { onConflict: 'cache_key' });
-
-            if (error) {
-                console.error("Supabase POST Error:", error);
-                return res.status(500).json({ error: error.message });
-            }
-
-            return res.json({ success: true });
-        }
-
-        res.status(405).json({ error: "Method Not Allowed" });
-    } catch (e) {
-        console.error("Cloud Cache Proxy Error:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// --- Service Logs API ---
-app.get('/api/logs', authMiddleware, (req, res) => {
-    try {
-        if (!fs.existsSync(LOG_FILE)) return res.json({ logs: "" });
-
-        // Read last 500 lines efficiently
-        const content = fs.readFileSync(LOG_FILE, 'utf8');
-        const lines = content.split('\n');
-        const lastLines = lines.slice(-500).join('\n');
-
-        res.json({ logs: lastLines });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/logs/push', authMiddleware, (req, res) => {
-    const { level, message, context } = req.body;
-    if (!message) return res.status(400).json({ error: "Message required" });
-
-    logToFile(level || 'info', message, `Client: ${context || 'Unknown'}`);
-    res.json({ success: true });
-});
-
-app.post('/api/logs/clear', authMiddleware, (req, res) => {
-    try {
-        fs.writeFileSync(LOG_FILE, `[${new Date().toISOString()}] [INFO] Log file cleared by user.\n`);
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.get('/api/logs/download', authMiddleware, (req, res) => {
-    if (!fs.existsSync(LOG_FILE)) return res.status(404).send("No logs found");
-    res.download(LOG_FILE, 'service_logs.txt');
 });
 
 // --- Static Files (Production) ---

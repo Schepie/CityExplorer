@@ -8,8 +8,8 @@ The application is designed to be a "Travel Companion" that combines standard ma
 ### Core Tech Stack
 - **Frontend**: React 19, Tailwind CSS (Styling), Leaflet (Maps).
 - **Backend**: Netlify Functions (Node.js) acting as API Gateways.
-- **AI**: Google Gemini (Pro/Flash models) for reasoning and content generation.
-- **Data**: OpenStreetMap (Overpass API) for places, OSRM for routing, Wikipedia/Google for enrichment.
+- **AI**: **Groq Cloud (Llama 3 70B)** (Default) & Google Gemini (Premium) for reasoning and content generation.
+- **Data**: OpenStreetMap (Overpass), Foursquare (Places), Tavily (AI Search), Wikipedia.
 
 ---
 
@@ -42,6 +42,13 @@ The frontend is the command center. It manages state, user interaction, and data
         *   Places Markers for POIs and User Location.
         *   Handles Map interactions (Popup clicks, Zooming).
 
+*   **`RouteRefiner.jsx` (The Editor)**
+    *   **Role**: Drag-and-drop interface for route modification.
+    *   **Responsibilities**:
+        *   Allows reordering of waypoints.
+        *   Handles "Map Pick" mode for adding new points.
+        *   Calculates new route geometry via OSRM when changed.
+
 *   **`PoiIntelligence.js` (The Intelligence Layer)**
     *   **Role**: A service class that "knows" everything about places.
     *   **Responsibilities**:
@@ -53,7 +60,9 @@ The frontend is the command center. It manages state, user interaction, and data
 To protect API keys and solve CORS (Cross-Origin Resource Sharing) issues, we do not call third-party APIs directly from the browser. Instead, we use Netlify Functions.
 
 *   **`functions/gemini.js`**: Proxies requests to Google's AI models.
-*   **`functions/google-places.js`**: Proxies requests to Google Maps API.
+*   **`functions/groq.js`**: Proxies high-speed requests to Llama 3 models via Groq.
+*   **`functions/foursquare.js`**: Fetches place details and photos.
+*   **`functions/tavily.js`**: Semantic search for gathering POI signals.
 *   **`functions/overpass.js`**: Proxies requests to OpenStreetMap's Overpass API.
 
 ---

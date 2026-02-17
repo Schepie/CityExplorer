@@ -78,7 +78,29 @@ The map uses custom Leaflet popups with a Glassmorphism design (`glass-popup` cl
         *   Body: `startInfo` (Arrival/Parking instructions).
         *   Text formatting: `whitespace-pre-wrap` to preserve formatting, `min-w-[240px]` to ensure readability.
 
-## 4. Audio Formatting
-The app uses the same data for audio but strips Markdown symbols:
+## 4. AI Response Hygiene
+
+To ensure the application remains stable and user-friendly, all AI-generated content follows strict hygiene rules.
+
+### Strict JSON Output
+All descriptors are fetched as JSON. The AI is instructed to:
+*   Return **only** valid JSON.
+*   Avoid explaining anything outside the JSON block.
+*   Properly escape double quotes (`\"`) within the text.
+*   Avoid using raw markdown (like `**bold**` or `*italics*`) within the strings, as this interferes with the Text-to-Speech (TTS) engine.
+
+### Automated Cleaning Pipeline
+The `PoiIntelligence.js` service runs a regex-based cleaning pipeline before parsing:
+1.  **Remove Reasoning**: Strips `<think>...</think>` tags used by "Chain of Thought" models.
+2.  **Strip Markdown Blocks**: Removes ` ```json ` and ` ``` ` fences.
+3.  **Trim**: Cleans whitespace from both ends.
+
+### Raw JSON Leak Prevention
+If the AI response fails JSON parsing, the system checks for keywords like `short_description` or `full_description`. 
+- **If detected**: The system assumes it is malformed JSON and returns `null`. This triggers a fallback to Wikipedia or Google Search instead of displaying raw code to the user.
+
+## 5. Audio Formatting
+The app uses the same data for audio but strips residual Markdown:
 *   **Auto-Play**: Reads the `standard_description`.
 *   **Interaction**: User can request "More details" -> Reads `full_description`.
+*   **Clarity**: Descriptions are written in short, natural sentences to sound more human when read by the browser's speech synthesis.

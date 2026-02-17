@@ -136,6 +136,14 @@ This document provides a comprehensive overview of all external API calls and ou
 
 ### 7. Search & Signal Gathering
 
+#### **Foursquare Places API**
+- **Endpoint:** `/api/foursquare` (via your backend proxy)
+- **Purpose:** Primary source for POI discovery and details, replacing Google Places for some operations.
+- **Frequency:** During POI search/discovery.
+- **Data Sent:** Location coordinates, search query.
+- **Response:** List of venues with ratings, photos, and tips.
+- **Used in:** `poiService.js` and `PoiIntelligence.js`.
+
 #### **Tavily AI Search** ⭐ *Default Service*
 - **Endpoint:** `/api/tavily` (via your backend proxy)
 - **Purpose:** Web search specifically optimized for AI agents to gather POI context.
