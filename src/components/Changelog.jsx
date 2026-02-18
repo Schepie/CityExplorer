@@ -6,6 +6,19 @@ const Changelog = ({ language, setShowChangelog }) => {
             {[
                 {
                     date: "18 Feb 2026",
+                    version: "v3.5.1",
+                    items: language === 'nl' ? [
+                        { title: "Afvalbak Icoon", desc: "Verwijder stops nu handig via het nieuwe icoontje in de lijst." },
+                        { title: "Compacte UI", desc: "'Snel Toevoegen' en sliders zijn compacter gemaakt voor meer overzicht." },
+                        { title: "Bugfix Kaart", desc: "Het annuleren van 'Kies op Kaart' wist niet langer per ongeluk je hele route." }
+                    ] : [
+                        { title: "Waste Basket Icon", desc: "Easily remove stops using the new icon in the list." },
+                        { title: "Compact UI", desc: "'Quick Add' and sliders are now more compact for a better overview." },
+                        { title: "Map Bugfix", desc: "Cancelling 'Pick on Map' no longer accidentally clears your entire route." }
+                    ]
+                },
+                {
+                    date: "18 Feb 2026",
                     version: "v3.5.0",
                     items: language === 'nl' ? [
                         { title: "Dynamische Time-out", desc: "Zoekopdrachten voor grote gebieden (>10km) krijgen nu meer tijd (tot 180s) om timeouts te voorkomen." },

@@ -705,92 +705,102 @@ const RouteRefiner = ({
                                 </div>
                             </div>
 
-                            {/* 1b. Stops Slider */}
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-end ml-1">
-                                    <div>
-                                        <label className="text-[10px] uppercase tracking-widest text-white font-black">
+                            {/* Compact Sliders Group */}
+                            <div className="space-y-3 pt-1">
+                                {/* Stops Slider */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-center px-0.5">
+                                        <label className="text-[10px] uppercase tracking-widest text-white font-black opacity-80">
                                             {text.stops}
                                         </label>
-                                        <p className="text-[9px] text-slate-500/60 font-medium">{text.stopsSub}</p>
+                                        <div className="font-mono text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                            {localStopsCount}
+                                        </div>
                                     </div>
-                                    <div className="bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
-                                        <span className="text-sm font-black text-primary">{localStopsCount}</span>
-                                    </div>
+                                    <input
+                                        type="range"
+                                        min={2}
+                                        max={routeData?.originalPois?.length || Math.max(localStopsCount, routeData?.pois?.length || 0)}
+                                        value={localStopsCount}
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value);
+                                            setLocalStopsCount(val);
+                                        }}
+                                        onMouseUp={(e) => onStopsCountChange(parseInt(e.target.value))}
+                                        onTouchEnd={(e) => onStopsCountChange(parseInt(e.target.value))}
+                                        disabled={(routeData?.originalPois?.length || routeData?.pois?.length || 0) <= 2}
+                                        className="w-full accent-primary h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                    />
                                 </div>
-                                <input
-                                    type="range"
-                                    min={2}
-                                    max={routeData?.originalPois?.length || Math.max(localStopsCount, routeData?.pois?.length || 0)}
-                                    value={localStopsCount}
-                                    onChange={(e) => {
-                                        const val = parseInt(e.target.value);
-                                        setLocalStopsCount(val);
-                                    }}
-                                    onMouseUp={(e) => onStopsCountChange(parseInt(e.target.value))}
-                                    onTouchEnd={(e) => onStopsCountChange(parseInt(e.target.value))}
-                                    disabled={(routeData?.originalPois?.length || routeData?.pois?.length || 0) <= 2}
-                                    className="w-full accent-primary h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                                />
-                            </div>
 
-                            {/* 2. Distance Slider */}
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-end ml-1">
-                                    <label className="text-[10px] uppercase tracking-widest text-white font-black">
-                                        {text.distance}
-                                    </label>
-                                    <div className="bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
-                                        <span className="text-sm font-black text-primary">{localDistance}</span>
-                                        <span className="text-[10px] font-bold text-primary/70 uppercase ml-1">km</span>
+                                {/* Distance Slider */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between items-center px-0.5">
+                                        <label className="text-[10px] uppercase tracking-widest text-white font-black opacity-80">
+                                            {text.distance}
+                                        </label>
+                                        <div className="font-mono text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                            {localDistance} km
+                                        </div>
                                     </div>
+                                    <input
+                                        type="range"
+                                        min={1}
+                                        max={60}
+                                        value={localDistance}
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value);
+                                            setLocalDistance(val);
+                                            onConstraintValueChange(val);
+                                        }}
+                                        onMouseUp={(e) => onConstraintValueFinal(parseInt(e.target.value))}
+                                        onTouchEnd={(e) => onConstraintValueFinal(parseInt(e.target.value))}
+                                        className="w-full accent-primary h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                                    />
                                 </div>
-                                <input
-                                    type="range"
-                                    min={1}
-                                    max={60}
-                                    value={localDistance}
-                                    onChange={(e) => {
-                                        const val = parseInt(e.target.value);
-                                        setLocalDistance(val);
-                                        onConstraintValueChange(val);
-                                    }}
-                                    onMouseUp={(e) => onConstraintValueFinal(parseInt(e.target.value))}
-                                    onTouchEnd={(e) => onConstraintValueFinal(parseInt(e.target.value))}
-                                    className="w-full accent-primary h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-                                />
                             </div>
 
                             {/* 3. Smart Actions */}
-                            <div className="space-y-3">
+                            <div className="space-y-2">
                                 <label className="text-[10px] uppercase tracking-widest text-white font-black ml-1">
                                     Snel Toevoegen
                                 </label>
-                                <div className="grid gap-2">
-                                    {/* Halfway Beer */}
-                                    <button
-                                        onClick={handleHalfwayBeer}
-                                        className="w-full p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all flex items-center gap-3 text-left group"
-                                    >
-                                        <div className="p-2 bg-amber-500/20 rounded-lg group-hover:scale-110 transition-transform">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 11h1a3 3 0 0 1 0 6h-1"></path><path d="M9 12v6"></path><path d="M13 12v6"></path><path d="M14 7.5c-1 0-1.44.5-3 .5s-2-.5-3-.5-1.72.5-2.5.5a.5.5 0 0 1-.5-.5V8a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1a.5.5 0 0 1-.5.5c-.78 0-1.5-.5-2.5-.5z"></path><path d="M5 8v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8"></path></svg>
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="text-xs font-black uppercase tracking-tight">{text.halfwayBeer}</div>
-                                            <div className="text-[10px] opacity-60 font-medium">
-                                                {language === 'nl' ? "Ik zoek een leuke plek om te pauzeren voor je." : "I'll find a nice spot for a break."}
+                                <div className="space-y-2">
+                                    {/* Row 1: Simple Actions (Food & Map) */}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {/* Halfway Beer */}
+                                        <button
+                                            onClick={handleHalfwayBeer}
+                                            className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all flex flex-col items-center justify-center gap-1.5 text-center group"
+                                        >
+                                            <div className="p-1.5 bg-amber-500/20 rounded-md group-hover:scale-110 transition-transform">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 11h1a3 3 0 0 1 0 6h-1"></path><path d="M9 12v6"></path><path d="M13 12v6"></path><path d="M14 7.5c-1 0-1.44.5-3 .5s-2-.5-3-.5-1.72.5-2.5.5a.5.5 0 0 1-.5-.5V8a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1a.5.5 0 0 1-.5.5c-.78 0-1.5-.5-2.5-.5z"></path><path d="M5 8v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8"></path></svg>
                                             </div>
-                                        </div>
-                                    </button>
+                                            <div className="text-[10px] font-black uppercase tracking-tight leading-none">{text.stopDrink} / {text.stopEat}</div>
+                                        </button>
 
-                                    {/* Interest Search */}
+                                        {/* Map Pick */}
+                                        <button
+                                            onClick={() => onStartMapPick && onStartMapPick(null, true)}
+                                            className="p-3 rounded-lg bg-teal-500/10 border border-teal-500/20 text-teal-400 hover:bg-teal-500/20 transition-all flex flex-col items-center justify-center gap-1.5 text-center group"
+                                        >
+                                            <div className="p-1.5 bg-teal-500/20 rounded-md group-hover:scale-110 transition-transform">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                                            </div>
+                                            <div className="text-[10px] font-black uppercase tracking-tight leading-none">
+                                                {language === 'nl' ? 'Kies op kaart' : 'Pick on Map'}
+                                            </div>
+                                        </button>
+                                    </div>
+
+                                    {/* Row 2: Interest Search */}
                                     <div className="relative">
                                         <button
                                             onClick={() => setShowInterestInput(!showInterestInput)}
-                                            className={`w-full p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all flex items-center gap-3 text-left group ${showInterestInput ? 'rounded-b-none border-b-0' : ''}`}
+                                            className={`w-full p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-all flex items-center gap-3 text-left group ${showInterestInput ? 'rounded-b-none border-b-0' : ''}`}
                                         >
-                                            <div className="p-2 bg-blue-500/20 rounded-lg group-hover:scale-110 transition-transform">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v8"></path><path d="m4.93 4.93 5.66 5.66"></path><path d="M2 12h8"></path><path d="m4.93 19.07 5.66-5.66"></path><path d="M12 22v-8"></path><path d="m19.07 19.07-5.66-5.66"></path><path d="M22 12h-8"></path><path d="m19.07 4.93-5.66 5.66"></path></svg>
+                                            <div className="p-1.5 bg-blue-500/20 rounded-lg group-hover:scale-110 transition-transform">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v8"></path><path d="m4.93 4.93 5.66 5.66"></path><path d="M2 12h8"></path><path d="m4.93 19.07 5.66-5.66"></path><path d="M12 22v-8"></path><path d="m19.07 19.07-5.66-5.66"></path><path d="M22 12h-8"></path><path d="m19.07 4.93-5.66 5.66"></path></svg>
                                             </div>
                                             <div className="text-xs font-black uppercase tracking-tight">{text.addInterest}</div>
                                         </button>
@@ -825,14 +835,14 @@ const RouteRefiner = ({
                                         )}
                                     </div>
 
-                                    {/* Specific POI */}
+                                    {/* Row 3: Specific POI */}
                                     <div className="relative">
                                         <button
                                             onClick={() => setShowSpecificInput(!showSpecificInput)}
-                                            className={`w-full p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-all flex items-center gap-3 text-left group ${showSpecificInput ? 'rounded-b-none border-b-0' : ''}`}
+                                            className={`w-full p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-all flex items-center gap-3 text-left group ${showSpecificInput ? 'rounded-b-none border-b-0' : ''}`}
                                         >
-                                            <div className="p-2 bg-purple-500/20 rounded-lg group-hover:scale-110 transition-transform">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                                            <div className="p-1.5 bg-purple-500/20 rounded-lg group-hover:scale-110 transition-transform">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
                                             </div>
                                             <div className="text-xs font-black uppercase tracking-tight">{text.addSpecific}</div>
                                         </button>
@@ -866,19 +876,6 @@ const RouteRefiner = ({
                                             </div>
                                         )}
                                     </div>
-
-                                    {/* Map Pick */}
-                                    <button
-                                        onClick={() => onStartMapPick && onStartMapPick(null, true)}
-                                        className="w-full p-4 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 hover:bg-teal-500/20 transition-all flex items-center gap-3 text-left group"
-                                    >
-                                        <div className="p-2 bg-teal-500/20 rounded-lg group-hover:scale-110 transition-transform">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                                        </div>
-                                        <div className="text-xs font-black uppercase tracking-tight">
-                                            {language === 'nl' ? 'Kies op kaart' : 'Pick on Map'}
-                                        </div>
-                                    </button>
                                 </div>
                             </div>
 
@@ -896,15 +893,21 @@ const RouteRefiner = ({
                                                 </div>
                                                 <span className="text-xs font-bold text-slate-200 truncate pr-2">{poi.name}</span>
                                             </div>
-                                            {!poi.isManual && (
-                                                <button
-                                                    onClick={() => onRemovePoi(poi.id)}
-                                                    className="p-1.5 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all"
-                                                    title={text.remove}
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" /></svg>
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation(); // Prevent triggering the row click
+                                                    onRemovePoi(poi.id);
+                                                }}
+                                                className="p-2 text-slate-500 hover:text-red-400 transition-colors bg-black/20 hover:bg-black/40 rounded-lg ml-2"
+                                                title={text.remove}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                                                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                                                </svg>
+                                            </button>
                                         </div>
                                     ))}
                                 </div>

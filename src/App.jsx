@@ -45,7 +45,7 @@ const NAV_PHASES = {
 
 
 
-const APP_VERSION = "v3.5.0";
+const APP_VERSION = "v3.5.1";
 const APP_AUTHOR = "Geert Schepers";
 const APP_LAST_UPDATED = "18 Feb 2026";
 
@@ -174,7 +174,7 @@ function CityExplorerApp() {
   useEffect(() => {
     // Only trigger if we have a valid route
     if (routeData && routeData.pois && routeData.pois.length > 0) {
-      console.log("Language changed to:", language);
+
 
       const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, roundtrip)`;
 
@@ -265,7 +265,7 @@ function CityExplorerApp() {
   // Re-enrich POIs when Description Length changes
   useEffect(() => {
     if (routeData && routeData.pois && routeData.pois.length > 0) {
-      console.log("Description length changed to:", descriptionLength);
+
 
       // Optimistically update ALL pois to the new mode so UI (popups/sidebar) reflects change immediately
       setRouteData(prev => ({
@@ -1220,7 +1220,7 @@ function CityExplorerApp() {
     });
   }, [language, setIsLoading, setLoadingText, setIsTrackingEnabled, setCity, setValidatedCityData, setFocusedLocation, setUserLocation]);
 
-  // Wikipedia Helper removed - logic moved to wikiService.js
+
 
 
 
@@ -3761,14 +3761,26 @@ function CityExplorerApp() {
    * Cancel route edit mode
    */
   const handleCancelEditMode = useCallback(() => {
+    // If we have a valid route (POIs or Path), effectively "Cancel" just means exit edit mode
+    // but KEEP the route so we return to RouteRefiner view.
+    const hasExistingRoute = routeData && (
+      (routeData.pois && routeData.pois.length > 0) ||
+      (routeData.routePath && routeData.routePath.length > 0)
+    );
+
     setIsRouteEditMode(false);
     setIsMapPickMode(false);
     setRouteMarkers([]);
     setCumulativeDistances([]);
     setSelectedEditPointIndex(-1);
     setIsSidebarOpen(true);
-    setRouteData(null);
-  }, [setIsRouteEditMode, setIsMapPickMode, setRouteMarkers, setCumulativeDistances, setSelectedEditPointIndex, setIsSidebarOpen, setRouteData]);
+
+    // Only wipe route data if we didn't have a valid route to begin with
+    // (e.g. we started "Pick on Map" from scratch and cancelled)
+    if (!hasExistingRoute) {
+      setRouteData(null);
+    }
+  }, [setIsRouteEditMode, setIsMapPickMode, setRouteMarkers, setCumulativeDistances, setSelectedEditPointIndex, setIsSidebarOpen, setRouteData, routeData]);
 
   const handleToggleNavigation = useCallback(() => setIsNavigationOpen(prev => !prev), [setIsNavigationOpen]);
   const handlePopupClose = useCallback(() => { setFocusedLocation(null); stopSpeech(); }, [setFocusedLocation, stopSpeech]);

@@ -2,6 +2,18 @@ I see # Changelog
 
 All notable changes to this project will be documented in this file.
 
+## [v3.5.1] - 2026-02-18
+### Added
+- Added "waste basket" icon to POIs in route options for easier deletion.
+
+### Changed
+- Compacted "Quick Add" section in Route Options with a grid layout.
+- Compacted "Stops" and "Distance" sliders to save vertical space.
+- Removed unused dead code (ChatInterface, etc.) to reduce bundle size.
+
+### Fixed
+- Fixed "Pick on Map" cancel behavior: cancelling now correctly returns to the Route Options screen instead of clearing the route.
+
 ## [3.5.0] - 2026-02-18
 
 ### Changed
