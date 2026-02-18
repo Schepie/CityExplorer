@@ -45,7 +45,7 @@ const NAV_PHASES = {
 
 
 
-const APP_VERSION = "v3.4.1";
+const APP_VERSION = "v3.5.0";
 const APP_AUTHOR = "Geert Schepers";
 const APP_LAST_UPDATED = "18 Feb 2026";
 

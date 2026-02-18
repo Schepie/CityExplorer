@@ -133,7 +133,7 @@ const mapInterestToTags = (interest) => {
 /**
  * Build Overpass QL query from bounding box and QL filters
  */
-const buildOverpassQuery = (bbox, filters) => {
+const buildOverpassQuery = (bbox, filters, timeoutSeconds = 25) => {
     const [minLat, maxLat, minLon, maxLon] = bbox;
     const bboxStr = `${minLat},${minLon},${maxLat},${maxLon}`;
 
@@ -142,7 +142,7 @@ const buildOverpassQuery = (bbox, filters) => {
     const unionParts = filters.map(filter => `nwr${filter}(${bboxStr});`).join('\n            ');
 
     const query = `
-        [out:json][timeout:12];
+        [out:json][timeout:${timeoutSeconds}];
         (
             ${unionParts}
         );
@@ -271,7 +271,13 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, l
     }
 
     // Build Overpass query
-    const query = buildOverpassQuery(bbox, tags);
+    // DYNAMIC TIMEOUT: Increase timeout for larger radii
+    // Base: 25s, Large (>10km): 60s, Huge (>30km): 180s
+    let timeoutSeconds = 25;
+    if (radiusKm > 20) timeoutSeconds = 180; // 3 minutes for very large areas
+    else if (radiusKm > 10) timeoutSeconds = 60;
+
+    const query = buildOverpassQuery(bbox, tags, timeoutSeconds);
 
     // CACHE CHECK (Local Storage)
     // We cache based on the generated Query string, which is unique to bbox + interest
@@ -315,8 +321,8 @@ export const fetchOsmPOIs = async (cityData, interest, cityName, radiusKm = 5, l
 
         try {
             const controller = new AbortController();
-            // Timeout 12s to match Overpass standard
-            const timeoutId = setTimeout(() => controller.abort(), 12000);
+            // Timeout matches Overpass setting
+            const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
 
             // Add jitter to prevent thundering herd (0-1000ms delay)
             const jitter = Math.floor(Math.random() * 1000);

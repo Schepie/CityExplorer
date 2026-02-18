@@ -2,6 +2,12 @@ I see # Changelog
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.0] - 2026-02-18
+
+### Changed
+- **Dynamic Timeout**: Significantly increased API timeouts for large-area POI searches. Searches >10km now get 60s, and >20km get 180s (up from 12s) to prevent "AbortError" failures.
+- **Failover Logic**: Synchronized client-side and server-side timeouts to ensure large queries have enough time to complete before failing over or aborting.
+
 ## [3.4.1] - 2026-02-18
 
 

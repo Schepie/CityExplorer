@@ -6,6 +6,17 @@ const Changelog = ({ language, setShowChangelog }) => {
             {[
                 {
                     date: "18 Feb 2026",
+                    version: "v3.5.0",
+                    items: language === 'nl' ? [
+                        { title: "Dynamische Time-out", desc: "Zoekopdrachten voor grote gebieden (>10km) krijgen nu meer tijd (tot 180s) om timeouts te voorkomen." },
+                        { title: "Betrouwbaardere Zoekacties", desc: "Synchronisatie tussen client en server zorgt ervoor dat grote zoekopdrachten niet voortijdig worden afgebroken." }
+                    ] : [
+                        { title: "Dynamic Timeout", desc: "Large-area searches (>10km) now get significantly more time (up to 180s) to prevent timeouts." },
+                        { title: "More Reliable Searches", desc: "Synchronized client-server timeouts ensure large queries complete successfully." }
+                    ]
+                },
+                {
+                    date: "18 Feb 2026",
                     version: "v3.4.1",
                     items: language === 'nl' ? [
                         { title: "UI Opgepoetst", desc: "Dubbele \"Duid aan op Kaart\"-knop in manuele modus opgelost." }
