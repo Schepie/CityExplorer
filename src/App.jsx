@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense, useCallback } from 'react';
 // import { PoiIntelligence } from './services/PoiIntelligence'; // Moved to dynamic import
 const MapLibreContainer = React.lazy(() => import('./components/MapLibreContainer'));
 const ItinerarySidebar = React.lazy(() => import('./components/ItinerarySidebar'));
@@ -10,25 +10,44 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle, interleaveRouteItems } from './utils/routeUtils';
 import { isLocationOnPath } from './utils/geometry';
-import { transformOSRMCoords, sanitizePath, isValidCoord } from './utils/coordinateUtils';
-import { decodePolyline6 } from './utils/polyline';
+import { transformOSRMCoords, sanitizePath } from './utils/coordinateUtils';
 import { sanitizeRouteData, calculateRoutePath, getDistance } from './utils/routePathUtils';
-
-// Lazy load modals to improve initial load
-const PoiProposalModal = React.lazy(() => import('./components/PoiProposalModal'));
-const DistanceRefineConfirmation = React.lazy(() => import('./components/DistanceRefineConfirmation'));
-const RouteEditPanel = React.lazy(() => import('./components/RouteEditPanel'));
 
 import { getBestVoice } from './utils/speechUtils';
 import { APP_THEMES, applyTheme } from './utils/themeUtils';
+import * as locationService from './services/locationService';
+
+// Async Persistence Helper
+const saveToStorageAsync = (key, value) => {
+  setTimeout(() => {
+    try {
+      const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+      localStorage.setItem(key, stringValue);
+    } catch (e) {
+      console.warn(`Failed to save ${key} to localStorage`, e);
+    }
+  }, 0);
+};
 
 // Navigation Phases for strict tracking
-export const NAV_PHASES = {
+import RefinementModal from './components/RefinementModal';
+import LimitConfirmationModal from './components/LimitConfirmationModal';
+import ScanResultModal from './components/ScanResultModal';
+import RouteEditPanel from './components/RouteEditPanel';
+import PoiProposalModal from './components/PoiProposalModal';
+import DistanceRefineConfirmation from './components/DistanceRefineConfirmation';
+
+const NAV_PHASES = {
   PRE_ROUTE: 'PRE_ROUTE',   // Heading to the start point
   IN_ROUTE: 'IN_ROUTE',     // On the generated path
   COMPLETED: 'COMPLETED'    // Finished the loop
 };
 
+
+
+const APP_VERSION = "v3.4.1";
+const APP_AUTHOR = "Geert Schepers";
+const APP_LAST_UPDATED = "18 Feb 2026";
 
 import NavigationOverlay from './components/NavigationOverlay';
 import { apiFetch } from './utils/api.js';
@@ -72,11 +91,13 @@ function CityExplorerApp() {
   const [scanResult, setScanResult] = useState(null);
   const speechUtteranceRef = useRef(null);
   const lastAutoSavedKeyRef = useRef(null);
+  const processAIPromptRef = useRef(null);
 
   // Settings: Load from LocalStorage or Default
   const [language, setLanguage] = useState(() => localStorage.getItem('app_language') || 'nl');
   const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem('app_theme') || 'tech');
   const [descriptionLength, setDescriptionLength] = useState('short'); // short, medium, max
+  const [shouldAutoFocusInterests, setShouldAutoFocusInterests] = useState(false);
 
   // NEW PROVIDER SETTINGS
   const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('app_ai_provider') || 'groq');
@@ -102,27 +123,25 @@ function CityExplorerApp() {
   });
 
   // Persist Settings
-  useEffect(() => localStorage.setItem('app_language', language), [language]);
-  useEffect(() => localStorage.setItem('app_theme', activeTheme), [activeTheme]);
-  useEffect(() => localStorage.setItem('app_ai_provider', aiProvider), [aiProvider]);
-  useEffect(() => localStorage.setItem('app_search_provider', searchProvider), [searchProvider]);
-  useEffect(() => localStorage.setItem('searchSources', JSON.stringify(searchSources)), [searchSources]);
+  useEffect(() => saveToStorageAsync('app_language', language), [language]);
+  useEffect(() => saveToStorageAsync('app_theme', activeTheme), [activeTheme]);
+  useEffect(() => saveToStorageAsync('app_ai_provider', aiProvider), [aiProvider]);
+  useEffect(() => saveToStorageAsync('app_search_provider', searchProvider), [searchProvider]);
+  useEffect(() => saveToStorageAsync('searchSources', searchSources), [searchSources]);
   const [isBackgroundUpdating, setIsBackgroundUpdating] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
   const [isSimulationEnabled, setIsSimulationEnabled] = useState(() => localStorage.getItem('app_simulation_enabled') === 'true');
 
   // Persist Simulation Setting
-  useEffect(() => localStorage.setItem('app_simulation_enabled', isSimulationEnabled), [isSimulationEnabled]);
+  useEffect(() => saveToStorageAsync('app_simulation_enabled', isSimulationEnabled), [isSimulationEnabled]);
 
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('app_auto_save') !== 'false');
   const [confidenceThreshold, setConfidenceThreshold] = useState(() => parseFloat(localStorage.getItem('app_confidence_threshold')) || 0.5);
 
-  useEffect(() => localStorage.setItem('app_auto_save', autoSave), [autoSave]);
-  useEffect(() => localStorage.setItem('app_confidence_threshold', confidenceThreshold), [confidenceThreshold]);
+  useEffect(() => saveToStorageAsync('app_auto_save', autoSave), [autoSave]);
+  useEffect(() => saveToStorageAsync('app_confidence_threshold', confidenceThreshold), [confidenceThreshold]);
 
-  const APP_VERSION = "v3.4.1";
-  const APP_AUTHOR = "Geert Schepers";
-  const APP_LAST_UPDATED = "18 Feb 2026";
+
   // Apply Theme Effect
   useEffect(() => {
     applyTheme(activeTheme);
@@ -267,38 +286,37 @@ function CityExplorerApp() {
   }, [descriptionLength]); // Only trigger on length change
 
   // Persist State Changes
-  useEffect(() => localStorage.setItem('app_city', city), [city]);
-  useEffect(() => localStorage.setItem('app_interests', interests), [interests]);
-  useEffect(() => localStorage.setItem('app_search_mode', searchMode), [searchMode]);
-  useEffect(() => localStorage.setItem('app_constraint_type', constraintType), [constraintType]);
-  useEffect(() => localStorage.setItem('app_constraint_value', constraintValue), [constraintValue]);
-  useEffect(() => localStorage.setItem('app_is_roundtrip', isRoundtrip), [isRoundtrip]);
-  useEffect(() => localStorage.setItem('app_start_point', startPoint), [startPoint]);
-  useEffect(() => localStorage.setItem('app_stop_point', stopPoint), [stopPoint]);
-  useEffect(() => localStorage.setItem('app_travel_mode', travelMode), [travelMode]);
+  useEffect(() => saveToStorageAsync('app_city', city), [city]);
+  useEffect(() => saveToStorageAsync('app_interests', interests), [interests]);
+  useEffect(() => saveToStorageAsync('app_search_mode', searchMode), [searchMode]);
+  useEffect(() => saveToStorageAsync('app_constraint_type', constraintType), [constraintType]);
+  useEffect(() => saveToStorageAsync('app_constraint_value', constraintValue), [constraintValue]);
+  useEffect(() => saveToStorageAsync('app_is_roundtrip', isRoundtrip), [isRoundtrip]);
+  useEffect(() => saveToStorageAsync('app_start_point', startPoint), [startPoint]);
+  useEffect(() => saveToStorageAsync('app_stop_point', stopPoint), [stopPoint]);
+  useEffect(() => saveToStorageAsync('app_travel_mode', travelMode), [travelMode]);
   useEffect(() => {
     if (routeData) {
-      // Deep sanitization before stringify to catch NaN/Infinity
       const safeData = sanitizeRouteData(routeData);
-      localStorage.setItem('app_route_data', JSON.stringify(safeData));
+      saveToStorageAsync('app_route_data', safeData);
     } else {
       localStorage.removeItem('app_route_data');
     }
   }, [routeData]);
   useEffect(() => {
-    if (validatedCityData) localStorage.setItem('app_validated_city', JSON.stringify(validatedCityData));
+    if (validatedCityData) saveToStorageAsync('app_validated_city', validatedCityData);
     else localStorage.removeItem('app_validated_city');
   }, [validatedCityData]);
   useEffect(() => {
-    localStorage.setItem('app_chat_history', JSON.stringify(aiChatHistory));
+    saveToStorageAsync('app_chat_history', aiChatHistory);
   }, [aiChatHistory]);
-  useEffect(() => localStorage.setItem('app_active_poi_idx', activePoiIndex), [activePoiIndex]);
-  useEffect(() => localStorage.setItem('app_nav_phase', navPhase), [navPhase]);
-  useEffect(() => localStorage.setItem('app_ai_view_active', isAiViewActive), [isAiViewActive]);
-  useEffect(() => localStorage.setItem('app_is_nav_open', isNavigationOpen), [isNavigationOpen]);
-  useEffect(() => localStorage.setItem('app_sidebar_open', isSidebarOpen), [isSidebarOpen]);
+  useEffect(() => saveToStorageAsync('app_active_poi_idx', activePoiIndex), [activePoiIndex]);
+  useEffect(() => saveToStorageAsync('app_nav_phase', navPhase), [navPhase]);
+  useEffect(() => saveToStorageAsync('app_ai_view_active', isAiViewActive), [isAiViewActive]);
+  useEffect(() => saveToStorageAsync('app_is_nav_open', isNavigationOpen), [isNavigationOpen]);
+  useEffect(() => saveToStorageAsync('app_sidebar_open', isSidebarOpen), [isSidebarOpen]);
   useEffect(() => {
-    localStorage.setItem('searchSources', JSON.stringify(searchSources));
+    saveToStorageAsync('searchSources', searchSources);
   }, [searchSources]);
 
   // Calculate Past Legs Distance (for Total Done)
@@ -465,20 +483,17 @@ function CityExplorerApp() {
   const enrichmentAbortController = useRef(null);
 
   // Main Enrichment Logic (Two-Stage)
-  const enrichBackground = async (pois, cityName, lang, lengthMode, userInterests = '', routeCtx = '') => {
+  const enrichBackground = useCallback(async (pois, cityName, lang, lengthMode, userInterests = '', routeCtx = '') => {
 
-    // 1. Abort previous unfinished runs
     if (enrichmentAbortController.current) {
       enrichmentAbortController.current.abort();
     }
-    // 2. Create new controller for this run
     const controller = new AbortController();
     enrichmentAbortController.current = controller;
     const signal = controller.signal;
 
-    setIsBackgroundUpdating(true); // START Indicator
+    setIsBackgroundUpdating(true);
 
-    // Dynamically load PoiIntelligence to reduce initial bundle parse time
     const { PoiIntelligence } = await import('./services/PoiIntelligence');
 
     const engine = new PoiIntelligence({
@@ -491,13 +506,10 @@ function CityExplorerApp() {
       searchProvider: searchProvider
     });
 
-    // --- NEW: STAGE 0: ENRICH START/END ---
     try {
       if (signal.aborted) return;
       const isRound = routeCtx.toLowerCase().includes('roundtrip');
 
-      // Start Info
-      // Only fetch if missing
       if (!routeData?.startInfo) {
         const startLabel = startPoint || cityName;
         const startInstr = await engine.fetchArrivalInstructions(startLabel, cityName, lang, signal);
@@ -505,13 +517,11 @@ function CityExplorerApp() {
           setRouteData(prev => prev ? {
             ...prev,
             startInfo: startInstr,
-            // Store specific name if user provided one
             startName: startPoint
           } : prev);
         }
       }
 
-      // End Info (Only if not roundtrip)
       if (!isRound && pois.length > 0 && !routeData?.endInfo) {
         const lastPoi = pois[pois.length - 1];
         const endInstr = await engine.fetchArrivalInstructions(lastPoi.name, cityName, lang, signal);
@@ -525,14 +535,10 @@ function CityExplorerApp() {
     const shortDescMap = new Map();
 
     try {
-      // --- STAGE 1: FAST FETCH (Short Description + Signals) ---
-      // We do this for ALL POIs first so the user sees results quickly.
       for (const poi of pois) {
-        if (signal.aborted) return; // Exit if reset
-        // New: Skip if already done
+        if (signal.aborted) return;
         if (poi.isFullyEnriched) continue;
 
-        // Set loading state immediately for visual feedback
         setRouteData((prev) => {
           if (!prev) return prev;
           const loadingPoi = { ...poi, isLoading: true };
@@ -553,24 +559,17 @@ function CityExplorerApp() {
           if (shortData) {
             console.log(`[Source] ${poi.name}: Early Cache Hit (Short Description)`);
           } else {
-            // Step 1: Gather Signals (Triangulation)
             signals = await engine.gatherSignals(poi, signal);
-
-            // Re-check abort
             if (signal.aborted) return;
-
-            // Step 2: Get Short Description Only
             shortData = await engine.fetchGeminiShortDescription(poi, signals, signal);
           }
 
           if (signal.aborted) return;
 
-          // Save short description for Stage 2
           if (shortData?.short_description) {
             shortDescMap.set(poi.id, shortData.short_description);
           }
 
-          // Update State with "Intermediate" Shell
           setRouteData((prev) => {
             if (!prev) return prev;
             const updatedPoi = {
@@ -589,7 +588,6 @@ function CityExplorerApp() {
             };
           });
 
-          // Add a "Pacer" delay to Stage 1 ONLY if we did a fresh API fetch
           if (!localCache) {
             await new Promise(r => setTimeout(r, 1000));
           }
@@ -599,14 +597,10 @@ function CityExplorerApp() {
         }
       }
 
-      // --- STAGE 2: DEEP FETCH (Full Details) ---
-      // Now iterate again to get the heavy content
       for (const poi of pois) {
-        if (signal.aborted) return; // Exit if reset
-        // New: Skip if already done
+        if (signal.aborted) return;
         if (poi.isFullyEnriched) continue;
 
-        // CHECK CACHE FIRST (Stage 2)
         const cachedFull = engine.getCachedFullDetails(poi);
         if (cachedFull) {
           console.log(`[Source] ${poi.name}: Early Full Cache Hit. skipping Stage 2 delay/fetch.`);
@@ -623,10 +617,8 @@ function CityExplorerApp() {
           continue;
         }
 
-        // Add a "Pacer" delay to Stage 2 ONLY if we are doing a real fetch
         await new Promise(r => setTimeout(r, 1500));
 
-        // Set loading state immediately for visual feedback (Stage 2)
         setRouteData((prev) => {
           if (!prev) return prev;
           const loadingPoi = { ...poi, isLoading: true };
@@ -640,15 +632,12 @@ function CityExplorerApp() {
 
 
         try {
-          // Retrieve stored signals or re-gather
           const signals = await engine.gatherSignals(poi, signal);
 
           if (signal.aborted) return;
 
-          // Retrieve saved short description
           const savedShortDesc = shortDescMap.get(poi.id) || null;
 
-          // Get Full Details
           const fullData = await engine.fetchGeminiFullDetails(poi, signals, savedShortDesc, signal);
 
           if (signal.aborted) return;
@@ -688,35 +677,33 @@ function CityExplorerApp() {
       }
     } finally {
       if (enrichmentAbortController.current === controller) {
-        setIsBackgroundUpdating(false); // STOP Indicator only if we are the current runner
+        setIsBackgroundUpdating(false);
         enrichmentAbortController.current = null;
       }
     }
-  };
+  }, [aiProvider, searchProvider, routeData, startPoint, setIsBackgroundUpdating, setRouteData]);
 
-  const handleTriggerEnrichment = () => {
+  const handleTriggerEnrichment = useCallback(() => {
     if (routeData && routeData.pois && routeData.pois.length > 0) {
-      // Construct Route Context for engine
       const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, roundtrip)`;
 
       enrichBackground(routeData.pois, city, language, descriptionLength, interests, routeCtx)
         .catch(err => console.warn("Enrichment trigger failed", err));
     }
-  };
+  }, [routeData, searchMode, constraintValue, constraintType, city, language, descriptionLength, interests, enrichBackground]);
 
-  const handlePauseEnrichment = () => {
+  const handlePauseEnrichment = useCallback(() => {
     if (enrichmentAbortController.current) {
       enrichmentAbortController.current.abort();
       setIsBackgroundUpdating(false);
       enrichmentAbortController.current = null;
 
-      // Stop animation on all POIs that might be loading from the background process
       setRouteData(prev => prev ? ({
         ...prev,
         pois: prev.pois.map(p => ({ ...p, isLoading: false }))
       }) : prev);
     }
-  };
+  }, [setIsBackgroundUpdating, setRouteData]);
 
   const handleEnrichSinglePoi = async (poi) => {
     if (!poi) return;
@@ -778,112 +765,353 @@ function CityExplorerApp() {
 
 
   // Wrapper for city setter to invalidate validation on edit
-  const handleSetCity = (val) => {
-    // Wrap setCity to clear validation when user types
+  const handleSetCity = useCallback((val) => {
     if (val !== city) {
       setCity(val);
       setValidatedCityData(null);
-      setStartPoint(''); // Reset start point when city changes
+      setStartPoint('');
     }
-  };
+  }, [city]);
 
-  const handleCityValidation = async (context = 'blur', queryOverride = null, interestOverride = null, paramsOverride = null) => {
+  const loadMapWithCity = useCallback(async (cityData, interestOverride = null, paramsOverride = null) => {
+    const { lat, lon } = cityData;
+    const latNum = parseFloat(lat);
+    const lonNum = parseFloat(lon);
+    let cityCenter = (typeof latNum === 'number' && !isNaN(latNum) && typeof lonNum === 'number' && !isNaN(lonNum))
+      ? [latNum, lonNum]
+      : [52.3676, 4.9041];
+
+    const activeParams = paramsOverride || {};
+    const effectiveTravelMode = activeParams.travelMode || travelMode;
+    const effectiveConstraintType = activeParams.constraintType || constraintType;
+    const effectiveConstraintValue = activeParams.constraintValue || constraintValue;
+    const effectiveRoundtrip = (activeParams.isRoundtrip !== undefined) ? activeParams.isRoundtrip : isRoundtrip;
+    const effectiveStartPoint = activeParams.startPoint || startPoint;
+    const effectiveStopPoint = activeParams.stopPoint || stopPoint;
+
+    const activeStart = effectiveStartPoint;
+    const isCurrentLoc = activeStart && (activeStart.toLowerCase().includes('huidig') || activeStart.toLowerCase().includes('current') || activeStart.toLowerCase().includes('mijn locat'));
+
+    let startDisplayName = activeStart || (cityData.address?.city || cityData.name);
+    if (isCurrentLoc) {
+      startDisplayName = language === 'nl' ? 'Huidige locatie' : 'Current Location';
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 20000, enableHighAccuracy: false });
+        });
+        cityCenter = [pos.coords.latitude, pos.coords.longitude];
+      } catch (e) {
+        console.warn("Geolocation failed, falling back to city center", e);
+      }
+    } else if (activeStart && activeStart.trim().length > 2) {
+      try {
+        const cityName = cityData.address?.city || cityData.name;
+        const q = `${activeStart}, ${cityName}`;
+        const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
+        const data = await res.json();
+        if (data && data[0]) {
+          cityCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        } else {
+          const q2 = `${activeStart} ${cityName}`;
+          const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q2)}&format=json&limit=1`);
+          const data2 = await res2.json();
+
+          if (data2 && data2[0]) {
+            cityCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
+          } else {
+            const res3 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(activeStart)}&format=json&limit=1`);
+            const data3 = await res3.json();
+            if (data3 && data3[0]) {
+              cityCenter = [parseFloat(data3[0].lat), parseFloat(data3[0].lon)];
+            } else {
+              console.warn("Start point geocoding failed entirely.");
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to geocode startPoint", e);
+      }
+    }
+
+    let finalStopCenter = null;
+    if (!effectiveRoundtrip) {
+      if (effectiveStopPoint && effectiveStopPoint.trim().length > 2) {
+        try {
+          const cityName = cityData.address?.city || cityData.name;
+          const q = `${effectiveStopPoint}, ${cityName}`;
+          const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
+          const data = await res.json();
+          if (data && data[0]) {
+            finalStopCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+          } else {
+            const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(effectiveStopPoint)}&format=json&limit=1`);
+            const data2 = await res2.json();
+            if (data2 && data2[0]) {
+              finalStopCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to geocode stopPoint", e);
+        }
+      }
+    }
+
+    const activeInterest = interestOverride || interests;
+
+    const constraints = {
+      type: effectiveConstraintType,
+      value: effectiveConstraintValue,
+      isRoundtrip: effectiveRoundtrip
+    };
+
+    const searchCityName = cityData.address?.city ||
+      cityData.address?.town ||
+      cityData.address?.village ||
+      cityData.address?.municipality ||
+      cityData.name ||
+      cityData.display_name.split(',')[0];
+
+    try {
+      let searchRadiusKm = constraintValue;
+
+      if (searchMode === 'radius') {
+        searchRadiusKm = constraints.value;
+      } else if (constraints.type === 'duration') {
+        const speed = effectiveTravelMode === 'cycling' ? 15 : 5;
+        searchRadiusKm = (constraints.value / 60) * speed;
+      }
+
+      const candidates = await getCombinedPOIs(cityData, activeInterest, searchCityName, searchRadiusKm, searchSources, language, (msg) => setLoadingText(msg));
+      setFoundPoisCount(candidates.length);
+
+      if (candidates.length === 0) {
+        if (searchMode === 'prompt') {
+          setIsAiViewActive(true);
+          setAiChatHistory(prev => [...prev, {
+            role: 'brain',
+            text: language === 'nl'
+              ? `Oei, ik kon helaas geen plekken vinden voor "${activeInterest}" in ${searchCityName}. Heb je misschien andere interesses of een andere plek in gedachten?`
+              : `Oops, I couldn't find any spots for "${activeInterest}" in ${searchCityName}. Do you have other interests or maybe another place in mind?`
+          }]);
+          setIsSidebarOpen(true);
+          setRouteData(null);
+          return;
+        }
+
+        const refinementOptions = getInterestSuggestions(activeInterest, language);
+        if (refinementOptions.length > 0) {
+          setRefinementProposals(refinementOptions);
+          setLastAction('start');
+          setRouteData(null);
+          return;
+        }
+
+        console.warn("No POIs found. Trying fallback...");
+
+        let suggestions = [];
+        try {
+          suggestions = await fetchGenericSuggestions(searchCityName);
+        } catch (e) { console.warn("Fallback failed", e); }
+
+        let msg = `No matches found for "${activeInterest}" in ${searchCityName}.`;
+        if (suggestions.length > 0) {
+          msg += `\n\nMaybe try one of these nearby places:\n- ${[...new Set(suggestions)].slice(0, 3).join('\n- ')}`;
+        } else {
+          msg += `\n\nTry broader terms like "parks", "history", or "food".`;
+        }
+
+        setRouteData(null);
+        setIsAiViewActive(true);
+
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: msg
+        }]);
+        return;
+      }
+
+      if (candidates.failedKeywords && candidates.failedKeywords.length > 0) {
+        const failedWords = candidates.failedKeywords.join(', ');
+        const msg = language === 'nl'
+          ? `Ik heb gezocht naar alles, maar ik kon geen resultaten vinden voor: "${failedWords}". Ik heb de route samengesteld met de andere plekjes.`
+          : `I searched for everything, but I couldn't find any results for: "${failedWords}". I have built the route with the other spots.`;
+
+        setAiChatHistory(prev => [...prev, {
+          role: 'brain',
+          text: msg
+        }]);
+      }
+
+      if (candidates.length > 0) {
+        await new Promise(r => setTimeout(r, 800));
+      }
+
+      if (searchMode === 'radius') {
+        const topCandidates = candidates.slice(0, 50);
+
+        const initialPois = topCandidates.map(p => ({
+          ...p,
+          description: language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...',
+          isLoading: true,
+          active_mode: descriptionLength
+        }));
+
+        setRouteData({
+          center: cityCenter,
+          pois: initialPois,
+          routePath: [],
+          stats: {
+            totalDistance: "0",
+            walkDistance: "0",
+            limitKm: `Radius ${searchRadiusKm}`
+          }
+        });
+
+        enrichBackground(topCandidates, cityData.name, language, descriptionLength, activeInterest, `Radius search (${searchRadiusKm} km)`);
+        return;
+      }
+
+      const selectedPois = [];
+      const visitedIds = new Set();
+      let currentPos = { lat: cityCenter[0], lng: cityCenter[1] };
+      let totalDistanceEstim = 0;
+
+      let targetLimitKm = constraints.value;
+
+      if (constraints.type === 'duration') {
+        const speed = effectiveTravelMode === 'cycling' ? 15 : 5;
+        targetLimitKm = (constraints.value / 60) * speed;
+      }
+
+      const maxLimitKm = targetLimitKm * 1.15;
+
+      while (totalDistanceEstim < maxLimitKm && candidates.length > 0) {
+        const potentialNext = candidates
+          .filter(c => !visitedIds.has(c.id))
+          .map(c => ({
+            ...c,
+            lat: parseFloat(c.lat),
+            lng: parseFloat(c.lng),
+            distFromCurr: getDistance(
+              parseFloat(currentPos.lat), parseFloat(currentPos.lng),
+              parseFloat(c.lat), parseFloat(c.lng)
+            )
+          }))
+          .sort((a, b) => a.distFromCurr - b.distFromCurr);
+
+        if (potentialNext.length === 0) break;
+
+        let selected = null;
+
+        for (let i = 0; i < Math.min(potentialNext.length, 5); i++) {
+          const candidate = potentialNext[i];
+          const walkingDist = candidate.distFromCurr * 1.3;
+
+          const endPoint = finalStopCenter ? { lat: finalStopCenter[0], lng: finalStopCenter[1] } : { lat: cityCenter[0], lng: cityCenter[1] };
+          const distToEnd = (effectiveRoundtrip || finalStopCenter)
+            ? getDistance(candidate.lat, candidate.lng, endPoint.lat, endPoint.lng) * 1.3
+            : 0;
+
+          if (totalDistanceEstim + walkingDist + distToEnd <= maxLimitKm) {
+            selected = candidate;
+            break;
+          }
+        }
+
+        if (selected) {
+          selectedPois.push(selected);
+          visitedIds.add(selected.id);
+          totalDistanceEstim += (selected.distFromCurr * 1.3);
+          currentPos = { lat: selected.lat, lng: selected.lng };
+        } else {
+          break;
+        }
+      }
+
+      if (selectedPois.length === 0 && candidates.length > 0) {
+        const d = getDistance(cityCenter[0], cityCenter[1], candidates[0].lat, candidates[0].lng);
+        const returnD = effectiveRoundtrip ? d : 0;
+        selectedPois.push(candidates[0]);
+        totalDistanceEstim = (d + returnD) * 1.3;
+      }
+
+      let routeCoordinates = [];
+      let realDistance = 0;
+      let navigationSteps = [];
+      let finalRouteResult = null;
+
+      while (selectedPois.length > 0) {
+        const routeResult = await calculateRoutePath(selectedPois, cityCenter, travelMode, finalStopCenter, effectiveRoundtrip, isRouteEditMode);
+        const dKm = routeResult.dist;
+
+        if (dKm <= maxLimitKm || selectedPois.length === 1) {
+          routeCoordinates = routeResult.path;
+          realDistance = dKm;
+          navigationSteps = routeResult.steps;
+          finalRouteResult = routeResult;
+          break;
+        } else {
+          selectedPois.pop();
+        }
+      }
+
+      const initialPois = selectedPois.map(p => ({
+        ...p,
+        description: language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...',
+        isLoading: true,
+        active_mode: descriptionLength
+      }));
+
+      setRouteData({
+        center: cityCenter,
+        startName: startDisplayName,
+        startIsPoi: false,
+        startPoi: null,
+        pois: initialPois,
+        originalPois: initialPois,
+        routePath: routeCoordinates,
+        navigationSteps: navigationSteps,
+        legs: finalRouteResult ? finalRouteResult.legs : [],
+        stats: {
+          totalDistance: realDistance.toFixed(1),
+          walkDistance: (finalRouteResult?.walkDist || 0).toFixed(1),
+          limitKm: targetLimitKm.toFixed(1),
+          isRoundtrip: effectiveRoundtrip
+        },
+        stopCenter: finalStopCenter
+      });
+
+      const routeTypeLabel = searchMode === 'radius' ? 'Radius search' : (effectiveRoundtrip ? 'Roundtrip' : 'Point-to-Point');
+      const routeCtx = `${routeTypeLabel} (${realDistance.toFixed(1)} km)`;
+      enrichBackground(selectedPois, cityData.name, language, descriptionLength, activeInterest, routeCtx);
+
+      setIsSidebarOpen(true);
+      setIsAiViewActive(false);
+
+    } catch (err) {
+      console.error("Error fetching POIs", err);
+      setRouteData(null);
+      setIsSidebarOpen(true);
+      alert(language === 'nl'
+        ? "Er is een fout opgetreden bij het laden van de kaart. Probeer het opnieuw."
+        : "An error occurred while loading the map. Please try again.");
+    }
+  }, [travelMode, constraintType, constraintValue, isRoundtrip, startPoint, stopPoint, language, interests, searchMode, searchSources, descriptionLength, isRouteEditMode, setIsLoading, setLoadingText, setAiChatHistory, setIsAiViewActive, setIsSidebarOpen, setRouteData, setFoundPoisCount, setRefinementProposals, setLastAction, enrichBackground, calculateRoutePath]);
+
+  const handleCityValidation = useCallback(async (context = 'blur', queryOverride = null, interestOverride = null, paramsOverride = null) => {
     const query = queryOverride || city;
     if (!query || query.length < 2) return;
 
-    // If already validated and input hasn't changed (data exists), skip fetch
-    // Only ignore cache if we have an explicit override or new params
     if (!queryOverride && validatedCityData && !paramsOverride) {
       if (context === 'submit') {
-        // CRITICAL GUARD: In Manual Pick Mode, validation (Enter key) should NOT trigger generic route generation
-        if (searchMode === 'manual') {
-          console.log("Manual mode active: Preventing auto-route generation on validation.");
-          return;
-        }
+        if (searchMode === 'manual') return;
         await loadMapWithCity(validatedCityData, interestOverride, paramsOverride);
       }
       return;
     }
 
     try {
-      // ... Nominatim logic continues ...
-      // In the successful match block (around line 430), pass paramsOverride:
-      // await loadMapWithCity(bestMatch, interestOverride, paramsOverride);
-      let results = [];
-      try {
-        // 1. Try Nominatim (via Local Proxy to avoid CORS)
-        const cityResponse = await apiFetch(`/api/nominatim?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`, {
-          headers: { 'Accept-Language': language },
-          signal: AbortSignal.timeout(8000)
-        });
-
-        // Check if response is actually JSON (proxy might return HTML on 404/500)
-        const contentType = cityResponse.headers.get("content-type");
-        if (cityResponse.ok && contentType && contentType.includes("application/json")) {
-          results = await cityResponse.json();
-        } else {
-          // If proxy returns HTML error page (e.g. 500), text() to debug but throw to trigger fallback
-          const errText = await cityResponse.text().catch(() => "Unknown error");
-          throw new Error(`Nominatim Proxy failed: ${cityResponse.status} ${errText.substring(0, 50)}`);
-        }
-      } catch (err) {
-        console.warn("Nominatim search failed, trying Photon fallback...", err);
-
-        try {
-          // 2. Try Photon API (Fallback)
-          // Photon is very lenient and fast.
-          // Note: Photon supports limited languages (en, de, fr, it). Defaulting to 'en' to avoid 400 errors.
-          const photonRes = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=en`, {
-            signal: AbortSignal.timeout(5000)
-          });
-          const photonData = await photonRes.json();
-
-          if (photonData && photonData.features) {
-            // Map Photon GeoJSON to pseudo-Nominatim format
-            results = photonData.features.map(f => {
-              const p = f.properties;
-              // Construct display name
-              const parts = [p.name, p.city, p.state, p.country].filter(Boolean);
-              return {
-                lat: f.geometry.coordinates[1].toString(), // Photon is [lon, lat]
-                lon: f.geometry.coordinates[0].toString(),
-                display_name: parts.join(", "),
-                name: p.name,
-                address: {
-                  city: p.city || p.name,
-                  state: p.state,
-                  country: p.country
-                },
-                // Add a flag to identify source preference if needed
-                importance: 0.5 // Default importance
-              };
-            });
-          }
-        } catch (errPhoton) {
-          console.warn("Photon search failed, trying OpenMeteo fallback...", errPhoton);
-
-          // 3. Try OpenMeteo Geocoding (Robust Fallback)
-          const omRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=${language}&format=json`, {
-            signal: AbortSignal.timeout(5000)
-          });
-          const omData = await omRes.json();
-
-          if (omData && omData.results) {
-            results = omData.results.map(r => ({
-              lat: r.latitude.toString(),
-              lon: r.longitude.toString(),
-              display_name: `${r.name}, ${r.country}`,
-              name: r.name,
-              address: {
-                city: r.name,
-                state: r.admin1,
-                country: r.country
-              },
-              importance: 0.4
-            }));
-          }
-        }
-      }
+      let results = await locationService.validateCity(query, language);
 
       if (!results || results.length === 0) {
         if (context === 'submit') {
@@ -897,167 +1125,60 @@ function CityExplorerApp() {
             }]);
           } else {
             alert("City not found. Please try again.");
-            setIsSidebarOpen(true); // Re-open sidebar on error
+            setIsSidebarOpen(true);
           }
         }
         return;
       }
 
-      let cityData = results;
+      let cityData = locationService.deduplicateResults(results);
 
-      // Robust Deduplication: Filter out candidates that are geographically identical (< 5km) and have similar names
-      const uniqueData = [];
-      for (const item of cityData) {
-        const isDuplicate = uniqueData.some(existing => {
-          // 1. Check Name Similarity (contains)
-          const nameMatch = existing.display_name.includes(item.name) || item.display_name.includes(existing.name);
-
-          // 2. Check Distance (if coordinates available)
-          let dist = 9999;
-          if (item.lat && existing.lat) {
-            dist = getDistance(parseFloat(item.lat), parseFloat(item.lon), parseFloat(existing.lat), parseFloat(existing.lon));
-          }
-
-          // Treat as duplicate if very close (< 5km) AND name matches is robust enough
-          // Or if display_name is identical (already covered by logic but good to receive)
-          return (dist < 5) || (existing.display_name === item.display_name);
-        });
-
-        if (!isDuplicate) {
-          uniqueData.push(item);
-        }
-      }
-      cityData = uniqueData;
-
-      console.log("[CityValidation] User Location:", userLocation);
-
-      // Smart Selection: If user location is known, sort by distance
       if (userLocation && userLocation.lat) {
         if (cityData.length > 1) {
-          try {
-            // Calculate distance for each candidate
-            cityData.forEach(r => {
-              r._dist = getDistance(userLocation.lat, userLocation.lng, parseFloat(r.lat), parseFloat(r.lon));
-            });
-
-            // Sort by distance (closest first)
-            cityData.sort((a, b) => a._dist - b._dist);
-
-            console.log("[CityValidation] Sorted Candidates:", cityData.map(c => `${c.name} (${c._dist.toFixed(1)}km)`));
-
-            // Heuristic: If closest candidate is within 100km, auto-select it
-            if (cityData[0]._dist < 100) {
-              console.log(`[Smart Selection] Auto-picking closest: ${cityData[0].name} (${cityData[0]._dist.toFixed(1)}km)`);
-              cityData = [cityData[0]];
-            }
-          } catch (err) {
-            console.warn("Smart selection failed", err);
-          }
+          cityData.forEach(r => {
+            r._dist = getDistance(userLocation.lat, userLocation.lng, parseFloat(r.lat), parseFloat(r.lon));
+          });
+          cityData.sort((a, b) => a._dist - b._dist);
+          if (cityData[0]._dist < 100) cityData = [cityData[0]];
         }
-      } else {
-        console.warn("[CityValidation] User location missing. Skipping smart selection.");
-        // Fallback: If deduplication left only 1 result, we are good.
       }
 
-      // In 'manual' and 'prompt' modes, skip disambiguation and auto-select the best match
-      // (which is already sorted by distance if userLocation is available)
       if (cityData.length > 1 && searchMode !== 'prompt' && searchMode !== 'manual') {
         setDisambiguationOptions(cityData);
         setDisambiguationContext(context);
-        setIsSidebarOpen(true); // Re-open sidebar for disambiguation
+        setIsSidebarOpen(true);
         return;
       }
 
-      // Exact match / Single result
       const match = cityData[0];
-      setValidatedCityData(match); // Mark as valid
+      setValidatedCityData(match);
 
       if (context === 'submit') {
-        // Proceed to map
         await loadMapWithCity(match, interestOverride, paramsOverride);
-      } else {
-        // On blur, maybe autofill
       }
-
     } catch (error) {
       console.error('Validation error:', error);
     }
-  };
-  const handleUseCurrentLocation = async () => {
+  }, [city, validatedCityData, searchMode, language, userLocation, loadMapWithCity]);
+  const handleUseCurrentLocation = useCallback(async () => {
     setIsLoading(true);
     setLoadingText(language === 'nl' ? 'Locatie zoeken...' : 'Finding your location...');
-    setIsTrackingEnabled(true); // Enable continuous tracking
+    setIsTrackingEnabled(true);
 
     return new Promise((resolve) => {
-      // Helper: Process Coordinates into City Data
       const processCoordinates = async (latitude, longitude) => {
-        let foundCity = null;
-        let displayName = null;
-        let address = null;
-        let resultData = null;
-
-        // 1. Try Nominatim (OSM) - High Quality via Proxy
-        try {
-          const res = await apiFetch(`/api/nominatim?format=json&lat=${latitude}&lon=${longitude}`);
-          if (!res.ok) throw new Error(res.statusText);
-          const data = await res.json();
-          if (data && data.address) {
-            const addr = data.address;
-            foundCity = addr.city || addr.town || addr.village || addr.municipality;
-            displayName = foundCity;
-            if (addr.country) displayName += `, ${addr.country}`;
-            address = data.address;
-          }
-        } catch (err) {
-          console.warn("Nominatim Reverse Geocode failed, trying fallback...", err);
-        }
-
-        // 2. Fallback: BigDataCloud (Client-side friendly)
-        if (!foundCity) {
-          try {
-            const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=${language === 'nl' ? 'nl' : 'en'}`);
-            const data = await res.json();
-            if (data && (data.city || data.locality)) {
-              foundCity = data.city || data.locality;
-              displayName = foundCity;
-              if (data.countryName) displayName += `, ${data.countryName}`;
-              // Construct pseudo-address object for compatibility
-              address = { city: foundCity, country: data.countryName };
-            }
-          } catch (err) {
-            console.warn("BigDataCloud fallback failed", err);
-          }
-        }
-
-        // 3. Final Result or Coordinate Fallback
-        if (foundCity) {
-          setCity(displayName);
-          resultData = {
-            lat: latitude.toString(),
-            lon: longitude.toString(),
-            name: foundCity,
-            display_name: displayName,
-            address: address
-          };
-          setValidatedCityData(resultData);
-          setFocusedLocation({ lat: latitude, lng: longitude });
-          setUserLocation({ lat: latitude, lng: longitude });
-        } else {
-          // Absolute Fallback: Coordinates
-          const name = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-          setCity(name);
-          resultData = { lat: latitude, lon: longitude, name: name, display_name: name };
+        const resultData = await locationService.reverseGeocode(latitude, longitude, language);
+        if (resultData) {
+          setCity(resultData.display_name);
           setValidatedCityData(resultData);
           setFocusedLocation({ lat: latitude, lng: longitude });
           setUserLocation({ lat: latitude, lng: longitude });
         }
-
         setIsLoading(false);
         setLoadingText('Exploring...');
-        resolve(resultData);
+        return resultData;
       };
 
-      // Fallback: IP-based Location
       const runIpFallback = async () => {
         console.log("GPS failed. Attempting IP fallback...");
         try {
@@ -1070,23 +1191,16 @@ function CityExplorerApp() {
           }
         } catch (e) {
           console.error("IP Fallback failed", e);
-
           setIsLoading(false);
           setLoadingText('Exploring...');
-
-          // User requested change: If location fails, ask user instead of deciding
           const manualLocation = prompt(language === 'nl'
             ? "Ik kon je locatie niet automatisch bepalen. Waar wil je vertrekken?"
             : "I couldn't find your location. Where do you want to start?");
 
           if (manualLocation && manualLocation.trim().length > 0) {
-            // User provided manual input -> Resolve with this "city" name
             setCity(manualLocation);
-            // We return a mock object so flow continues. Validation will happen later.
             resolve({ name: manualLocation, display_name: manualLocation });
-          } else {
-            resolve(null);
-          }
+          } else resolve(null);
         }
       };
 
@@ -1095,435 +1209,31 @@ function CityExplorerApp() {
         return;
       }
 
-      // Try Standard Geolocation (Low Accuracy for Speed/Reliability)
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          processCoordinates(pos.coords.latitude, pos.coords.longitude);
-        },
+        (pos) => processCoordinates(pos.coords.latitude, pos.coords.longitude),
         (err) => {
           console.warn("Geolocation API error:", err.code, err.message);
-          // On error (Permission denied or Timeout), try IP fallback
           runIpFallback();
         },
         { timeout: 20000, enableHighAccuracy: false, maximumAge: 60000 }
       );
     });
-  };
+  }, [language, setIsLoading, setLoadingText, setIsTrackingEnabled, setCity, setValidatedCityData, setFocusedLocation, setUserLocation]);
 
-  // Helper to fetch Wikipedia summary
-  const fetchWikipediaSummary = async (query, lang = 'en', context = '') => {
-    try {
-      // Append context (City Name) to the search query to avoid generic definitions
-      // But avoid duplicating it if already present (e.g. "Museum Hasselt" + "Hasselt")
-      const hasContext = context && query.toLowerCase().includes(context.toLowerCase());
-      const fullQuery = (context && !hasContext) ? `${query} ${context}` : query;
-      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(fullQuery)}&format=json&origin=*`;
-      const searchRes = await fetch(searchUrl);
-      const searchData = await searchRes.json();
+  // Wikipedia Helper removed - logic moved to wikiService.js
 
-      if (!searchData.query?.search?.length) {
-        // Fallback 1: Try raw name, BUT only if it looks specific (multi-word) to avoid generic dictionary defs like "Park".
-        if (context && query.trim().split(' ').length > 1) {
-          return fetchWikipediaSummary(query, lang, ''); // Recursive call without context
-        }
 
-        // Fallback 2: Search for the POI *inside* the City's Wikipedia page.
-        // This mimics reading a guide book about the city.
-        if (context) {
-          try {
-            const citySearchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext&titles=${encodeURIComponent(context)}&format=json&origin=*`;
-            const cityRes = await fetch(citySearchUrl);
-            const cityData = await cityRes.json();
-            const cityPages = cityData.query?.pages;
-            const cityPageId = Object.keys(cityPages || {})[0];
 
-            if (cityPageId && cityPageId !== '-1') {
-              const cityText = cityPages[cityPageId].extract;
-              // Simple regex to find the POI name in the text
-              // We look for the name, allowing for case insensitivity
-              const escQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape regex chars
-              // Look for sentence containing the query
-              const regex = new RegExp(`([^.]*?${escQuery}[^.]*\\.)`, 'i');
-              const match = cityText.match(regex);
-
-              if (match && match[1]) {
-                // Found a sentence! Let's grab it and maybe the next one.
-                // Find index of match
-                const idx = match.index;
-                // Grab a chunk of text around it (e.g. 500 chars)
-                const start = Math.max(0, idx - 100);
-                const end = Math.min(cityText.length, idx + 400);
-                const snippet = cityText.substring(start, end);
-
-                // Clean up leading/trailing partial sentences
-                let validSentences = snippet.match(/[^.!?]+[.!?]+/g);
-                if (validSentences) {
-                  // Filter for the one containing the query
-                  const relSentences = validSentences.filter(s => s.toLowerCase().includes(query.toLowerCase()));
-                  if (relSentences.length > 0) {
-                    // Return the matching sentence and neighbors if possible, or just the snippet cleaned
-                    const cityLink = `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(context)}`;
-                    return { description: validSentences.join(' ').trim(), link: cityLink, source: "Wikipedia (City Mention)" };
-                  }
-                }
-              }
-            }
-          } catch (eInner) { console.warn("City fallback failed", eInner); }
-        }
-
-        // No Wiki results found. Throw error to trigger catch block and subsequent fallbacks (DDG/Google).
-        throw new Error("Wiki search returned no results.");
-      }
-
-      let title = searchData.query.search[0].title;
-
-      // REFINEMENT: If the result is just the City Name itself (but our query was more specific),
-      // it means Wiki couldn't find the POI and defaulted to the City. This is bad (results in generic city info).
-      // We should REJECT this result and try a "Clean Name" search (POI name without City).
-      if (context && title.toLowerCase() === context.toLowerCase() && query.length > context.length) {
-        // Trigger Fallback logic below by throwing error, OR try cleaned name immediately.
-        // Let's try cleaned name immediately.
-        const cleanName = query.replace(new RegExp(context, 'gi'), '').trim();
-        if (cleanName.length > 3) {
-          console.log("Wiki returned city page for specific POI. Retrying with clean name:", cleanName);
-          return fetchWikipediaSummary(cleanName, lang, ''); // Recurse without context
-        }
-      }
-      // Fetch intro. We'll handle truncation client-side to ensure sentence integrity.
-      const detailsUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&explaintext&redirects=1&titles=${encodeURIComponent(title)}&format=json&origin=*`;
-      const detailsRes = await fetch(detailsUrl);
-      const detailsData = await detailsRes.json();
-
-      const pages = detailsData.query?.pages;
-      // if (!pages) return null; // BAD: Aborts fallbacks
-      if (!pages) throw new Error("Wiki details pages missing.");
-
-      const pageId = Object.keys(pages)[0];
-      if (pageId === '-1') throw new Error("Wikipedia page not found.");
-
-      let extract = pages[pageId].extract;
-      if (!extract) throw new Error("No extract found for Wikipedia page.");
-
-
-      // Cleaning: Remove parenthetical text (pronunciations) and reference brackets [1], [2]
-      extract = extract.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '');
-
-      // Return a much longer summary for "Tour Guide" experience (~30-60s speech).
-      // Average speaking rate is ~130-150 words per minute.
-      // 30-60 seconds = ~75-150 words.
-      // 3 sentences is often too short. We'll try to find a natural break after ~800-1000 characters or just return the whole intro if reasonable.
-
-      // Let's aim for the first few substantial paragraphs.
-      // If we just return the cleaned extract, it might be the whole page intro, which is good!
-      // But let's cap it slightly to safeguard against massive walls of text if the intro is huge.
-      const sentences = extract.split('. ');
-
-      // If intro is short (< 8 sentences), return all of it.
-      if (sentences.length <= 8) return extract;
-
-      // Otherwise, take first 8 sentences which should be roughly 1 minute of speech.
-      const descText = sentences.slice(0, 8).join('. ') + '.';
-      const wikiLink = `https://${lang}.wikipedia.org/?curid=${pageId}`;
-      return { description: descText, link: wikiLink, source: "Wikipedia" };
-
-    } catch (e) {
-      console.warn("Wiki fetch failed for", query, e.message);
-    }
-
-    // Fallback: DuckDuckGo Instant Answer API (Zero-click info)
-    // This often catches smaller POIs that don't have a Wiki page but have web presence.
-    try {
-      const fullQuery = context ? `${query} ${context}` : query;
-      const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(fullQuery)}&format=json&no_html=1&skip_disambig=1`;
-      const ddgRes = await fetch(ddgUrl);
-      const ddgData = await ddgRes.json();
-
-      if (ddgData.AbstractText) {
-        return { description: ddgData.AbstractText, link: ddgData.AbstractURL, source: "DuckDuckGo" };
-      }
-    } catch (e) {
-      console.warn("DDG fallback failed", e);
-    }
-
-    // Fallback: Google Custom Search JSON API (Programmable Search Engine)
-    try {
-      // Construct query: Avoid duplicating city name if already in POI name
-      let fullQuery = query;
-      if (context && !query.toLowerCase().includes(context.toLowerCase())) {
-        fullQuery = `${query} ${context}`;
-      }
-
-      // Exclude social media to avoid "4287 likes" type descriptions. We want guide content.
-      // We want tourism sites, wikis, blogs.
-      fullQuery += " -site:facebook.com -site:instagram.com -site:twitter.com -site:linkedin.com";
-
-      // Call Proxy
-      // We rely on the server to have the API KEY and CX configured.
-      const searchUrl = `/api/google-search?q=${encodeURIComponent(fullQuery)}`;
-
-      let gRes = await apiFetch(searchUrl);
-      let gData = await gRes.json();
-
-      // RETRY LOGIC: If context search failed, try raw name
-      // (If server returned empty items)
-      if ((!gData.items || gData.items.length === 0) && fullQuery !== query) {
-        // console.log("Google Context Search failed. Retrying raw:", query);
-        const retryUrl = `/api/google-search?q=${encodeURIComponent(query)}`;
-        gRes = await apiFetch(retryUrl);
-        gData = await gRes.json();
-      }
-
-      if (gData.error) {
-        console.error("Google Search Proxy Error:", gData.error.message);
-      }
-
-      if (gData.items && gData.items.length > 0) {
-        const item = gData.items[0];
-        let bestText = item.snippet;
-
-        // Try to get a longer/better description from OpenGraph tags (meta description)
-        if (item.pagemap && item.pagemap.metatags && item.pagemap.metatags.length > 0) {
-          const tags = item.pagemap.metatags[0];
-          if (tags['og:description'] && tags['og:description'].length > bestText.length) {
-            bestText = tags['og:description'];
-          } else if (tags['description'] && tags['description'].length > bestText.length) {
-            bestText = tags['description'];
-          }
-        }
-
-        // Clean up text
-        const finalDesc = bestText.replace(/^\w{3} \d{1,2}, \d{4} \.\.\. /g, '').replace(/\n/g, ' ');
-        return { description: finalDesc, link: item.link, source: "Web Result" };
-      } else {
-        return null;
-      }
-
-    } catch (e) {
-      console.warn("Google Search fallback failed", e);
-    }
-  };
-
-
-
-  const processAIPrompt = async (promptText, shouldAutoRead = false) => {
-    if (!promptText.trim()) return;
-
-    // Add user message to history
-    const newUserMsg = { role: 'user', text: promptText };
-    setAiChatHistory(prev => [...prev, newUserMsg]);
-    setAiPrompt(''); // Clear input
-
-    setIsLoading(true);
-    setLoadingText(language === 'nl' ? 'gids denkt na...' : 'guide is thinking...');
-
-    try {
-      const updatedHistory = [...aiChatHistory, newUserMsg];
-      const engine = new PoiIntelligence({ language });
-      // Pass isRouteActive = true if routeData exists
-      // Construct Context Object
-      const routeContext = routeData ? {
-        isActive: true,
-        city: validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null),
-        stats: routeData.stats,
-        poiNames: routeData.pois ? routeData.pois.map(p => p.name).join(', ') : '',
-        startName: routeData.startName || startPoint
-      } : null;
-
-      console.log("Processing AI Prompt with Context:", routeContext);
-      const result = await engine.parseNaturalLanguageInput(promptText, language, updatedHistory, routeContext);
-
-      console.log("AI Result:", result);
-
-      if (!result) throw new Error("Guide translation failed");
-
-      // Update local history with AI message
-      let aiResponseText = result.message;
-      let searchIntent = null;
-
-      // DETECT SEARCH INTENT
-      // Regex: Case insensitive "SEARCH", allow newlines, optional spaces
-      // Supports both [[SEARCH:...]] and [SEARCH:...]
-      const searchMatch = aiResponseText.match(/\[{1,2}\s*SEARCH\s*:\s*([\s\S]*?)\s*\]{1,2}/i);
-
-      // FALLBACK: Semantic Promise Detection
-      // If AI says "Ik zoek [X] voor je op", it means valid intent even if tag is missing.
-      const semanticMatch = aiResponseText.match(/(?:Ik zoek|I am searching for|Checking|Opzoeken van)\s+(?:de|het|een|an|a|the)?\s*([A-Z][a-zA-Z0-9\s\-\']+?)\s+(?:voor je op|for you|in de buurt|nearby)/i);
-
-      if (searchMatch) {
-        searchIntent = searchMatch[1];
-        aiResponseText = aiResponseText.replace(searchMatch[0], '').trim();
-      } else if (semanticMatch) {
-        console.log("[AI] Semantic Search Promise detected:", semanticMatch[1]);
-        searchIntent = semanticMatch[1].trim();
-      }
-
-      setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
-
-      // EXECUTE SEARCH IF DETECTED
-      if (searchIntent) {
-        // Run in background but show loading in chat (handled by async nature or custom msg)
-        await handleAiSearchRequest(searchIntent);
-      } else {
-
-        // STANDARD LOGIC (Params extraction etc)
-        // Extract and update state if params found
-        if (result.params) {
-          const p = result.params;
-          if (p.city) setCity(p.city);
-          if (p.interests) setInterests(p.interests);
-          if (p.travelMode) setTravelMode(p.travelMode);
-          if (p.constraintType) setConstraintType(p.constraintType);
-          if (p.constraintValue) setConstraintValue(p.constraintValue);
-          // isRoundtrip removed as it's now constant true
-          if (p.startPoint) setStartPoint(p.startPoint);
-        }
-
-        // Action based on status
-        if (result.status === 'close') {
-          setIsAiViewActive(false);
-          return null;
-        }
-
-        if (result.status === 'complete') {
-          const newCity = result.params?.city;
-          const currentActiveCity = validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null);
-          const isCitySwitch = newCity && currentActiveCity && newCity.toLowerCase().trim() !== currentActiveCity.toLowerCase().trim();
-
-          // Fallback for interests
-          const effectiveInterests = result.params?.interests || interests;
-
-          // CASE A: Start New / Regenerate
-          // Fix: Don't force new route if just using prompt mode with existing route (unless switching cities)
-          if (!routeData || isCitySwitch) {
-            let finalCity = newCity || city;
-
-            // Fix: If city is null but startPoint implies current location, use current location
-            const startPoint = result.params?.startPoint || "";
-            const isCurrentLoc = startPoint && (startPoint.toLowerCase().includes('huidig') || startPoint.toLowerCase().includes('current') || startPoint.toLowerCase().includes('mijn locat'));
-
-            if (!finalCity && isCurrentLoc) {
-              console.log("AI implied current location start without city. Triggering GPS & continuing...");
-              // Trigger Use Current Location flow and wait for data
-              const cityData = await handleUseCurrentLocation();
-
-              if (cityData && cityData.name) {
-                finalCity = cityData.name;
-                // Also set the state just in case, though handleUseCurrentLocation does it
-                setCity(cityData.name);
-              } else {
-                // Failed to get location
-                return null;
-              }
-            }
-
-            // NEW: Interests are now optional, so we only block if finalCity is missing
-            if (!finalCity) return null;
-
-            setIsAiViewActive(true);
-            await handleCityValidation('submit', finalCity, effectiveInterests, result.params);
-
-            // Switch to itinerary view after a small delay (Reduced to 1s)
-            setTimeout(() => setIsAiViewActive(false), 1000);
-            return;
-          }
-
-          // CASE B: ADD to current journey
-          if (routeData) {
-            setIsAiViewActive(true);
-
-            // 1. Check if user explicitly asked for an ADD/SEARCH
-            // Regex tries to capture the object: "Voeg [Molenpoort] toe", "Zoek [Koffie]"
-            // Robust cleaning: explicit steps are safer than one giant regex
-            const actionRegex = /^(?:voeg|add|zoek|find|plaats|put)\b/i;
-            const hasAction = actionRegex.test(promptText);
-
-            let extractedInterest = null;
-            if (hasAction) {
-              let clean = promptText.replace(actionRegex, '').trim();
-              clean = clean.replace(/[\.\?!]+$/, '');
-              clean = clean.replace(/\b(?:toe|aan|in)\b$/i, '').trim();
-              clean = clean.replace(/^(?:de|het|een|an|a|the)\b\s*/i, '').trim();
-              clean = clean.replace(/^["']|["']$/g, '');
-              if (clean.length > 2) extractedInterest = clean;
-            }
-
-            const userAskedForAdd = hasAction && !!extractedInterest;
-
-            // 2. Determine target interest (AI param OR Regex fallback)
-            // If AI gave a NEW interest, use it. If not, but user asked for Add, use extracted.
-            let targetInterest = (effectiveInterests && effectiveInterests !== interests) ? effectiveInterests : null;
-
-            if (!targetInterest && userAskedForAdd && extractedInterest) {
-              console.log("[AI] Missing AI params but valid User Intent. Using extracted:", extractedInterest);
-              // DEBUG: Notify user that we are using the fallback - REMOVED
-
-              targetInterest = extractedInterest;
-            }
-
-            if (targetInterest) {
-              console.log("[AI] Redirecting to Search Proposal:", targetInterest);
-              await handleAiSearchRequest(targetInterest);
-            } else {
-              // Just updating parameters (travel mode, distance etc) is okay to do automatically
-              await handleAddToJourney(null, effectiveInterests, result.params);
-              setTimeout(() => setIsAiViewActive(false), 1000);
-            }
-            return;
-          }
-        }
-      }
-
-      // Still interactive or missing city
-      return null;
-    } catch (err) {
-      console.error("AI Prompt processing failed", err);
-      setAiChatHistory(prev => [...prev, { role: 'brain', text: 'Oei, er liep iets mis bij het verwerken van je vraag. Probeer je het nog eens?' }]);
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // AR Scan Handler
-  const handleArScan = async (base64Image) => {
-    // Show scanning state in ArView (it handles its own animation, but we can set loading text if we want global loader)
-    setIsLoading(true);
-    setLoadingText(language === 'nl' ? 'Object analyseren...' : 'Analyzing object...');
-
-    try {
-      const intelligence = new PoiIntelligence({
-        city: city || 'Unknown',
-        language,
-        interests
-      });
-
-      const result = await intelligence.analyzeImage(base64Image, userLocation);
-
-      if (result) {
-        setScanResult(result);
-        setIsArMode(false); // Close AR view to show result
-      } else {
-        alert(language === 'nl' ? 'Kon object niet identificeren.' : 'Could not identify object.');
-      }
-    } catch (error) {
-      console.error("AR Scan error:", error);
-      alert(language === 'nl' ? 'Er is een fout opgetreden.' : 'An error occurred.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // New Handler for AI-triggered Searches - Revised for Smart Algorithm
-  const handleAiSearchRequest = async (rawQuery) => {
+  const handleAiSearchRequest = useCallback(async (rawQuery) => {
     const searchId = Date.now();
     console.log(`[AI Search #${searchId}] Starting for:`, rawQuery);
 
     let query = rawQuery;
     let locationContext = null;
 
-    // Regex split to handle NEAR/near/Near with optional spaces
     const nearSplit = rawQuery.split(/\s*\|\s*NEAR:\s*/i);
-
     if (nearSplit.length > 1) {
       query = nearSplit[0].trim();
       locationContext = nearSplit[1].trim();
@@ -1532,9 +1242,9 @@ function CityExplorerApp() {
     setLoadingText(language === 'nl' ? `Zoeken naar ${query}...` : `Searching for ${query}...`);
     setIsLoading(true);
 
-    // DEBUG: Explicit confirmation in chat - REMOVED
-
     try {
+      const { getCombinedPOIs } = await import('./utils/poiService');
+
       let center = routeData?.center;
       let radius = 2;
       let contextFound = false;
@@ -1546,7 +1256,6 @@ function CityExplorerApp() {
           center = routeData.center;
           radius = 10;
           contextFound = true;
-          console.log(`[AI Search #${searchId}] Context: Whole Route (10km)`);
         } else if (upperContext === '@MIDPOINT') {
           if (routeData.pois.length >= 2) {
             let totalDist = 0;
@@ -1570,7 +1279,6 @@ function CityExplorerApp() {
               radius = 5.0;
               contextFound = true;
               referencePoiId = midPoi.id;
-              console.log(`[AI Search #${searchId}] Context: Midpoint @ ${midPoi.name}`);
             }
           }
         } else {
@@ -1588,7 +1296,6 @@ function CityExplorerApp() {
             radius = 5.0;
             contextFound = true;
             referencePoiId = target.id;
-            console.log(`[AI Search #${searchId}] Context: Anchor POI ${target.name}`);
           }
         }
       }
@@ -1602,29 +1309,23 @@ function CityExplorerApp() {
           radius = 7.0;
         } else if (validatedCityData) {
           center = [validatedCityData.lat, validatedCityData.lon];
-          radius = 10.0;
         }
       }
 
       if (!center || isNaN(center[0])) {
-        console.warn(`[AI Search #${searchId}] No center found. Fallback to city defaults.`);
-        center = validatedCityData ? [validatedCityData.lat, validatedCityData.lon] : [48.8566, 2.3522]; // Paris fallback
+        center = validatedCityData ? [validatedCityData.lat, validatedCityData.lon] : [48.8566, 2.3522];
         radius = 15;
       }
 
       const tempCityData = { lat: center[0], lon: center[1], name: "Search Area" };
       const robustSources = { osm: true, foursquare: true, google: true };
 
-      console.log(`[AI Search #${searchId}] Fetching for "${query}" at ${center} (Sources: All)`);
       let candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", radius, robustSources, language, (msg) => setLoadingText(msg));
-
       if ((!candidates || candidates.length === 0) && radius < 15) {
-        console.log(`[AI Search #${searchId}] Retrying broader (15km) search...`);
         candidates = await getCombinedPOIs(tempCityData, query, city || "Nearby", 15, robustSources, language, (msg) => setLoadingText(msg));
       }
 
       if (candidates && candidates.length > 0) {
-        console.log(`[AI Search #${searchId}] Found ${candidates.length} results.`);
         const currentRoute = routeData?.pois || [];
         const travelModeForEstimation = travelMode === 'cycling' ? 'bike' : 'walk';
 
@@ -1634,7 +1335,6 @@ function CityExplorerApp() {
             anchorIdx = currentRoute.findIndex(p => p.id === referencePoiId);
           }
 
-          // Safety check for detour calculation
           let primaryDetour = { added_distance_m: 0, added_duration_min: 0 };
           if (routeData && routeData.center) {
             try {
@@ -1660,7 +1360,6 @@ function CityExplorerApp() {
                   cand,
                   travelModeForEstimation
                 );
-
                 if (altDetour.added_distance_m < minAlternativeDetour - 100) {
                   minAlternativeDetour = altDetour.added_distance_m;
                   const refPoi = i === -1 ? { name: language === 'nl' ? 'Start' : 'Start', index: -1 } : { ...currentRoute[i], index: i };
@@ -1694,15 +1393,13 @@ function CityExplorerApp() {
           context: { referencePoiId, anchorPoiIndex: referencePoiId ? currentRoute.findIndex(p => p.id === referencePoiId) : -1 }
         }]);
       } else {
-        console.warn(`[AI Search #${searchId}] No candidates found.`);
         setAiChatHistory(prev => [...prev, {
           role: 'brain',
           text: language === 'nl' ? `Ik heb helaas geen "${query}" gevonden in de buurt. Misschien staat het anders bekend?` : `I couldn't find any "${query}" nearby. Maybe it's known under a different name?`
         }]);
       }
-
     } catch (e) {
-      console.error(`[AI Search #${searchId}] CRASH:`, e);
+      console.error("AI Search CRASH:", e);
       setAiChatHistory(prev => [...prev, {
         role: 'brain',
         text: language === 'nl' ? "Oei, er liep iets mis bij het zoeken. Probeer je het nog een keer met een andere omschrijving?" : "Oops, something went wrong while searching. Could you try again with a different description?"
@@ -1710,67 +1407,19 @@ function CityExplorerApp() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [language, setIsLoading, setLoadingText, routeData, userLocation, validatedCityData, city, travelMode, setAiChatHistory]);
 
 
-
-  const handleJourneyStart = async (e, interestOverride = null, promptOverride = null) => {
+  const handleAddToJourney = useCallback(async (e, interestOverride = null, paramsOverride = null) => {
     e && e.preventDefault();
 
-    if (searchMode === 'prompt') {
-      const activePrompt = promptOverride || aiPrompt;
-      if (!activePrompt.trim()) return;
-
-      const isVoice = e && e.isVoice === true;
-      await processAIPrompt(activePrompt, isVoice);
-      return;
-    }
-
-    const activeInterest = interestOverride || interests || (language === 'nl' ? 'toeristische plekken' : 'tourist highlights');
-
-    // NOTE: Removed empty interest guard. poiService.js now handles empty interests 
-    // by defaulting to popular tourist categories.
-
-    if (!city.trim()) {
-      setShowCitySelector(true);
-      return;
-    }
-
-    // Update state if override used
-    if (interestOverride) setInterests(interestOverride);
-
-    // console.log("handleJourneyStart called. City:", city, "Interest:", activeInterest);
-    setIsLoading(true);
-    // setIsSidebarOpen(false); // REMOVED: Keep sidebar state manageable or let logic decide 
-    setLoadingText(language === 'nl' ? 'Aan het verkennen...' : 'Exploring...');
-    setFoundPoisCount(0); // Reset count
-
-    try {
-      // Efficiently use cached validation
-      if (validatedCityData) {
-        // console.log("Using cached city data:", validatedCityData);
-        await loadMapWithCity(validatedCityData, activeInterest);
-      } else {
-        // console.log("Validating city:", city);
-        // Note: This calls loadMapWithCity internally if successful
-        await handleCityValidation('submit', null, activeInterest);
-      }
-    } catch (err) {
-      console.error("Journey start failed", err);
-      // alert("Something went wrong starting your journey: " + err.message);
-    } finally {
-      setIsLoading(false);
-      setNavPhase(NAV_PHASES.PRE_ROUTE);
-    }
-  };
-
-  const handleAddToJourney = async (e, interestOverride = null, paramsOverride = null) => {
-    e && e.preventDefault();
-
-    // AI ADDING SUPPORT: Use the unified conversational agent
     if (searchMode === 'prompt' && !interestOverride) {
       if (!aiPrompt.trim()) return;
-      return await processAIPrompt(aiPrompt);
+      // Break circular dependency with Ref
+      if (processAIPromptRef.current) {
+        return await processAIPromptRef.current(aiPrompt);
+      }
+      return;
     }
 
     const activeInterest = interestOverride || interests || (language === 'nl' ? 'toeristische plekken' : 'tourist highlights');
@@ -1791,7 +1440,6 @@ function CityExplorerApp() {
       const effectiveConstraintValue = activeParams.constraintValue || constraintValue;
       const effectiveRoundtrip = activeParams.isRoundtrip !== undefined ? activeParams.isRoundtrip : isRoundtrip;
 
-      // Use effective constraints
       const constraints = {
         type: effectiveConstraintType,
         value: effectiveConstraintValue,
@@ -2056,7 +1704,7 @@ function CityExplorerApp() {
         stats: {
           ...routeData.stats,
           totalDistance: finalDist.toFixed(1),
-          walkDistance: (walkDist || 0).toFixed(1),
+          walkDistance: (finalDist || 0).toFixed(1),
           limitKm: targetLimitKm.toFixed(1),
           isRoundtrip: constraints.isRoundtrip
         }
@@ -2197,7 +1845,207 @@ function CityExplorerApp() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchMode, aiPrompt, interests, language, routeData, travelMode, constraintType, constraintValue, isRoundtrip, validatedCityData, city, searchSources, activePoiIndex, isRouteEditMode, descriptionLength, handleAiSearchRequest, handleCityValidation]);
+  const processAIPrompt = useCallback(async (promptText, shouldAutoRead = false) => {
+    if (!promptText.trim()) return;
+
+    const newUserMsg = { role: 'user', text: promptText };
+    setAiChatHistory(prev => [...prev, newUserMsg]);
+    setAiPrompt('');
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'gids denkt na...' : 'guide is thinking...');
+
+    try {
+      const updatedHistory = [...aiChatHistory, newUserMsg];
+      const engine = new PoiIntelligence({ language });
+      const routeContext = routeData ? {
+        isActive: true,
+        city: validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null),
+        stats: routeData.stats,
+        poiNames: routeData.pois ? routeData.pois.map(p => p.name).join(', ') : '',
+        startName: routeData.startName || startPoint
+      } : null;
+
+      const result = await engine.parseNaturalLanguageInput(promptText, language, updatedHistory, routeContext);
+      if (!result) throw new Error("Guide translation failed");
+
+      let aiResponseText = result.message;
+      let searchIntent = null;
+      const searchMatch = aiResponseText.match(/\[{1,2}\s*SEARCH\s*:\s*([\s\S]*?)\s*\]{1,2}/i);
+      const semanticMatch = aiResponseText.match(/(?:Ik zoek|I am searching for|Checking|Opzoeken van)\s+(?:de|het|een|an|a|the)?\s*([A-Z][a-zA-Z0-9\s\-\']+?)\s+(?:voor je op|for you|in de buurt|nearby)/i);
+
+      if (searchMatch) {
+        searchIntent = searchMatch[1];
+        aiResponseText = aiResponseText.replace(searchMatch[0], '').trim();
+      } else if (semanticMatch) {
+        searchIntent = semanticMatch[1].trim();
+      }
+
+      setAiChatHistory(prev => [...prev, { role: 'brain', text: aiResponseText }]);
+
+      if (searchIntent) {
+        await handleAiSearchRequest(searchIntent);
+      } else {
+        if (result.params) {
+          const p = result.params;
+          if (p.city) setCity(p.city);
+          if (p.interests) setInterests(p.interests);
+          if (p.travelMode) setTravelMode(p.travelMode);
+          if (p.constraintType) setConstraintType(p.constraintType);
+          if (p.constraintValue) setConstraintValue(p.constraintValue);
+          if (p.startPoint) setStartPoint(p.startPoint);
+        }
+
+        if (result.status === 'close') {
+          setIsAiViewActive(false);
+          return null;
+        }
+
+        if (result.status === 'complete') {
+          const newCity = result.params?.city;
+          const currentActiveCity = validatedCityData?.name || validatedCityData?.address?.city || (routeData ? city : null);
+          const isCitySwitch = newCity && currentActiveCity && newCity.toLowerCase().trim() !== currentActiveCity.toLowerCase().trim();
+          const effectiveInterests = result.params?.interests || interests;
+
+          if (!routeData || isCitySwitch) {
+            let finalCity = newCity || city;
+            const startPointState = result.params?.startPoint || "";
+            const isCurrentLoc = startPointState && (startPointState.toLowerCase().includes('huidig') || startPointState.toLowerCase().includes('current') || startPointState.toLowerCase().includes('mijn locat'));
+
+            if (!finalCity && isCurrentLoc) {
+              const cityData = await handleUseCurrentLocation();
+              if (cityData && cityData.name) {
+                finalCity = cityData.name;
+                setCity(cityData.name);
+              } else return null;
+            }
+
+            if (!finalCity) return null;
+
+            setIsAiViewActive(true);
+            await handleCityValidation('submit', finalCity, effectiveInterests, result.params);
+            setTimeout(() => setIsAiViewActive(false), 1000);
+            return;
+          }
+
+          if (routeData) {
+            setIsAiViewActive(true);
+            const actionRegex = /^(?:voeg|add|zoek|find|plaats|put)\b/i;
+            const hasAction = actionRegex.test(promptText);
+            let extractedInterest = null;
+            if (hasAction) {
+              let clean = promptText.replace(actionRegex, '').trim();
+              clean = clean.replace(/[\.\?!]+$/, '');
+              clean = clean.replace(/\b(?:toe|aan|in)\b$/i, '').trim();
+              clean = clean.replace(/^(?:de|het|een|an|a|the)\b\s*/i, '').trim();
+              clean = clean.replace(/^["']|["']$/g, '');
+              if (clean.length > 2) extractedInterest = clean;
+            }
+
+            const userAskedForAdd = hasAction && !!extractedInterest;
+            let targetInterest = (effectiveInterests && effectiveInterests !== interests) ? effectiveInterests : null;
+
+            if (!targetInterest && userAskedForAdd && extractedInterest) {
+              targetInterest = extractedInterest;
+            }
+
+            if (targetInterest) {
+              await handleAiSearchRequest(targetInterest);
+            } else {
+              await handleAddToJourney(null, effectiveInterests, result.params);
+              setTimeout(() => setIsAiViewActive(false), 1000);
+            }
+            return;
+          }
+        }
+      }
+      return null;
+    } catch (err) {
+      console.error("AI Prompt processing failed", err);
+      setAiChatHistory(prev => [...prev, { role: 'brain', text: 'Oei, er liep iets mis bij het verwerken van je vraag. Probeer je het nog eens?' }]);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [aiChatHistory, language, routeData, validatedCityData, city, startPoint, handleAiSearchRequest, setCity, setInterests, setTravelMode, setConstraintType, setConstraintValue, setStartPoint, setIsAiViewActive, interests, handleUseCurrentLocation, handleCityValidation, handleAddToJourney]);
+
+  useEffect(() => {
+    processAIPromptRef.current = processAIPrompt;
+  }, [processAIPrompt]);
+
+  // AR Scan Handler
+  const handleArScan = useCallback(async (base64Image) => {
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Object analyseren...' : 'Analyzing object...');
+
+    try {
+      const { PoiIntelligence } = await import('./services/PoiIntelligence');
+      const intelligence = new PoiIntelligence({
+        city: city || 'Unknown',
+        language,
+        interests
+      });
+
+      const result = await intelligence.analyzeImage(base64Image, userLocation);
+
+      if (result) {
+        setScanResult(result);
+        setIsArMode(false);
+      } else {
+        alert(language === 'nl' ? 'Kon object niet identificeren.' : 'Could not identify object.');
+      }
+    } catch (error) {
+      console.error("AR Scan error:", error);
+      alert(language === 'nl' ? 'Er is een fout opgetreden.' : 'An error occurred.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [city, language, interests, userLocation, setIsLoading, setLoadingText, setScanResult, setIsArMode]);
+
+
+
+
+
+  const handleJourneyStart = useCallback(async (e, interestOverride = null, promptOverride = null) => {
+    e && e.preventDefault();
+
+    if (searchMode === 'prompt') {
+      const activePrompt = promptOverride || aiPrompt;
+      if (!activePrompt.trim()) return;
+
+      const isVoice = e && e.isVoice === true;
+      await processAIPrompt(activePrompt, isVoice);
+      return;
+    }
+
+    const activeInterest = interestOverride || interests || (language === 'nl' ? 'toeristische plekken' : 'tourist highlights');
+
+    if (!city.trim()) {
+      setShowCitySelector(true);
+      return;
+    }
+
+    if (interestOverride) setInterests(interestOverride);
+
+    setIsLoading(true);
+    setLoadingText(language === 'nl' ? 'Aan het verkennen...' : 'Exploring...');
+    setFoundPoisCount(0);
+
+    try {
+      if (validatedCityData) {
+        await loadMapWithCity(validatedCityData, activeInterest);
+      } else {
+        await handleCityValidation('submit', null, activeInterest);
+      }
+    } catch (err) {
+      console.error("Journey start failed", err);
+    } finally {
+      setIsLoading(false);
+      setNavPhase(NAV_PHASES.PRE_ROUTE);
+    }
+  }, [searchMode, aiPrompt, processAIPrompt, interests, language, city, validatedCityData, loadMapWithCity, handleCityValidation]);
+
 
   const handleSelectProposal = (poi) => {
     if (!poiProposals) return;
@@ -2280,7 +2128,7 @@ function CityExplorerApp() {
 
   // Logic to update the start location of an existing route
   // This re-sorts the key POIs to be optimal from the NEW start location
-  const handleUpdateStartLocation = async (newStartInput) => {
+  const handleUpdateStartLocation = useCallback(async (newStartInput) => {
     if (!routeData || !routeData.pois) return;
 
     setIsLoading(true);
@@ -2288,8 +2136,6 @@ function CityExplorerApp() {
 
     try {
       let newStartCenter = routeData.center;
-
-      // 1. Resolve Location
       const isCurrentLoc = newStartInput && (newStartInput.toLowerCase().includes('huidig') || newStartInput.toLowerCase().includes('current') || newStartInput.toLowerCase().includes('mijn locat'));
 
       if (isCurrentLoc) {
@@ -2306,7 +2152,6 @@ function CityExplorerApp() {
         }
       } else if (newStartInput && newStartInput.trim().length > 2) {
         try {
-          // Geocode relative to current city to avoid jumps
           const cityName = validatedCityData?.address?.city || city;
           const q = `${newStartInput}, ${cityName}`;
           const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
@@ -2314,7 +2159,6 @@ function CityExplorerApp() {
           if (data && data[0]) {
             newStartCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
           } else {
-            // Try global
             const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(newStartInput)}&format=json&limit=1`);
             const data2 = await res2.json();
             if (data2 && data2[0]) {
@@ -2330,8 +2174,6 @@ function CityExplorerApp() {
         }
       }
 
-      // 2. Re-optimize POI Order (Nearest Neighbor from New Start)
-      // Keep existing POIs, just change order
       const existingPois = [...routeData.pois];
       const optimizedPois = [];
       const visited = new Set();
@@ -2355,15 +2197,10 @@ function CityExplorerApp() {
         } else break;
       }
 
-      // Calculate dist back to start if roundtrip
-      const returnDesc = isRoundtrip ? (language === 'nl' ? "Terug naar start" : "Back to start") : "";
-
-      // 3. Recalculate Path (OSRM)
-      // Note: We use the existing POI descriptions/images, no need to re-enrich
       const routeResult = await calculateRoutePath(optimizedPois, newStartCenter, travelMode, null, isRoundtrip, isRouteEditMode);
 
-      // 4. Fetch New Start/End Instructions
       const cityName = validatedCityData?.address?.city || city;
+      const { PoiIntelligence } = await import('./services/PoiIntelligence');
       const engine = new PoiIntelligence({ city: cityName, language });
       const newStartInstr = await engine.fetchArrivalInstructions(newStartInput || cityName, cityName, language);
 
@@ -2380,7 +2217,7 @@ function CityExplorerApp() {
 
       const newRouteData = {
         ...routeData,
-        center: newStartCenter, // Update center to behave as new start
+        center: newStartCenter,
         startName: startDisplayName,
         startIsPoi: false,
         startPoi: null,
@@ -2398,7 +2235,7 @@ function CityExplorerApp() {
       };
 
       setRouteData(newRouteData);
-      setStartPoint(newStartInput); // Update form state
+      setStartPoint(newStartInput);
 
     } catch (e) {
       console.error("Update start failed", e);
@@ -2406,416 +2243,21 @@ function CityExplorerApp() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [routeData, language, validatedCityData, city, travelMode, isRoundtrip, isRouteEditMode, setIsLoading, setLoadingText, setRouteData, setStartPoint, calculateRoutePath]);
 
-  const handleSuggestionSelect = (suggestion) => {
+  const handleSuggestionSelect = useCallback((suggestion) => {
     setRefinementProposals(null);
     if (lastAction === 'start') {
       handleJourneyStart(null, suggestion);
     } else if (lastAction === 'add') {
       handleAddToJourney(null, suggestion);
     }
-  };
-
-  const loadMapWithCity = async (cityData, interestOverride = null, paramsOverride = null) => {
-    const { lat, lon } = cityData;
-    const latNum = parseFloat(lat);
-    const lonNum = parseFloat(lon);
-    let cityCenter = (typeof latNum === 'number' && !isNaN(latNum) && typeof lonNum === 'number' && !isNaN(lonNum))
-      ? [latNum, lonNum]
-      : [52.3676, 4.9041];
-
-    // Constraints object constructed from state OR override
-    const activeParams = paramsOverride || {};
-    const effectiveTravelMode = activeParams.travelMode || travelMode;
-    const effectiveConstraintType = activeParams.constraintType || constraintType;
-    const effectiveConstraintValue = activeParams.constraintValue || constraintValue;
-    const effectiveRoundtrip = (activeParams.isRoundtrip !== undefined) ? activeParams.isRoundtrip : isRoundtrip;
-    const effectiveStartPoint = activeParams.startPoint || startPoint;
-    const effectiveStopPoint = activeParams.stopPoint || stopPoint;
-
-    // Handle Start Point (if provided by AI or user)
-    const activeStart = effectiveStartPoint;
-    const isCurrentLoc = activeStart && (activeStart.toLowerCase().includes('huidig') || activeStart.toLowerCase().includes('current') || activeStart.toLowerCase().includes('mijn locat'));
-
-    let startDisplayName = activeStart || (cityData.address?.city || cityData.name);
-    if (isCurrentLoc) {
-      startDisplayName = language === 'nl' ? 'Huidige locatie' : 'Current Location';
-      try {
-        const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 20000, enableHighAccuracy: false });
-        });
-        cityCenter = [pos.coords.latitude, pos.coords.longitude];
-      } catch (e) {
-        console.warn("Geolocation failed, falling back to city center", e);
-      }
-    } else if (activeStart && activeStart.trim().length > 2) {
-      try {
-        const cityName = cityData.address?.city || cityData.name;
-        const q = `${activeStart}, ${cityName}`;
-        const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
-        const data = await res.json();
-        if (data && data[0]) {
-          cityCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-        } else {
-          // Fallback 1: Try space instead of comma
-          const q2 = `${activeStart} ${cityName}`;
-          const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q2)}&format=json&limit=1`);
-          const data2 = await res2.json();
-
-          if (data2 && data2[0]) {
-            cityCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
-          } else {
-            // Fallback 2: Global search
-            const res3 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(activeStart)}&format=json&limit=1`);
-            const data3 = await res3.json();
-            if (data3 && data3[0]) {
-              cityCenter = [parseFloat(data3[0].lat), parseFloat(data3[0].lon)];
-            } else {
-              console.warn("Start point geocoding failed entirely.");
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to geocode startPoint", e);
-      }
-    }
-
-    // Handle Stop Point (for Point-to-Point)
-    let finalStopCenter = null;
-    if (!effectiveRoundtrip) {
-      if (effectiveStopPoint && effectiveStopPoint.trim().length > 2) {
-        try {
-          const cityName = cityData.address?.city || cityData.name;
-          const q = `${effectiveStopPoint}, ${cityName}`;
-          const res = await apiFetch(`/api/nominatim?q=${encodeURIComponent(q)}&format=json&limit=1`);
-          const data = await res.json();
-          if (data && data[0]) {
-            finalStopCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-          } else {
-            // Fallback global search for stop point
-            const res2 = await apiFetch(`/api/nominatim?q=${encodeURIComponent(effectiveStopPoint)}&format=json&limit=1`);
-            const data2 = await res2.json();
-            if (data2 && data2[0]) {
-              finalStopCenter = [parseFloat(data2[0].lat), parseFloat(data2[0].lon)];
-            }
-          }
-        } catch (e) {
-          console.warn("Failed to geocode stopPoint", e);
-        }
-      }
-    }
-
-    // Ensure we use the latest interest if overridden
-    const activeInterest = interestOverride || interests;
-
-    // Constraints object constructed from state
-    const constraints = {
-      type: effectiveConstraintType,
-      value: effectiveConstraintValue,
-      isRoundtrip: effectiveRoundtrip
-    };
-
-    // Use the city name from the data to improve the POI search
-    // Prioritize specific locality names
-    const searchCityName = cityData.address?.city ||
-      cityData.address?.town ||
-      cityData.address?.village ||
-      cityData.address?.municipality ||
-      cityData.name ||
-      cityData.display_name.split(',')[0];
-
-    try {
-      // 3. Get POIs
-      // Smart Search Strategy
-      // Calculate search radius
-      let searchRadiusKm = constraintValue;
-
-      // MODE 1: RADIUS MODE (Fixed 15km or User Value? User said "15 km radius")
-      // We will default to 15km for this mode if we want to be strict, but using the slider value is more flexible.
-      // However, the prompt says "1. POIs found in a 15 km radius". Let's enforce 15km for this specific mode request to match description exactly.
-      if (searchMode === 'radius') {
-        searchRadiusKm = constraints.value;
-      } else if (constraints.type === 'duration') {
-        // Speed lookup: Walking ~5km/h, Cycling ~15km/h
-        const speed = effectiveTravelMode === 'cycling' ? 15 : 5;
-        searchRadiusKm = (constraints.value / 60) * speed;
-      }
-
-      const candidates = await getCombinedPOIs(cityData, activeInterest, searchCityName, searchRadiusKm, searchSources, language, (msg) => setLoadingText(msg));
-      setFoundPoisCount(candidates.length);
-
-      if (candidates.length === 0) {
-        if (searchMode === 'prompt') {
-          setIsAiViewActive(true);
-          setAiChatHistory(prev => [...prev, {
-            role: 'brain',
-            text: language === 'nl'
-              ? `Oei, ik kon helaas geen plekken vinden voor "${activeInterest}" in ${searchCityName}. Heb je misschien andere interesses of een andere plek in gedachten?`
-              : `Oops, I couldn't find any spots for "${activeInterest}" in ${searchCityName}. Do you have other interests or maybe another place in mind?`
-          }]);
-          setIsSidebarOpen(true);
-          setRouteData(null);
-          return;
-        }
-
-        // Propose Refinement (Standard Mode)
-        const refinementOptions = getInterestSuggestions(activeInterest, language);
-        if (refinementOptions.length > 0) {
-          setRefinementProposals(refinementOptions);
-          setLastAction('start');
-          setRouteData(null); // Clear map
-          return;
-        }
-
-        // Classic Fallback if logic fails or no suggestions
-        console.warn("No POIs found. Trying fallback...");
-
-        // Fallback: Check for generic tourism to provide suggestions
-        let suggestions = [];
-        try {
-          suggestions = await fetchGenericSuggestions(searchCityName);
-        } catch (e) { console.warn("Fallback failed", e); }
-
-        let msg = `No matches found for "${activeInterest}" in ${searchCityName}.`;
-        if (suggestions.length > 0) {
-          msg += `\n\nMaybe try one of these nearby places:\n- ${[...new Set(suggestions)].slice(0, 3).join('\n- ')}`;
-        } else {
-          msg += `\n\nTry broader terms like "parks", "history", or "food".`;
-        }
-
-        // Switch to input screen immediately
-        setRouteData(null);
-        setIsAiViewActive(true);
-
-        // Show info in AI Chat instead of alert
-        setAiChatHistory(prev => [...prev, {
-          role: 'brain',
-          text: msg
-        }]);
-        return;
-      }
-
-      // Check for partial failures (multi-keyword search)
-      if (candidates.failedKeywords && candidates.failedKeywords.length > 0) {
-        const failedWords = candidates.failedKeywords.join(', ');
-        const msg = language === 'nl'
-          ? `Ik heb gezocht naar alles, maar ik kon geen resultaten vinden voor: "${failedWords}". Ik heb de route samengesteld met de andere plekjes.`
-          : `I searched for everything, but I couldn't find any results for: "${failedWords}". I have built the route with the other spots.`;
-
-        // Inform via AI Chat instead of alert
-        setAiChatHistory(prev => [...prev, {
-          role: 'brain',
-          text: msg
-        }]);
-      }
-
-      // Small delay to let user see the "Found X POIs" if it was instant
-      if (candidates.length > 0) {
-        await new Promise(r => setTimeout(r, 800));
-      }
-
-      // === MODE 1: RADIUS (Show All) ===
-      if (searchMode === 'radius') {
-        const topCandidates = candidates.slice(0, 50);
-
-        // 1. Set initial state with basic POIs (loading descriptions)
-        const initialPois = topCandidates.map(p => ({
-          ...p,
-          description: language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...',
-          isLoading: true,
-          active_mode: descriptionLength
-        }));
-
-        setRouteData({
-          center: cityCenter,
-          pois: initialPois,
-          routePath: [], // No path for radius mode
-          stats: {
-            totalDistance: "0",
-            walkDistance: "0",
-            limitKm: `Radius ${searchRadiusKm}`
-          }
-        });
+  }, [lastAction, handleJourneyStart, handleAddToJourney]);
 
 
-        // 2. Background Process: Enrich iteratively using the premium Intelligence Engine
-        const routeCtx = `Radius search (${searchRadiusKm} km)`;
-        enrichBackground(topCandidates, cityData.name, language, descriptionLength, activeInterest, routeCtx);
-        return;
-      }
-
-      // === MODE 2: JOURNEY (Route Generation) ===
-      // 4. Generate constrained route (Nearest Neighbor)
-      const selectedPois = [];
-      const visitedIds = new Set();
-      let currentPos = { lat: cityCenter[0], lng: cityCenter[1] };
-      let totalDistance = 0;
-
-      // Convert constraint to Distance limit (km)
-      let targetLimitKm = constraints.value; // The target set by user
-      const isRoundtrip = constraints.isRoundtrip; // Check if roundtrip
-
-      if (constraints.type === 'duration') {
-        // Speed lookup: Walking ~5km/h, Cycling ~15km/h
-        const speed = effectiveTravelMode === 'cycling' ? 15 : 5;
-        targetLimitKm = (constraints.value / 60) * speed;
-      }
-
-      // User allows 15% tolerance above/below.
-      const maxLimitKm = targetLimitKm * 1.15;
-
-      // Always try to find at least one POI if possible
-      while (totalDistance < maxLimitKm && candidates.length > 0) {
-
-        // Find best fit: Look at closest candidates, but if closest doesn't fit, try next closest.
-        // We filter out visited, calculate distance, and sort.
-        const potentialNext = candidates
-          .filter(c => !visitedIds.has(c.id))
-          .map(c => ({
-            ...c,
-            // Ensure numeric types for correct math
-            lat: parseFloat(c.lat),
-            lng: parseFloat(c.lng),
-            distFromCurr: getDistance(
-              parseFloat(currentPos.lat), parseFloat(currentPos.lng),
-              parseFloat(c.lat), parseFloat(c.lng)
-            )
-          }))
-          .sort((a, b) => a.distFromCurr - b.distFromCurr);
-
-        // Debug Sorting
-        // if (potentialNext.length > 0) {
-        //    console.log(`Step from [${currentPos.lat},${currentPos.lng}]. Closest: ${potentialNext[0].name} (${potentialNext[0].distFromCurr.toFixed(2)}km)`);
-        // }
-
-        if (potentialNext.length === 0) break;
-
-        let selected = null;
-
-        // Try the top 5 closest to find one that fits
-        // Why only top 5? To avoid jumping across the city just to fill budget. 
-        // We want a "Route", not a scattering.
-        for (let i = 0; i < Math.min(potentialNext.length, 5); i++) {
-          const candidate = potentialNext[i];
-          const walkingDist = candidate.distFromCurr * 1.3; // 1.3x buffer
-
-          const endPoint = finalStopCenter ? { lat: finalStopCenter[0], lng: finalStopCenter[1] } : { lat: cityCenter[0], lng: cityCenter[1] };
-          const distToEnd = (isRoundtrip || finalStopCenter)
-            ? getDistance(candidate.lat, candidate.lng, endPoint.lat, endPoint.lng) * 1.3
-            : 0;
-
-          if (totalDistance + walkingDist + distToEnd <= maxLimitKm) {
-            selected = candidate;
-            break; // Found one!
-          }
-        }
-
-        if (selected) {
-          selectedPois.push(selected);
-          visitedIds.add(selected.id);
-          totalDistance += (selected.distFromCurr * 1.3);
-          currentPos = { lat: selected.lat, lng: selected.lng };
-        } else {
-          // None of the nearby ones fit. STOP.
-          // We don't want to pick something huge distance away just to fit budget.
-          break;
-        }
-      }
-
-      // If we found nothing but have candidates, just show the closest one regardless of limit so user sees something
-      if (selectedPois.length === 0 && candidates.length > 0) {
-        const d = getDistance(cityCenter[0], cityCenter[1], candidates[0].lat, candidates[0].lng);
-        // For single item, roundtrip is just there and back
-        const returnD = isRoundtrip ? d : 0;
-        selectedPois.push(candidates[0]);
-        totalDistance = (d + returnD) * 1.3;
-      }
-
-      // 5. OSRM Routing (Get real street path) & Pruning
-      // We verify the REAL distance. If it exceeds our tolerance, we remove the furthest point and retry.
-      let routeCoordinates = [];
-      let realDistance = 0;
-      let navigationSteps = [];
-      let finalRouteResult = null;
-
-      // We might need to prune multiple times if the estimation was way off
-      while (selectedPois.length > 0) {
-        const routeResult = await calculateRoutePath(selectedPois, cityCenter, travelMode, finalStopCenter, effectiveRoundtrip, isRouteEditMode);
-        const dKm = routeResult.dist;
-
-        // Check if this real distance fits our limit (with tolerance)
-        // If it's the only POI left, we keep it even if slightly over, to show *something*
-        if (dKm <= maxLimitKm || selectedPois.length === 1) {
-          // ACCEPT this route
-          routeCoordinates = routeResult.path;
-          realDistance = dKm;
-          navigationSteps = routeResult.steps;
-          finalRouteResult = routeResult;
-
-          console.log("OSRM Steps Extracted:", navigationSteps ? navigationSteps.length : 0);
-          break; // Exit loop, we are good
-        } else {
-          // REJECT - Route is too long
-          const overflow = dKm - maxLimitKm;
-          console.warn(`Route real distance ${dKm}km exceeds limit ${maxLimitKm}km by ${overflow.toFixed(2)}km. Pruning last stop.`);
-          selectedPois.pop(); // Remove last added
-          // Loop continues and tries again with N-1 waypoints
-        }
-      }
-
-      // --- OPTIMIZATION: Show Map Immediately ---
-      // 1. Set initial state with basic POIs (loading descriptions)
-      const initialPois = selectedPois.map(p => ({
-        ...p,
-        description: language === 'nl' ? 'Informatie ophalen...' : 'Fetching details...',
-        isLoading: true,
-        active_mode: descriptionLength
-      }));
-
-      setRouteData({
-        center: cityCenter,
-        startName: startDisplayName,
-        startIsPoi: false,
-        startPoi: null, // Initial start from address is not a POI
-        pois: initialPois,
-        originalPois: initialPois,
-        routePath: routeCoordinates,
-        navigationSteps: navigationSteps,
-        legs: finalRouteResult ? finalRouteResult.legs : [],
-        stats: {
-          totalDistance: realDistance.toFixed(1),
-          walkDistance: (finalRouteResult?.walkDist || 0).toFixed(1),
-          limitKm: targetLimitKm.toFixed(1),
-          isRoundtrip: effectiveRoundtrip
-        },
-        stopCenter: finalStopCenter
-      });
-
-      // 2. Background Process: Enrich iteratively
-      const routeTypeLabel = searchMode === 'radius' ? 'Radius search' : (effectiveRoundtrip ? 'Roundtrip' : 'Point-to-Point');
-      const routeCtx = `${routeTypeLabel} (${realDistance.toFixed(1)} km)`;
-      enrichBackground(selectedPois, cityData.name, language, descriptionLength, activeInterest, routeCtx);
-
-      // Auto-transition to Results View
-      setIsSidebarOpen(true);
-      setIsAiViewActive(false);
-
-    } catch (err) {
-      console.error("Error fetching POIs", err);
-      setRouteData(null);
-      setIsSidebarOpen(true);
-      alert(language === 'nl'
-        ? "Er is een fout opgetreden bij het laden van de kaart. Probeer het opnieuw."
-        : "An error occurred while loading the map. Please try again.");
-    }
-  };
-
-  const handleRemovePoi = async (poiId) => {
-    // 1. Filter out the POI
+  const handleRemovePoi = useCallback(async (poiId) => {
     const updatedPois = routeData.pois.filter(p => p.id !== poiId);
 
-    // If no POIs left, just reset
     if (updatedPois.length === 0) {
       setRouteData(null);
       setAiChatHistory(prev => [...prev, {
@@ -2828,11 +2270,9 @@ function CityExplorerApp() {
 
     setIsLoading(true);
     try {
-      // 2. Recalculate Route with remaining POIs
       const cityCenter = routeData.center;
       const routeResult = await calculateRoutePath(updatedPois, cityCenter, travelMode, null, isRoundtrip, isRouteEditMode);
 
-      // 3. Update Route Data
       setRouteData(prev => ({
         ...prev,
         pois: updatedPois,
@@ -2846,7 +2286,6 @@ function CityExplorerApp() {
         }
       }));
 
-      // 4. Update AI Chat
       setAiChatHistory(prev => [...prev, {
         role: 'brain',
         text: language === 'nl'
@@ -2859,18 +2298,16 @@ function CityExplorerApp() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [routeData, language, travelMode, isRoundtrip, isRouteEditMode, setIsLoading, setRouteData, setAiChatHistory, setIsAiViewActive, calculateRoutePath]);
 
-  const handleStopsCountChange = async (newCount) => {
+  const handleStopsCountChange = useCallback(async (newCount) => {
     if (!routeData || !routeData.pois || routeData.pois.length === 0) return;
 
-    // Use originalPois if available, fallback to current pois and fix them as the new original set
     const sourcePois = routeData.originalPois || routeData.pois;
     const currentCount = routeData.pois.length;
 
     if (newCount === currentCount && routeData.originalPois) return;
 
-    // spread calculation: Select 'newCount' items from 'sourcePois'
     const N = sourcePois.length;
     const K = newCount;
 
@@ -2896,7 +2333,7 @@ function CityExplorerApp() {
       setRouteData(prev => ({
         ...prev,
         pois: updatedPois,
-        originalPois: sourcePois, // Preserve the larger set
+        originalPois: sourcePois,
         routePath: routeResult.path,
         navigationSteps: routeResult.steps,
         legs: routeResult.legs || [],
@@ -2911,7 +2348,7 @@ function CityExplorerApp() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [routeData, language, travelMode, isRoundtrip, isRouteEditMode, setIsLoading, setLoadingText, setRouteData, calculateRoutePath]);
 
   const handleConstraintValueFinal = (finalValue) => {
     if (!routeData) return;
@@ -2952,10 +2389,9 @@ function CityExplorerApp() {
   * Cyclically rotates the entire route so that a selected POI becomes the new start point.
   * POI-namen zijn immutable; startpunt is een rol, geen naam.
   */
-  const handleCycleStart = async (selectedPoiId) => {
+  const handleCycleStart = useCallback(async (selectedPoiId) => {
     if (!routeData || !routeData.pois || !isRoundtrip) return;
 
-    // CASE B: Rotating from a Generic Start (GPS/Address) to a POI
     if (!routeData.startIsPoi) {
       const targetIdx = routeData.pois.findIndex(p => p.id === selectedPoiId);
       if (targetIdx === -1) return;
@@ -2964,17 +2400,15 @@ function CityExplorerApp() {
       setLoadingText(language === 'nl' ? 'Nieuw startpunt instellen...' : 'Setting new start point...');
 
       try {
-        // 1. Immutable logic: Rotate the POI list so the target is first
         const rotatedPois = rotateCycle(routeData.pois, targetIdx);
         const newStartPoi = { ...rotatedPois[0], isSpecial: true };
         const remainingPois = rotatedPois.slice(1);
 
-        // 2. Case B: Drop original generic start and recalculate OSRM path (P1 -> ... -> P1)
         const newStartCenter = [newStartPoi.lat, newStartPoi.lng];
         const routeResult = await calculateRoutePath(remainingPois, newStartCenter, travelMode, null, isRoundtrip, isRouteEditMode);
 
-        // 3. Fetch specific arrival instructions for this POI as a start point
         const cityName = validatedCityData?.address?.city || city;
+        const { PoiIntelligence } = await import('./services/PoiIntelligence');
         const engine = new PoiIntelligence({ city: cityName, language });
         const newStartInstr = await engine.fetchArrivalInstructions(newStartPoi.name, cityName, language);
 
@@ -2983,7 +2417,7 @@ function CityExplorerApp() {
           center: newStartCenter,
           startName: newStartPoi.name,
           startPoiId: newStartPoi.id,
-          startPoi: newStartPoi, // Keep full POI metadata
+          startPoi: newStartPoi,
           startIsPoi: true,
           startInfo: newStartInstr,
           pois: remainingPois,
@@ -3012,35 +2446,29 @@ function CityExplorerApp() {
       return;
     }
 
-    // CASE A: Rotating from one active POI to another active POI
     const currentStartPoi = routeData.startPoi;
     const allStops = [currentStartPoi, ...routeData.pois];
     const targetIdx = allStops.findIndex(p => p.id === selectedPoiId);
     if (targetIdx === -1) return;
 
-    // Perform cyclic rotation: O(n)
     const rotatedStops = rotateCycle(allStops, targetIdx);
     const newStartPoi = { ...rotatedStops[0], isSpecial: true };
     const newCenter = [newStartPoi.lat, newStartPoi.lng];
 
     const newPois = rotatedStops.slice(1).map(p => {
-      // Return previous start point as a regular stop (loses isSpecial but keeps all metadata)
       if (p.id === currentStartPoi.id) {
         return { ...p, isSpecial: false };
       }
       return p;
     });
 
-    // Rotate the path and steps WITHOUT API CALLS if legs available
     let newPath = routeData.routePath;
     let newSteps = routeData.navigationSteps;
     let newLegs = routeData.legs;
 
-    // Requirement: legs.length must match allStops.length for a valid rotation
     if (routeData.legs && routeData.legs.length === allStops.length) {
       const rotatedLegs = rotateCycle(routeData.legs, targetIdx);
 
-      // Verify all legs have geometries before transforming
       if (rotatedLegs.every(l => l && l.geometry)) {
         newPath = rotatedLegs.flatMap((leg, idx) => {
           const coords = transformOSRMCoords(leg.geometry.coordinates, `rotated_leg_${idx}`);
@@ -3052,16 +2480,16 @@ function CityExplorerApp() {
       }
     }
 
-    // ASYNC: Fetch specific arrival instructions for this POI as a start point
     const cityName = validatedCityData?.address?.city || city;
-    const engine = new PoiIntelligence({ city: cityName, language });
-    engine.fetchArrivalInstructions(newStartPoi.name, cityName, language).then(newStartInstr => {
-      if (newStartInstr) {
-        setRouteData(prev => (prev && prev.startPoiId === newStartPoi.id) ? { ...prev, startInfo: newStartInstr } : prev);
-      }
+    import('./services/PoiIntelligence').then(({ PoiIntelligence }) => {
+      const engine = new PoiIntelligence({ city: cityName, language });
+      engine.fetchArrivalInstructions(newStartPoi.name, cityName, language).then(newStartInstr => {
+        if (newStartInstr) {
+          setRouteData(prev => (prev && prev.startPoiId === newStartPoi.id) ? { ...prev, startInfo: newStartInstr } : prev);
+        }
+      });
     });
 
-    // Update State
     setRouteData(prev => ({
       ...prev,
       center: newCenter,
@@ -3086,16 +2514,15 @@ function CityExplorerApp() {
         ? `Startpunt verplaatst naar **${newStartPoi.name}**.`
         : `Start point moved to **${newStartPoi.name}**.`
     }]);
-  };
+  }, [routeData, isRoundtrip, setIsLoading, setLoadingText, language, travelMode, isRouteEditMode, validatedCityData, city, setRouteData, setAiChatHistory, calculateRoutePath]);
 
   /**
    * Reverses the direction of the current route while keeping the start point FIXED.
    * Requirement: Pure in-memory reversal of POIs and geometry.
    */
-  const handleReverseDirection = () => {
+  const handleReverseDirection = useCallback(() => {
     if (!routeData || !routeData.pois || !isRoundtrip) return;
 
-    // 1. Prepare full cycle and reverse it
     const startObj = {
       ...(routeData.startIsPoi ? routeData.startPoi : {}),
       id: routeData.startPoiId || 'current-start-anchor',
@@ -3103,8 +2530,6 @@ function CityExplorerApp() {
       lng: routeData.center[1],
       name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
       isSpecial: true,
-      // Only use accessibility info if it's NOT a POI (generic addresses)
-      // If it IS a POI, the POI description taken from startPoi (spread above) takes precedence
       description: routeData.startIsPoi
         ? (routeData.startPoi?.description || routeData.startInfo)
         : routeData.startInfo
@@ -3113,23 +2538,18 @@ function CityExplorerApp() {
     const fullCycle = [startObj, ...routeData.pois];
     const reveredCycle = reverseCycle(fullCycle);
 
-    // 2. Extract new POIs (skipping the anchor which is still index 0)
     const reversedPois = reveredCycle.slice(1).map(p => {
-      // Ensure we don't carry over special flags if the start shifted (though in reverseCycle the anchor stays at 0)
       if (p.id === 'current-start-anchor') return { ...p, isSpecial: false };
       return p;
     });
 
-    // 3. Reverse Geometry (Legs)
     let newPath = routeData.routePath;
     let newSteps = routeData.navigationSteps;
     let newLegs = routeData.legs;
 
     if (routeData.legs && routeData.legs.length > 0) {
-      // Reversing legs: [L1, L2, L3] -> [RL3, RL2, RL1]
       const reversedOriginalLegs = [...routeData.legs].reverse();
 
-      // Verify all legs have geometries before transforming
       if (reversedOriginalLegs.every(l => l && l.geometry)) {
         newLegs = reversedOriginalLegs.map(leg => ({
           ...leg,
@@ -3140,7 +2560,6 @@ function CityExplorerApp() {
           steps: [...leg.steps].reverse()
         }));
 
-        // Reconstruct Path from leg geometries
         newPath = newLegs.flatMap((leg, idx) => {
           const coords = transformOSRMCoords(leg.geometry.coordinates, `reversed_leg_${idx}`);
           return idx === 0 ? coords : coords.slice(1);
@@ -3150,7 +2569,6 @@ function CityExplorerApp() {
       }
     }
 
-    // 3. Update State
     setRouteData(prev => ({
       ...prev,
       pois: reversedPois,
@@ -3171,7 +2589,7 @@ function CityExplorerApp() {
         ? "Looprichting omgedraaid! De route blijft hetzelfde, maar je loopt hem nu andersom."
         : "Direction reversed! The route remains the same, but you are now walking it in the opposite direction."
     }]);
-  };
+  }, [routeData, isRoundtrip, language, setRouteData, setAiChatHistory]);
 
   const resetSearch = () => {
     // Stop any background enrichment immediately
@@ -3247,15 +2665,15 @@ function CityExplorerApp() {
   const [autoAudio, setAutoAudio] = useState(() => localStorage.getItem('app_auto_audio') === 'true');
   const [spokenNavigationEnabled, setSpokenNavigationEnabled] = useState(() => localStorage.getItem('app_spoken_navigation') === 'true');
 
-  useEffect(() => localStorage.setItem('app_auto_audio', autoAudio), [autoAudio]);
-  useEffect(() => localStorage.setItem('app_spoken_navigation', spokenNavigationEnabled), [spokenNavigationEnabled]);
+  useEffect(() => saveToStorageAsync('app_auto_audio', autoAudio), [autoAudio]);
+  useEffect(() => saveToStorageAsync('app_spoken_navigation', spokenNavigationEnabled), [spokenNavigationEnabled]);
 
   const [voiceSettings, setVoiceSettings] = useState(() => {
     const saved = localStorage.getItem('app_voice_settings');
     return saved ? JSON.parse(saved) : { variant: 'nl', gender: 'female' };
   });
 
-  useEffect(() => localStorage.setItem('app_voice_settings', JSON.stringify(voiceSettings)), [voiceSettings]);
+  useEffect(() => saveToStorageAsync('app_voice_settings', voiceSettings), [voiceSettings]);
 
   // Auto-restart speech when voice settings change
   useEffect(() => {
@@ -3286,8 +2704,7 @@ function CityExplorerApp() {
     };
   }, []);
 
-  const stopSpeech = () => {
-    // Only cancel if we are actually tracking a POI speech, to avoid killing navigation
+  const stopSpeech = useCallback(() => {
     if (speakingId) {
       window.speechSynthesis.cancel();
     }
@@ -3295,10 +2712,9 @@ function CityExplorerApp() {
     setCurrentSpeakingPoi(null);
     setSpokenCharCount(0);
     setIsSpeechPaused(false);
-  };
+  }, [speakingId]);
 
-  const handleSpeak = (poiOrText, forceOrId = false) => {
-    // Overload: Handle (text, id) call pattern from Chat
+  const handleSpeak = useCallback((poiOrText, forceOrId = false) => {
     let isTextMode = typeof poiOrText === 'string';
     let textToRead = '';
     let uniqueId = '';
@@ -3306,59 +2722,39 @@ function CityExplorerApp() {
 
     if (isTextMode) {
       textToRead = poiOrText;
-      uniqueId = forceOrId; // 2nd arg is ID
-      shouldForce = true; // Always force play for chat clicks
+      uniqueId = forceOrId;
+      shouldForce = true;
     } else {
-      // POI Object Mode
       if (!poiOrText) return;
       textToRead = poiOrText.description || '';
       uniqueId = poiOrText.id;
-      shouldForce = forceOrId === true; // 2nd arg is force flag
+      shouldForce = forceOrId === true;
 
-      // Determine text based on mode - NEW: Read EVERYTHING until the end
       if (poiOrText.structured_info) {
         const info = poiOrText.structured_info;
         const parts = [];
-
-        // 1. Short Description - Skip if full description is present to avoid redundancy
-        // CRITICAL: We only skip if the full description is VALY and not a "Loading..." placeholder.
         const full = (info.full_description || '').toLowerCase().trim().replace(/[".]/g, '');
         const unknownTerms = ['onbekend', 'unknown', 'updating', 'bezig met bijwerken'];
         const hasFullDesc = info.full_description && !unknownTerms.some(term => full.includes(term));
 
-        if (info.short_description && !hasFullDesc) {
-          parts.push(info.short_description);
-        }
-
-        // 2. Full Description
-        if (info.full_description && hasFullDesc) {
-          parts.push(info.full_description);
-        }
-
-        // 3. Reasons (Interest Alignment)
+        if (info.short_description && !hasFullDesc) parts.push(info.short_description);
+        if (info.full_description && hasFullDesc) parts.push(info.full_description);
         if (info.matching_reasons && info.matching_reasons.length > 0) {
           const prefix = language === 'nl' ? "Waarom dit bij je past: " : "Why this matches your interests: ";
           parts.push(prefix + info.matching_reasons.join(". "));
         }
-
-        // 4. Fun Facts
         if (info.fun_facts && info.fun_facts.length > 0) {
           const prefix = language === 'nl' ? "Wist je dat? " : "Did you know? ";
           parts.push(prefix + info.fun_facts.join(". "));
         }
-
-        // 5. 2 Minute Highlight
         if (info.two_minute_highlight) {
           const prefix = language === 'nl' ? "Als je maar twee minuten hebt: " : "If you only have two minuten: ";
           parts.push(prefix + info.two_minute_highlight);
         }
-
-        // 6. Visitor Tips
         if (info.visitor_tips) {
           const prefix = language === 'nl' ? "Tips: " : "Tips: ";
           parts.push(prefix + info.visitor_tips);
         }
-
         textToRead = parts.join("\n\n");
       } else {
         textToRead = poiOrText.description || '';
@@ -3366,8 +2762,6 @@ function CityExplorerApp() {
     }
 
     const isSame = speakingId === uniqueId;
-
-    // If not forcing (toggle), handle pause/resume
     if (isSame && !shouldForce) {
       if (isSpeechPaused) {
         window.speechSynthesis.resume();
@@ -3379,24 +2773,12 @@ function CityExplorerApp() {
       return;
     }
 
-    // Always stop previous before starting new
-    // Always stop previous before starting new - UNLESS it's a navigation prompt that we want to queue?
-    // Actually, for user clicks (handleSpeak), we usually DO want to interrupt.
-    // However, if we want to be robust against GC, we should use the Queue pattern here too.
-
-    // window.speechSynthesis.cancel(); // Removed aggressive cancel
-
     setSpokenCharCount(0);
     setSpeakingId(uniqueId);
     if (!isTextMode) setCurrentSpeakingPoi(poiOrText);
 
     const u = new SpeechSynthesisUtterance(textToRead);
-
-    // Robust Queueing for App.jsx too
-    if (!speechUtteranceRef.current) {
-      speechUtteranceRef.current = new Set();
-    }
-    // If it's a Set (from MapLibreContainer fix), use it. If it's a single ref (legacy), upgrade it.
+    if (!speechUtteranceRef.current) speechUtteranceRef.current = new Set();
     if (speechUtteranceRef.current instanceof Set) {
       speechUtteranceRef.current.add(u);
       u.onend = () => {
@@ -3411,19 +2793,14 @@ function CityExplorerApp() {
         setSpeakingId(null);
       };
     } else {
-      // Fallback or Upgrade
       const old = speechUtteranceRef.current;
       speechUtteranceRef.current = new Set();
       if (old) speechUtteranceRef.current.add(old);
       speechUtteranceRef.current.add(u);
     }
 
-    // Voice Selection Logic
     const targetLang = voiceSettings.variant === 'en' ? 'en-US' : (voiceSettings.variant === 'be' ? 'nl-BE' : 'nl-NL');
     const selectedVoice = getBestVoice(availableVoices, targetLang, voiceSettings.gender);
-
-    // Log for debugging
-    console.log(`[TTS] Selected Voice for ${targetLang} (${voiceSettings.gender}):`, selectedVoice ? `${selectedVoice.name} (${selectedVoice.lang})` : 'None found');
 
     if (selectedVoice) {
       u.voice = selectedVoice;
@@ -3432,8 +2809,6 @@ function CityExplorerApp() {
       u.lang = targetLang;
     }
 
-    // console.log(`Speaking with voice: ${selectedVoice ? selectedVoice.name : 'Default'} (${u.lang})`);
-
     u.onend = () => {
       setSpeakingId(null);
       setCurrentSpeakingPoi(null);
@@ -3441,25 +2816,19 @@ function CityExplorerApp() {
       setIsSpeechPaused(false);
     };
 
-    u.onboundary = (event) => {
-      // 'word' boundaries are most reliable for highlighting
-      // Use charIndex to track progress
-      setSpokenCharCount(event.charIndex);
-    };
-
+    u.onboundary = (event) => setSpokenCharCount(event.charIndex);
     setIsSpeechPaused(false);
     window.speechSynthesis.speak(u);
-  };
+  }, [speakingId, isSpeechPaused, language, voiceSettings, availableVoices]);
 
   // Handler for Sidebar Click
-  const handlePoiClick = (poi, forcedMode = null) => {
+  const handlePoiClick = useCallback((poi, forcedMode = null) => {
     setFocusedLocation(poi);
     if (autoAudio) {
-      // Create a temporary POI object with the forced mode for speech
       const poiToSpeak = forcedMode ? { ...poi, active_mode: forcedMode } : poi;
       handleSpeak(poiToSpeak, true);
     }
-  };
+  }, [autoAudio, handleSpeak]);
 
   const handleUpdatePoiDescription = async (poi, lengthMode) => {
     // 1. Mark as loading (optional, or optimistically update UI inside Sidebar)
@@ -4104,7 +3473,7 @@ function CityExplorerApp() {
   /**
    * Delete a point from route edit mode
    */
-  const handleDeleteMarker = async (index) => {
+  const handleDeleteMarker = useCallback(async (index) => {
     if (index < 0 || index >= routeMarkers.length) return;
 
     const newMarkers = routeMarkers.filter((_, i) => i !== index);
@@ -4123,7 +3492,6 @@ function CityExplorerApp() {
       return;
     }
 
-    // Recalculate route with remaining points
     if (newMarkers.length >= 2) {
       const startCoords = [newMarkers[0].lat, newMarkers[0].lng];
       const activeMode = travelMode || 'walking';
@@ -4141,7 +3509,6 @@ function CityExplorerApp() {
           isRouteEditMode
         );
 
-        // Recalculate cumulative distances
         const newDistances = [0];
         let cumulative = 0;
         if (routeResult.legs) {
@@ -4168,7 +3535,6 @@ function CityExplorerApp() {
         setIsLoading(false);
       }
     } else {
-      // Only one point left (start)
       setCumulativeDistances([0]);
       setRouteData(prev => ({
         ...prev,
@@ -4179,12 +3545,12 @@ function CityExplorerApp() {
         stats: { ...prev.stats, totalDistance: 0 }
       }));
     }
-  };
+  }, [routeMarkers, travelMode, routeData, isRoundtrip, isRouteEditMode, language, setRouteMarkers, setCumulativeDistances, setRouteData, setIsLoading, setLoadingText, setSelectedEditPointIndex, calculateRoutePath]);
 
   /**
    * Move a point and recalculate route
    */
-  const handleMoveMarker = async (index, newLatLng) => {
+  const handleMoveMarker = useCallback(async (index, newLatLng) => {
     if (index < 0 || index >= routeMarkers.length) return;
 
     const newMarkers = [...routeMarkers];
@@ -4209,7 +3575,6 @@ function CityExplorerApp() {
             isRouteEditMode
           );
 
-          // Recalculate cumulative distances
           const newDistances = [0];
           let cumulative = 0;
           if (routeResult.legs) {
@@ -4229,7 +3594,6 @@ function CityExplorerApp() {
             stats: { ...prev.stats, totalDistance: routeResult?.dist || 0 }
           }));
         } else {
-          // Only one point
           setCumulativeDistances([0]);
           setRouteData(prev => ({
             ...prev,
@@ -4246,12 +3610,12 @@ function CityExplorerApp() {
         setIsLoading(false);
       }
     }
-  };
+  }, [routeMarkers, travelMode, routeData, isRoundtrip, isRouteEditMode, language, setRouteMarkers, setCumulativeDistances, setRouteData, setIsLoading, setLoadingText, calculateRoutePath]);
 
   /**
    * Finalize route - close the loop and exit edit mode
    */
-  const handleFinalizeRoute = async () => {
+  const handleFinalizeRoute = useCallback(async () => {
     if (routeMarkers.length < 2) {
       alert(language === 'nl' ? 'Voeg minimaal 2 punten toe.' : 'Add at least 2 points.');
       return;
@@ -4264,26 +3628,23 @@ function CityExplorerApp() {
       const startCoords = [routeMarkers[0].lat, routeMarkers[0].lng];
       const activeMode = travelMode || 'walking';
 
-      // Calculate route WITH loop closure (back to start)
       const routeResult = await calculateRoutePath(
         routeMarkers.slice(1),
         startCoords,
         activeMode,
-        startCoords, // Close the loop by returning to start
+        startCoords,
         isRoundtrip,
         isRouteEditMode
       );
 
-      // We maintain routeMarkers separately in the routeData
-      // and initialize an empty POI list for the discovery layer
       setRouteData(prev => ({
         ...prev,
         center: startCoords,
         startPoi: routeMarkers[0],
         startName: routeMarkers[0].name,
         startIsPoi: true,
-        routeMarkers: [...routeMarkers], // Store markers permanently in routeData
-        pois: prev.pois || [], // Preserve existing POIs instead of clearing them
+        routeMarkers: [...routeMarkers],
+        pois: prev.pois || [],
         routePath: routeResult?.path || prev.routePath,
         navigationSteps: routeResult?.steps || prev.navigationSteps,
         legs: routeResult?.legs || prev.legs,
@@ -4294,23 +3655,16 @@ function CityExplorerApp() {
         }
       }));
 
-      setIsRoundtrip(true); // Force loop state on finalize
-
-
-      // Exit edit mode
+      setIsRoundtrip(true);
       setIsRouteEditMode(false);
       setIsMapPickMode(false);
       setRouteMarkers([]);
       setCumulativeDistances([]);
       setSelectedEditPointIndex(-1);
-
-      // Open sidebar to show the route
       setIsSidebarOpen(true);
-      setViewAction(null); // Ensure we show the itinerary/POI list, not the refiner
-      setIsAiViewActive(false); // Explicitly close the Refiner/AI view
+      setViewAction(null);
+      setIsAiViewActive(false);
 
-
-      // Feedback
       const finalizeMsg = language === 'nl'
         ? `🎉 Route afgerond! Totale afstand: **${routeResult.dist.toFixed(1)} km** met ${routeMarkers.length} stops.\n\nZal ik op zoek gaan naar interessante plekjes langs deze route? Klik op de **"Nu ontdekken"** knop in de zijbalk!`
         : `🎉 Route finalized! Total distance: **${routeResult.dist.toFixed(1)} km** with ${routeMarkers.length} stops.\n\nShould I find interesting spots along this route? Click the **"Discover now"** button in the sidebar!`;
@@ -4320,7 +3674,6 @@ function CityExplorerApp() {
         text: finalizeMsg
       }]);
 
-      // Proactive speech if auto-audio is on
       if (autoAudio) {
         handleSpeak(language === 'nl'
           ? "Route afgerond! Zal ik op zoek gaan naar interessante plekjes langs deze route? Klik op de knop Nu ontdekken."
@@ -4329,7 +3682,7 @@ function CityExplorerApp() {
         );
       }
 
-      setRefinementProposals(null); // Clear any old search refinements
+      setRefinementProposals(null);
 
     } catch (err) {
       console.error("Route finalization failed:", err);
@@ -4337,12 +3690,9 @@ function CityExplorerApp() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [routeMarkers, language, travelMode, isRoundtrip, isRouteEditMode, autoAudio, setIsLoading, setLoadingText, setRouteData, setIsRoundtrip, setIsRouteEditMode, setIsMapPickMode, setRouteMarkers, setCumulativeDistances, setSelectedEditPointIndex, setIsSidebarOpen, setViewAction, setIsAiViewActive, setAiChatHistory, handleSpeak, calculateRoutePath]);
 
-  /**
-   * Find POIs along the currently generated route path
-   */
-  const handleFindPoisAlongRoute = async (customInterests = null) => {
+  const handleFindPoisAlongRoute = useCallback(async (customInterests = null) => {
     if (!routeData || !routeData.routePath || routeData.routePath.length === 0) {
       alert(language === 'nl' ? 'Plan eerst een route.' : 'Plan a route first.');
       return;
@@ -4352,17 +3702,10 @@ function CityExplorerApp() {
     setLoadingText(language === 'nl' ? 'Plekken ontdekken...' : 'Discovering places...');
 
     try {
-      // 1. Get interests or defaults
+      const { getCombinedPOIs } = await import('./utils/poiService');
       const interestLine = customInterests || interests || 'top sights, landmark, museum, park';
-
-      // 2. Determine search radius based on city scale (approx 10km to cover more of the route extent)
       const radiusKm = 10;
-
-      // 3. Fetch POIs using the same logic as journey generation
-      const center = routeData.center;
       const sources = searchSources;
-
-      console.log("Searching POIs along route near", center, "with interests:", interestLine);
 
       const rawDiscoveredPois = await getCombinedPOIs(
         validatedCityData || { name: city },
@@ -4374,7 +3717,6 @@ function CityExplorerApp() {
         (msg) => setLoadingText(msg)
       );
 
-      // Filter: Keep only POIs within 100 meters of the actual route path
       const discoveredPois = rawDiscoveredPois.filter(poi =>
         isLocationOnPath({ lat: poi.lat, lng: poi.lng }, routeData.routePath, 0.1)
       );
@@ -4382,10 +3724,8 @@ function CityExplorerApp() {
       if (!discoveredPois || discoveredPois.length === 0) {
         alert(language === 'nl' ? 'Geen nieuwe plekken gevonden langs deze route.' : 'No new places found along this route.');
       } else {
-        // 4. Enrich discovered POIs in background
         const routeCtx = `Discovery along route in ${city}`;
 
-        // Show initial results immediately
         setRouteData(prev => ({
           ...prev,
           pois: discoveredPois
@@ -4393,7 +3733,6 @@ function CityExplorerApp() {
 
         setIsDiscoveryTriggered(true);
 
-        // Feedback
         setAiChatHistory(prev => [...prev, {
           role: 'brain',
           text: language === 'nl'
@@ -4401,7 +3740,6 @@ function CityExplorerApp() {
             : `✨ I found **${discoveredPois.length}** interesting stops along your route!`
         }]);
 
-        // Start background enrichment
         enrichBackground(discoveredPois, city, language, descriptionLength, interestLine, routeCtx)
           .catch(err => console.warn("Discovery enrichment failed", err));
       }
@@ -4411,22 +3749,67 @@ function CityExplorerApp() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [routeData, language, interests, searchSources, validatedCityData, city, descriptionLength, setIsLoading, setLoadingText, setRouteData, setIsDiscoveryTriggered, setAiChatHistory, enrichBackground]);
+
+  const handleOpenArMode = useCallback(() => setIsArMode(true), [setIsArMode]);
+  const handleArClose = useCallback(() => setIsArMode(false), [setIsArMode]);
+  const handleNavigationClose = useCallback(() => setIsNavigationOpen(false), [setIsNavigationOpen]);
+  const handleCancelRefinement = useCallback(() => setRefinementProposals(null), [setRefinementProposals]);
+  const handleSetScanResultNull = useCallback(() => setScanResult(null), [setScanResult]);
 
   /**
    * Cancel route edit mode
    */
-  const handleCancelEditMode = () => {
+  const handleCancelEditMode = useCallback(() => {
     setIsRouteEditMode(false);
     setIsMapPickMode(false);
     setRouteMarkers([]);
     setCumulativeDistances([]);
     setSelectedEditPointIndex(-1);
     setIsSidebarOpen(true);
-
-    // Clear any partial route data
     setRouteData(null);
-  };
+  }, [setIsRouteEditMode, setIsMapPickMode, setRouteMarkers, setCumulativeDistances, setSelectedEditPointIndex, setIsSidebarOpen, setRouteData]);
+
+  const handleToggleNavigation = useCallback(() => setIsNavigationOpen(prev => !prev), [setIsNavigationOpen]);
+  const handlePopupClose = useCallback(() => { setFocusedLocation(null); stopSpeech(); }, [setFocusedLocation, stopSpeech]);
+  const handleOpenAiChat = useCallback(() => {
+    setIsAiViewActive(true);
+    setIsSidebarOpen(true);
+  }, [setIsAiViewActive, setIsSidebarOpen]);
+  const handleEditPointClick = useCallback((idx) => setSelectedEditPointIndex(idx), [setSelectedEditPointIndex]);
+  const handleSkipDiscovery = useCallback(() => {
+    setIsDiscoveryTriggered(true);
+    setIsSidebarOpen(false);
+    setIsNavigationOpen(false);
+    setNavPhase(NAV_PHASES.ACTIVE_ROUTE);
+  }, [setIsDiscoveryTriggered, setIsSidebarOpen, setIsNavigationOpen, setNavPhase]);
+
+  const handleConfirmLimitCancel = useCallback(() => handleConfirmLimit(false), [handleConfirmLimit]);
+  const handleConfirmLimitProceed = useCallback(() => handleConfirmLimit(true), [handleConfirmLimit]);
+  const handleCancelPendingRefinement = useCallback(() => setPendingDistanceRefinement(null), [setPendingDistanceRefinement]);
+  const handleExecutePendingRefinement = useCallback(() => handleExecuteDistanceRefinement(pendingDistanceRefinement), [pendingDistanceRefinement, handleExecuteDistanceRefinement]);
+  const handleCitySelectorFadeOut = useCallback(() => {
+    if (interests && interests.trim().length > 0) {
+      setIsLoading(true);
+    }
+  }, [interests, setIsLoading]);
+  const handleCitySelection = useCallback(async (selectedCity) => {
+    setCity(selectedCity);
+    setShowCitySelector(false);
+    const hasInterests = interests && interests.trim().length > 0;
+    if (hasInterests) {
+      setIsLoading(true);
+      setLoadingText(language === 'nl' ? 'Bestemming verifiëren...' : 'Verifying destination...');
+      try {
+        await handleCityValidation('submit', selectedCity, interests);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      setIsSidebarOpen(true);
+      setShouldAutoFocusInterests(true);
+    }
+  }, [interests, language, setCity, setShowCitySelector, handleCityValidation, setIsLoading, setLoadingText, setIsSidebarOpen, setShouldAutoFocusInterests]);
 
   // Auth Guards removed (Auth disabled)
 
@@ -4462,7 +3845,7 @@ function CityExplorerApp() {
             setUserLocation={setUserLocation}
             language={language}
             onPoiClick={handlePoiClick}
-            onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
+            onPopupClose={handlePopupClose}
             activePoiIndex={activePoiIndex}
             setActivePoiIndex={setActivePoiIndex}
             pastDistance={pastDistance}
@@ -4478,7 +3861,7 @@ function CityExplorerApp() {
             loadingCount={foundPoisCount}
             onUpdatePoiDescription={handleUpdatePoiDescription}
             onNavigationRouteFetched={handleNavigationRouteFetched}
-            onToggleNavigation={() => setIsNavigationOpen(prev => !prev)}
+            onToggleNavigation={handleToggleNavigation}
             autoAudio={autoAudio}
             setAutoAudio={setAutoAudio}
             spokenNavigationEnabled={spokenNavigationEnabled}
@@ -4489,10 +3872,7 @@ function CityExplorerApp() {
             userSelectedStyle={travelMode}
             onStyleChange={setTravelMode}
             isAiViewActive={isAiViewActive}
-            onOpenAiChat={() => {
-              setIsAiViewActive(true);
-              setIsSidebarOpen(true);
-            }}
+            onOpenAiChat={handleOpenAiChat}
             viewAction={viewAction}
             setViewAction={setViewAction}
             navPhase={navPhase}
@@ -4504,10 +3884,10 @@ function CityExplorerApp() {
             routeMarkers={routeMarkers}
             cumulativeDistances={cumulativeDistances}
             selectedEditPointIndex={selectedEditPointIndex}
-            onEditPointClick={(idx) => setSelectedEditPointIndex(idx)}
+            onEditPointClick={handleEditPointClick}
             onDeletePoint={handleDeleteMarker}
             onMovePoint={handleMoveMarker}
-            onOpenArMode={() => setIsArMode(true)}
+            onOpenArMode={handleOpenArMode}
           />
         </Suspense>
 
@@ -4537,8 +3917,8 @@ function CityExplorerApp() {
           language={language}
           userLocation={userLocation}
           isOpen={isNavigationOpen}
-          onClose={() => setIsNavigationOpen(false)}
-          onToggle={() => setIsNavigationOpen(!isNavigationOpen)}
+          onClose={handleNavigationClose}
+          onToggle={handleToggleNavigation}
           pastDistance={pastDistance}
           totalTripDistance={routeData?.stats?.totalDistance}
           navPhase={navPhase}
@@ -4625,7 +4005,7 @@ function CityExplorerApp() {
         onLoad={handleLoadRoute}
         travelMode={travelMode}
         onStyleChange={setTravelMode}
-        onPopupClose={() => { setFocusedLocation(null); stopSpeech(); }}
+        onPopupClose={handlePopupClose}
 
         aiPrompt={aiPrompt}
         setAiPrompt={setAiPrompt}
@@ -4637,12 +4017,7 @@ function CityExplorerApp() {
         onStartEnrichment={handleTriggerEnrichment}
         onPauseEnrichment={handlePauseEnrichment}
         onFindPoisAlongRoute={handleFindPoisAlongRoute}
-        onSkipDiscovery={() => {
-          setIsDiscoveryTriggered(true);
-          setIsSidebarOpen(false);
-          setIsNavigationOpen(false);
-          setNavPhase(NAV_PHASES.ACTIVE_ROUTE);
-        }}
+        onSkipDiscovery={handleSkipDiscovery}
         isDiscoveryTriggered={isDiscoveryTriggered}
         autoSave={autoSave}
         setAutoSave={setAutoSave}
@@ -4651,73 +4026,28 @@ function CityExplorerApp() {
         version={APP_VERSION}
         author={APP_AUTHOR}
         lastUpdated={APP_LAST_UPDATED}
+        shouldAutoFocusInterests={shouldAutoFocusInterests}
+        setShouldAutoFocusInterests={setShouldAutoFocusInterests}
       />
 
       {/* Map Pick Instruction Overlay - REMOVED per user request */}
 
       {/* Refinement Modal */}
-      {refinementProposals && (
-        <div className="absolute inset-0 z-[1300] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-300">
-            <h3 className="text-xl font-bold text-white mb-2">
-              {language === 'nl' ? 'Geen resultaten gevonden' : 'No matches found'}
-            </h3>
-            <p className="text-slate-400 mb-4">
-              {language === 'nl'
-                ? `We konden geen punten vinden voor "${interests}". Bedoelde je misschien:`
-                : `We couldn't find points for "${interests}". Did you mean one of these?`
-              }
-            </p>
-
-            <div className="grid gap-2">
-              {refinementProposals.map((prop, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSuggestionSelect(prop)}
-                  className="bg-white/5 hover:bg-blue-600/20 hover:text-blue-400 text-left px-4 py-3 rounded-xl border border-white/5 transition-all font-medium text-slate-200"
-                >
-                  {prop}
-                </button>
-              ))}
-              <button
-                onClick={() => setRefinementProposals(null)}
-                className="w-full mt-4 text-slate-500 hover:text-white text-sm py-2"
-              >
-                {language === 'nl' ? 'Terug' : 'Cancel'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RefinementModal
+        proposals={refinementProposals}
+        interests={interests}
+        onSelect={handleSuggestionSelect}
+        onCancel={handleCancelRefinement}
+        language={language}
+      />
 
       {/* Limit Confirmation Modal - Moved Outside */}
-      {limitConfirmation && (
-        <div className="absolute inset-0 z-[1300] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-300">
-            <h3 className="text-xl font-bold text-white mb-2">
-              {language === 'nl' ? 'Limiet overschreden' : 'Limit Exceeded'}
-            </h3>
-            <p className="text-slate-400 mb-6">
-              {limitConfirmation.message}
-            </p>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => handleConfirmLimit(false)}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-xl transition-colors font-medium"
-              >
-                {language === 'nl' ? 'Annuleren' : 'Cancel'}
-              </button>
-              <button
-                onClick={() => handleConfirmLimit(true)}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-xl transition-colors font-medium"
-              >
-                {language === 'nl' ? 'Doorgaan' : 'Proceed'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LimitConfirmationModal
+        confirmation={limitConfirmation}
+        onCancel={handleConfirmLimitCancel}
+        onProceed={handleConfirmLimitProceed}
+        language={language}
+      />
 
 
 
@@ -4734,8 +4064,8 @@ function CityExplorerApp() {
       {/* Distance Refinement Confirmation */}
       <DistanceRefineConfirmation
         isOpen={!!pendingDistanceRefinement}
-        onClose={() => setPendingDistanceRefinement(null)}
-        onConfirm={() => handleExecuteDistanceRefinement(pendingDistanceRefinement)}
+        onClose={handleCancelPendingRefinement}
+        onConfirm={handleExecutePendingRefinement}
         currentStats={routeData?.stats}
         currentPoisCount={routeData?.pois?.length}
         newTargetValue={pendingDistanceRefinement}
@@ -4747,41 +4077,8 @@ function CityExplorerApp() {
       {/* City Picker Overlay */}
       {showCitySelector && (
         <CitySelector
-          onStartFadeOut={() => {
-            // Immediate UI update to prevent flashing background
-            // Only if we have interests (otherwise we will eventually show sidebar anyway)
-            if (interests && interests.trim().length > 0) {
-              setIsLoading(true); // Show loader immediately
-            }
-          }}
-          onCitySelect={async (selectedCity) => {
-            setCity(selectedCity);
-            setShowCitySelector(false); // Immediate close of overlay
-
-            // Check if we have interests to proceed immediately
-            const hasInterests = interests && interests.trim().length > 0;
-
-            if (hasInterests) {
-              // CASE 1: Full Info Available -> Go to Map
-              setIsLoading(true);
-              setLoadingText(language === 'nl' ? 'Bestemming verifiëren...' : 'Verifying destination...');
-
-              try {
-                // Submit directly with current interests
-                await handleCityValidation('submit', selectedCity, interests);
-              } finally {
-                setIsLoading(false);
-              }
-            } else {
-              // CASE 2: Missing Interests -> Open Sidebar for Input
-              setIsSidebarOpen(true); // Show sidebar
-              setShouldAutoFocusInterests(true); // Focus next step
-
-              // Validate city in background (get coords) but don't start journey
-              // 'blur' context ensures we fetch data/disambiguate without loading map
-              handleCityValidation('blur', selectedCity);
-            }
-          }}
+          onStartFadeOut={handleCitySelectorFadeOut}
+          onCitySelect={handleCitySelection}
         />
       )}
 
@@ -4790,7 +4087,7 @@ function CityExplorerApp() {
         <Suspense fallback={<div className="fixed inset-0 z-[2000] bg-black text-white flex items-center justify-center">Initializing AR...</div>}>
           <ArView
             onScan={handleArScan}
-            onClose={() => setIsArMode(false)}
+            onClose={handleArClose}
             language={language}
             pois={routeData?.pois || []}
             userLocation={userLocation}
@@ -4800,57 +4097,13 @@ function CityExplorerApp() {
       )}
 
       {/* Scan Result Modal */}
-      {scanResult && (
-        <div className="absolute inset-0 z-[1300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-white/10 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            {/* Image Header */}
-            <div className="relative h-48 w-full bg-black">
-              {scanResult.image && (
-                <img src={`data:image/jpeg;base64,${scanResult.image.split(',')[1]}`} alt="Scanned" className="w-full h-full object-contain" />
-              )}
-              <button
-                onClick={() => setScanResult(null)}
-                className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 backdrop-blur-md transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
-            </div>
+      <ScanResultModal
+        result={scanResult}
+        onClose={handleSetScanResultNull}
+        language={language}
+      />
 
-            <div className="p-6">
-              <h3 className="text-2xl font-bold text-white mb-1">{scanResult.name}</h3>
-              <div className="flex items-center gap-2 mb-4">
-                <span className={`text-xs px-2 py-0.5 rounded-full border ${scanResult.confidence === 'high' ? 'border-green-500/30 text-green-400 bg-green-500/10' : 'border-yellow-500/30 text-yellow-400 bg-yellow-500/10'}`}>
-                  {scanResult.confidence === 'high' ? (language === 'nl' ? 'Hoge Zekerheid' : 'High Confidence') : (language === 'nl' ? 'Onzeker' : 'Uncertain')}
-                </span>
-              </div>
-
-              <p className="text-slate-300 text-sm leading-relaxed mb-4">
-                {scanResult.short_description}
-              </p>
-
-              {scanResult.fun_fact && (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 mb-4">
-                  <p className="text-blue-300 text-xs font-medium uppercase tracking-wider mb-1">
-                    {language === 'nl' ? 'Wist je dat?' : 'Did you know?'}
-                  </p>
-                  <p className="text-blue-100 text-sm italic">
-                    "{scanResult.fun_fact}"
-                  </p>
-                </div>
-              )}
-
-              <button
-                onClick={() => setScanResult(null)}
-                className="w-full bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold transition-colors"
-              >
-                {language === 'nl' ? 'Sluiten' : 'Close'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div >
+    </div>
   );
 }
 

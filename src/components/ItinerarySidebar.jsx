@@ -70,7 +70,8 @@ const ItinerarySidebar = ({
     searchProvider, setSearchProvider,
     autoSave, setAutoSave,
     confidenceThreshold, setConfidenceThreshold,
-    version, author, lastUpdated
+    version, author, lastUpdated,
+    shouldAutoFocusInterests, setShouldAutoFocusInterests
 }) => {
 
     const [nearbyCities, setNearbyCities] = useState([]);
@@ -78,7 +79,6 @@ const ItinerarySidebar = ({
     const [showSettings, setShowSettings] = useState(false);
     const [showChangelog, setShowChangelog] = useState(false);
     const [settingsOpenedFromMap, setSettingsOpenedFromMap] = useState(false);
-    const [shouldAutoFocusInterests, setShouldAutoFocusInterests] = useState(false);
     const [expandedPoi, setExpandedPoi] = useState(null);
     const [poiToDelete, setPoiToDelete] = useState(null);
     const [showTruthfulnessLegend, setShowTruthfulnessLegend] = useState(false);
