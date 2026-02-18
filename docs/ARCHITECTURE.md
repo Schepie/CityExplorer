@@ -1,113 +1,235 @@
-# CityExplorer Architecture
+# POI Intelligence Architecture
 
-## 1. High-Level Overview
-CityExplorer is a **Single Page Application (SPA)** built with **React** and **Vite**. It leverages a **Serverless Architecture** (via Netlify Functions) to interact with external AI and Mapping APIs securely.
-
-The application is designed to be a "Travel Companion" that combines standard map functionality with an **Agentic AI** ("The Brain") that can understand natural language, plan routes, and behave like a local guide.
-
-### Core Tech Stack
-- **Frontend**: React 19, Tailwind CSS (Styling), Leaflet (Maps).
-- **Backend**: Netlify Functions (Node.js) acting as API Gateways.
-- **AI**: **Groq Cloud (Llama 3 70B)** (Default) & Google Gemini (Premium) for reasoning and content generation.
-- **Data**: OpenStreetMap (Overpass), Foursquare (Places), Tavily (AI Search), Wikipedia.
+> **Last updated**: 2026-02-18
+> **File**: `src/services/PoiIntelligence.js`, `server.js`
 
 ---
 
-## 2. System Components
+## Pipeline Overview
 
-### A. Frontend (Client-Side)
-The frontend is the command center. It manages state, user interaction, and data visualization.
-
-*   **`App.jsx` (The Controller)**
-    *   **Role**: Acts as the central brain of the frontend.
-    *   **Responsibilities**:
-        *   Manages Global State (`routeData`, `userLocation`, `aiChatHistory`).
-        *   Orchestrates the "Journey" lifecycle (Start -> Search -> Route -> Navigate).
-        *   Handles Audio/Voice I/O (Speech Recognition & Synthesis).
-    *   **Key Logic**: Contains the `handleJourneyStart` and `processAIPrompt` functions which translate user intent into application actions.
-
-*   **`ItinerarySidebar.jsx` ( The Interface)**
-    *   **Role**: The primary control panel for the user.
-    *   **Responsibilities**:
-        *   Displays the Chat Interface (user inputs & AI responses).
-        *   Shows the list of Stops (POIs) in the current route.
-        *   Handles Voice Input (Microphone logic & Silence Detection).
-        *   Provides controls for "Auto Audio", "Settings", and "Remove POI".
-
-*   **`MapContainer.jsx` (The Visualization)**
-    *   **Role**: Wrapper around Leaflet.js.
-    *   **Responsibilities**:
-        *   Renders the Map Tiles (CartoDB Dark Matter).
-        *   Draws the Route Line (Polyline).
-        *   Places Markers for POIs and User Location.
-        *   Handles Map interactions (Popup clicks, Zooming).
-
-*   **`RouteRefiner.jsx` (The Editor)**
-    *   **Role**: Drag-and-drop interface for route modification.
-    *   **Responsibilities**:
-        *   Allows reordering of waypoints.
-        *   Handles "Map Pick" mode for adding new points.
-        *   Calculates new route geometry via OSRM when changed.
-
-*   **`PoiIntelligence.js` (The Intelligence Layer)**
-    *   **Role**: A service class that "knows" everything about places.
-    *   **Responsibilities**:
-        *   **Triangulation**: Fetches data from multiple sources (Wikipedia, Google Search, OpenStreetMap) simultaneously.
-        *   **Conflict Resolution**: Decides which source is most trustworthy.
-        *   **Synthesis**: Uses Gemini AI to rewrite dry facts into a "Tour Guide" persona description.
-
-### B. Backend (Serverless Functions)
-To protect API keys and solve CORS (Cross-Origin Resource Sharing) issues, we do not call third-party APIs directly from the browser. Instead, we use Netlify Functions.
-
-*   **`functions/gemini.js`**: Proxies requests to Google's AI models.
-*   **`functions/groq.js`**: Proxies high-speed requests to Llama 3 models via Groq.
-*   **`functions/foursquare.js`**: Fetches place details and photos.
-*   **`functions/tavily.js`**: Semantic search for gathering POI signals.
-*   **`functions/overpass.js`**: Proxies requests to OpenStreetMap's Overpass API.
+```
+evaluatePoi(candidate)
+  Step 0:  resolveCanonicalEntity()      ← Wikidata entity resolution (optional, non-blocking)
+  Step 1:  gatherSignals()               ← Two-phase signal fetch
+             Phase 1: cheap sources (parallel)
+             Phase 2: fetchWebSearch (conditional — see below)
+  Step 2:  analyzeSignals()              ← Per-signal heuristic scoring (Pass 1)
+                                            + Graph-based consensus scoring (Pass 2)
+  Step 2b: mergeSignals()                ← Structured payload for AI prompts
+  Step 3:  fetchGeminiShortDescription() ← Stage 1: AI synthesis (short)
+           fetchGeminiFullDetails()      ← Stage 2: AI synthesis (deep)
+  Step 4:  resolveConflicts()            ← Fallback if Gemini fails
+```
 
 ---
 
-## 3. Data Flow
+## Signal Sources
 
-### Scenario: "Plan a trip to Hasselt"
-1.  **User Input**: User speaks "Ik wil een fietsroute van 5km in Hasselt".
-2.  **Voice Recognition**: Browser Web Speech API converts audio to text.
-3.  **AI Processing**:
-    *   Text is sent to `processAIPrompt` in `App.jsx`.
-    *   App sends prompt to `PoiIntelligence` -> `gemini.js`.
-    *   Gemini extracts JSON parameters: `{ city: "Hasselt", mode: "cycling", dist: 5 }`.
-4.  **Searching**:
-    *   App queries `Overpass API` for top-rated tourism spots in Hasselt.
-    *   App filters results to find a cluster fitting the 5km constraint.
-5.  **Routing**:
-    *   App sends the chosen points to **OSRM (Open Source Routing Machine)**.
-    *   OSRM returns the street-level path (coordinates).
-6.  **Enrichment (Background)**:
-    *   While the map loads, `PoiIntelligence` starts fetching Wikipedia articles and photos for each stop.
-7.  **Presentation**:
-    *   Map updates with the route.
-    *   Sidebar shows the "Brain" response: "Ik heb een route gemaakt..." directly followed by speech output.
+| # | Fetcher | API | Cost | Base Trust |
+|---|---------|-----|------|------------|
+| 1 | `fetchLocalArchive` | Hardcoded lookup | Free | 1.0 |
+| 2 | `fetchWikipedia` | Wikipedia REST | Free | 0.95 |
+| 3 | `fetchOverpassTags` | OSM Overpass (50m radius) | Free | 0.85 |
+| 4 | `fetchDuckDuckGo` | DDG Instant Answers | Free | 0.6 |
+| 5 | `fetchWebSearch` | Tavily / Google | **💰 Paid** | 0.75 |
+| 6 | `fetchOfficialWebsite` | Via `/api/scrape-meta` proxy | Free | 0.95 |
 
 ---
 
-## 4. Key Algorithms
+## Changes Made (Feb 2026)
 
-### 1. Intelligent Silence Detection
-*   **Problem**: How to know when the user stops talking?
-*   **Solution**: A dynamic timer (`ItinerarySidebar.jsx`).
-    *   If the sentence looks complete (contains keywords like "km", "stad"), wait only **1.2s**.
-    *   If the sentence looks short/incomplete, wait **2.5s**.
-    *   On silence, automatically submit.
+### 1. `normalizePoiName()` — Centralized Name Normalization
 
-### 2. POI Triangulation
-*   **Problem**: Where do we get descriptions? Wikipedia is incomplete, Google is expensive.
-*   **Solution**: `PoiIntelligence.js`.
-    *   It queries Wikipedia 1st (Free, High Quality).
-    *   If missing, it queries Google Search Snippets (Broad coverage).
-    *   It feeds raw snippets into Gemini to specific ask: "Rewrite this as a tour guide".
+**Module-level utility** added before the class. Replaces ad-hoc `.toLowerCase()` and `.replace()` calls throughout the pipeline.
 
-### 3. Audio Continuity
-*   **Problem**: Clicking around shouldn't confuse the audio guide.
-*   **Solution**: State-based Audio Manager in `App.jsx`.
-    *   `handleSpeak(poi, force)` handles toggling.
-    *   Prioritizes "Sidebar clicks" (User intent to learn) over "Map clicks" (Scanning).
+**Operations** (in order):
+1. Lowercase
+2. NFD decomposition → strip combining diacritics (`é → e`)
+3. Strip parenthetical suffixes (`"Foo (Bar)" → "Foo"`)
+4. Remove punctuation (keep alphanumeric + spaces)
+5. Collapse whitespace
+6. Apply `POI_SYNONYMS` dictionary (whole-word regex)
+
+**`POI_SYNONYMS` dictionary** — 30 Dutch↔English entries:
+
+| Alias | Canonical |
+|-------|-----------|
+| `stadhuis`, `gemeentehuis`, `raadhuis`, `town hall` | `city hall` |
+| `kerk` | `church` |
+| `kathedraal` | `cathedral` |
+| `kasteel`, `slot`, `burcht` | `castle` |
+| `schouwburg` | `theatre` |
+| `treinstation` | `train station` |
+| … (30 total) | |
+
+**Integrated into:**
+- `fetchWebSearch` — replaces `cleanName` regex
+- `fetchOverpassTags` — both sides of fuzzy name match
+- `analyzeSignals` — `poiName` and signal `text` normalization
+
+---
+
+### 2. `resolveCanonicalEntity()` — Wikidata Integration (Step 0)
+
+Runs **before** `gatherSignals()` as a non-blocking enrichment step. Returns `null` on any failure.
+
+**Queries Wikidata for:**
+- Canonical name + aliases
+- Wikipedia URL (language-aware)
+- Official website (P856)
+- Image (P18 → Wikimedia Commons URL)
+- Categories (P31 instance-of IDs)
+
+**Output** attached as `canonical` field on the final POI object.
+
+---
+
+### 3. `fetchOfficialWebsite()` + `/api/scrape-meta` Proxy
+
+**`fetchOverpassTags`** now upgrades the `website` OSM tag from `link_only` to a real `official_site` signal by scraping the page via a backend proxy.
+
+**`/api/scrape-meta`** (server.js) enforces:
+- HTTP/HTTPS URL validation
+- Robots-safe User-Agent
+- 6-second timeout
+- 150 KB content size limit
+- HTML content-type check
+- Extracts: `og:description` → `meta description` → first readable paragraph ≥ 60 chars
+
+**Signal produced:** `{ type: 'official_site', confidence: 0.95, content: scraped (≤800 chars) }`
+
+Falls back to `link_only` if scraping fails.
+
+---
+
+### 4. `gatherSignals()` — Two-Phase Fetch + `enableExpensiveSearch` Flag
+
+**Phase 1** (always, parallel): `fetchLocalArchive`, `fetchWikipedia`, `fetchDuckDuckGo`, `fetchOverpassTags`
+
+**Phase 2** (conditional): `fetchWebSearch` is only called if:
+
+```
+enableExpensiveSearch === true
+  OR
+NOT (hasWikipedia OR hasOfficialSite OR avgTrust >= 0.75)
+```
+
+**`enableExpensiveSearch`** — new constructor config flag, default `false`.
+
+```js
+new PoiIntelligence({ enableExpensiveSearch: true }) // always run web search
+```
+
+Backward compatible: existing callers without the flag get `false` (new default behavior).
+
+---
+
+### 5. `mergeSignals(scoredSignals)` — Structured AI Payload (Step 2b)
+
+Runs after `analyzeSignals()`. Converts the scored signal array into a structured object consumed by both Gemini stages.
+
+**Output shape:**
+```js
+{
+  descriptionCandidates: string[], // up to 5, ranked by trust, deduplicated
+  categories: string[],            // source verification hints
+  images: string[],                // unique URLs from signals ≥ 0.85 trust
+  website: string | null,          // official_site first, then any ≥ 0.8 trust link
+  facts: string[]                  // short snippets < 200 chars from ≥ 0.7 trust signals
+}
+```
+
+**Deduplication**: 80-char normalized fingerprint prevents near-duplicate descriptions.
+
+**Gemini `contextData`** is now structured markdown instead of a flat blob:
+
+```
+## Verified Descriptions (ranked by trust):
+[wikipedia | trust:0.95] ...
+[official_website | trust:0.95] ...
+
+## Official Website: https://...
+
+## Quick Facts:
+- ...
+
+## Source Verification: wikipedia_verified, osm_verified
+```
+
+---
+
+### 6. `analyzeSignals()` — Graph-Based Consensus Scoring
+
+Two-pass scoring replacing the previous flat heuristics.
+
+#### Pass 1: Per-signal heuristics (unchanged logic)
+- Official link detection → score = 0.95
+- Generic city description penalty → score ≤ 0.1
+- Search result name boost → score ≥ 0.9
+- Tag-list junk detection → score = 0.2
+
+#### Pass 2: Signal Confidence Graph
+
+**`_buildSignalGraph(scoredSignals, poiName)`** — builds a symmetric **n×n adjacency matrix**.
+
+Edge weight between signals `i` and `j`:
+
+| Criterion | Weight |
+|-----------|--------|
+| Both contents mention POI name | +0.40 |
+| Both share a category keyword | +0.30 |
+| Bigram Jaccard similarity × 0.3 | 0–0.30 |
+
+Clamped to [0, 1].
+
+**Weighted degree centrality:**
+```
+centrality(i) = Σ edge(i,j) / (n-1)
+finalScore    = clamp(baseScore + centrality × 0.3, 0, 1.0)
+```
+
+Max graph contribution: **+0.30**. Isolated signals (no agreement) receive no boost.
+
+Each signal gains a `graphCentrality: float` debug field.
+
+**`_textSimilarity(a, b)`** — bigram Jaccard, deterministic, no external dependencies.
+
+---
+
+## Backend Endpoints (server.js)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/gemini` | Gemini 2.0 Flash proxy |
+| `POST /api/groq` | Groq proxy with model fallback list |
+| `GET /api/tavily` | Tavily search proxy |
+| `GET /api/ddg` | DuckDuckGo proxy |
+| `GET /api/google-search` | Google Custom Search proxy |
+| `GET /api/nominatim` | OSM geocoding proxy |
+| `GET /api/foursquare` | Foursquare Places proxy |
+| `ALL /api/cloud-cache` | Supabase cache proxy |
+| `POST /api/scrape-meta` | **NEW** — HTML meta scraper proxy |
+
+---
+
+## Module-Level Utilities (PoiIntelligence.js)
+
+| Symbol | Type | Purpose |
+|--------|------|---------|
+| `POI_SYNONYMS` | `const object` | 30-entry Dutch↔English alias dictionary |
+| `normalizePoiName(name)` | `function` | Canonical name normalization |
+| `_textSimilarity(a, b)` | `function` | Bigram Jaccard similarity [0,1] |
+| `_buildSignalGraph(signals, poiName)` | `function` | Weighted n×n adjacency matrix |
+
+---
+
+## Trust Score Flow
+
+```
+signal.confidence (base)
+  → Pass 1 heuristics  (may raise to 0.95 or drop to 0.1/0.2)
+  → Pass 2 graph       (+0 to +0.30 based on centrality)
+  → mergeSignals       (ranked, deduplicated, structured)
+  → Gemini prompt      (structured contextData)
+  → resolveConflicts   (fallback: picks highest .score)
+```

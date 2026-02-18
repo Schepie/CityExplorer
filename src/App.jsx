@@ -5,13 +5,14 @@ const ItinerarySidebar = React.lazy(() => import('./components/ItinerarySidebar'
 import CitySelector from './components/CitySelector';
 const ArView = React.lazy(() => import('./components/ArView'));
 import './index.css';
-import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
+import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions, findClosestPoi } from './utils/poiService';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import * as smartPoiUtils from './utils/smartPoiUtils';
 import { rotateCycle, reverseCycle, interleaveRouteItems } from './utils/routeUtils';
 import { isLocationOnPath } from './utils/geometry';
 import { transformOSRMCoords, sanitizePath } from './utils/coordinateUtils';
 import { sanitizeRouteData, calculateRoutePath, getDistance } from './utils/routePathUtils';
+import { safeSetItem } from './utils/storageManager';
 
 import { getBestVoice } from './utils/speechUtils';
 import { APP_THEMES, applyTheme } from './utils/themeUtils';
@@ -20,12 +21,7 @@ import * as locationService from './services/locationService';
 // Async Persistence Helper
 const saveToStorageAsync = (key, value) => {
   setTimeout(() => {
-    try {
-      const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
-      localStorage.setItem(key, stringValue);
-    } catch (e) {
-      console.warn(`Failed to save ${key} to localStorage`, e);
-    }
+    safeSetItem(key, value, 'poi_');
   }, 0);
 };
 
@@ -45,7 +41,7 @@ const NAV_PHASES = {
 
 
 
-const APP_VERSION = "v3.5.1";
+const APP_VERSION = "v4.1.0";
 const APP_AUTHOR = "Geert Schepers";
 const APP_LAST_UPDATED = "18 Feb 2026";
 
@@ -534,8 +530,13 @@ function CityExplorerApp() {
     }
     const shortDescMap = new Map();
 
+    const queue = [...pois];
+    if (routeData?.startIsPoi && routeData?.startPoi && !pois.some(p => p.id === routeData.startPoi.id)) {
+      queue.unshift(routeData.startPoi);
+    }
+
     try {
-      for (const poi of pois) {
+      for (const poi of queue) {
         if (signal.aborted) return;
         if (poi.isFullyEnriched) continue;
 
@@ -546,7 +547,8 @@ function CityExplorerApp() {
           return {
             ...prev,
             startPoi: isStart ? loadingPoi : prev.startPoi,
-            pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? loadingPoi : p) : []
+            pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? loadingPoi : p) : [],
+            routeMarkers: prev.routeMarkers?.map(p => p.id === poi.id ? loadingPoi : p) || []
           };
         });
 
@@ -584,7 +586,8 @@ function CityExplorerApp() {
             return {
               ...prev,
               startPoi: isStart ? updatedPoi : prev.startPoi,
-              pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? updatedPoi : p) : []
+              pois: prev.pois ? prev.pois.map(p => p.id === poi.id ? updatedPoi : p) : [],
+              routeMarkers: prev.routeMarkers?.map(p => p.id === poi.id ? updatedPoi : p) || []
             };
           });
 
@@ -597,7 +600,7 @@ function CityExplorerApp() {
         }
       }
 
-      for (const poi of pois) {
+      for (const poi of queue) {
         if (signal.aborted) return;
         if (poi.isFullyEnriched) continue;
 
@@ -708,58 +711,104 @@ function CityExplorerApp() {
   const handleEnrichSinglePoi = async (poi) => {
     if (!poi) return;
     const routeCtx = `${searchMode === 'radius' ? 'Radius search' : 'Journey route'} (${constraintValue} ${constraintType === 'duration' ? 'min' : 'km'}, roundtrip)`;
-    // Re-use enrichment logic but only for this POI
-    // We create a new instance to avoid aborting the main background process if running?
-    // Actually simplicity: Just call enrichBackground with a single-item array?
-    // But enrichBackground resets state for ALL provided POIs.
-    // Better: We instantiate the engine here directly.
 
-    // Force UI into loading state for this POI and clear old data to ensure fresh update
-    setRouteData(prev => ({
-      ...prev,
-      pois: prev.pois.map(p => p.id === poi.id ? {
-        ...p,
-        isLoading: true,
-        isFullyEnriched: false,
-        // Clear old data to show we are truly fetching new info
+    // Force UI into loading state for this POI and clear old data
+    setRouteData(prev => {
+      if (!prev) return prev;
+      const isLoading = true;
+      const isFullyEnriched = false;
+      const resetFields = {
+        isLoading,
+        isFullyEnriched,
         description: null,
+        short_description: null,
         structured_info: null,
+        image: null,
+        images: [],
         fun_facts: [],
         visitor_tips: null
-      } : p)
-    }));
+      };
+
+      const updateItem = (p) => (p && (p.id === poi.id || (poi.originalId && p.id === poi.originalId))) ? { ...p, ...resetFields } : p;
+
+      return {
+        ...prev,
+        startPoi: updateItem(prev.startPoi),
+        stopCenter: updateItem(prev.stopCenter),
+        pois: prev.pois?.map(updateItem) || [],
+        routeMarkers: prev.routeMarkers?.map(updateItem) || []
+      };
+    });
+
+    const { PoiIntelligence } = await import('./services/PoiIntelligence');
 
     const engine = new PoiIntelligence({
       city: city,
       language: language,
-      lengthMode: poi.active_mode || descriptionLength,
+      lengthMode: 'long', // Force long mode for manual refresh
       interests: interests,
       routeContext: routeCtx
     });
 
-    try {
-      const signals = await engine.gatherSignals(poi);
-      // Fetch full details directly
-      // Use existing short desc if available to save tokens?
-      const fullData = await engine.fetchGeminiFullDetails(poi, signals, poi.short_description || null);
+    // Clear all cached data for this POI so we truly re-fetch everything
+    const poiName = (poi.name || '').toLowerCase().replace(/\s+/g, '_');
+    const cachePrefix = `poi_${poiName}`;
+    const keysToDelete = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(cachePrefix)) keysToDelete.push(k);
+    }
+    keysToDelete.forEach(k => localStorage.removeItem(k));
+    console.log(`[Refresh] Cleared ${keysToDelete.length} cache entries for "${poi.name}"`);
 
-      if (fullData) {
-        setRouteData(prev => ({
-          ...prev,
-          pois: prev.pois.map(p => p.id === poi.id ? {
-            ...p,
-            ...fullData,
-            isFullyEnriched: true,
-            isLoading: false
-          } : p)
-        }));
+    const targetPoi = poi.originalId ? { ...poi, id: poi.originalId } : poi;
+
+    try {
+      // Run the full pipeline: Wikidata → signals → graph scoring → Gemini
+      const enriched = await engine.evaluatePoi(targetPoi);
+
+      if (enriched) {
+        setRouteData(prev => {
+          if (!prev) return prev;
+          const updatedPoi = { ...enriched, isFullyEnriched: true, isLoading: false };
+          const updateItem = (p) => (p && (p.id === poi.id || (poi.originalId && p.id === poi.originalId))) ? { ...p, ...updatedPoi } : p;
+          setRouteMarkers(prev => prev?.map(updateItem) || []);
+          return {
+            ...prev,
+            startPoi: updateItem(prev.startPoi),
+            stopCenter: updateItem(prev.stopCenter),
+            pois: prev.pois?.map(updateItem) || [],
+            routeMarkers: prev.routeMarkers?.map(updateItem) || []
+          };
+        });
+      } else {
+        setRouteData(prev => {
+          if (!prev) return prev;
+          const updateItem = (p) => (p && (p.id === poi.id || (poi.originalId && p.id === poi.originalId))) ? { ...p, isLoading: false } : p;
+          setRouteMarkers(prev => prev?.map(updateItem) || []);
+          return {
+            ...prev,
+            startPoi: updateItem(prev.startPoi),
+            stopCenter: updateItem(prev.stopCenter),
+            pois: prev.pois?.map(updateItem) || [],
+            routeMarkers: prev.routeMarkers?.map(updateItem) || []
+          };
+        });
       }
     } catch (e) {
       console.error("Single POI enrichment failed", e);
-      setRouteData(prev => ({
-        ...prev,
-        pois: prev.pois.map(p => p.id === poi.id ? { ...p, isLoading: false } : p)
-      }));
+      setRouteData(prev => {
+        if (!prev) return prev;
+        const updateItem = (p) => (p && (p.id === poi.id || (poi.originalId && p.id === poi.originalId))) ? { ...p, isLoading: false } : p;
+        setRouteMarkers(prev => prev?.map(updateItem) || []);
+        return {
+          ...prev,
+          startPoi: updateItem(prev.startPoi),
+          stopCenter: updateItem(prev.stopCenter),
+          pois: prev.pois?.map(updateItem) || [],
+          routeMarkers: prev.routeMarkers?.map(updateItem) || []
+        };
+      });
     }
   };
 
@@ -2857,13 +2906,21 @@ function CityExplorerApp() {
       routeContext: routeCtx
     });
 
+    const targetPoi = poi.originalId ? { ...poi, id: poi.originalId } : poi;
+
     try {
-      const enriched = await engine.evaluatePoi(poi);
+      const enriched = await engine.evaluatePoi(targetPoi);
       setRouteData((prev) => {
-        if (!prev || !prev.pois) return prev;
+        if (!prev) return prev;
+        const updatedPoi = { ...enriched, isLoading: false, active_mode: lengthMode };
+        const updateItem = (p) => (p && (p.id === poi.id || (poi.originalId && p.id === poi.originalId))) ? { ...p, ...updatedPoi } : p;
+        setRouteMarkers(prev => prev?.map(updateItem) || []);
         return {
           ...prev,
-          pois: prev.pois.map(p => p.id === poi.id ? { ...enriched, isLoading: false, active_mode: lengthMode } : p)
+          startPoi: updateItem(prev.startPoi),
+          stopCenter: updateItem(prev.stopCenter),
+          pois: prev.pois?.map(updateItem) || [],
+          routeMarkers: prev.routeMarkers?.map(updateItem) || []
         };
       });
     } catch (err) {
@@ -3272,23 +3329,38 @@ function CityExplorerApp() {
     setLoadingText(language === 'nl' ? 'Locatie details ophalen...' : 'Fetching location details...');
 
     try {
-      // 1. Reverse Geocode (use proxy to avoid CORS)
-      const response = await apiFetch(`/api/nominatim?lat=${latlng.lat}&lon=${latlng.lng}&format=json&zoom=18&addressdetails=1`);
-      const data = await response.json();
+      // 1. Proximity POI Check (10m radius)
+      const proximityPoi = await findClosestPoi(latlng.lat, latlng.lng, language);
+      let poi;
+      let addressData = null;
 
-      const name = data.name ||
-        (data.address && (data.address.amenity || data.address.shop || data.address.tourism || data.address.road)) ||
-        (language === 'nl' ? 'Gekozen locatie' : 'Picked Location');
+      if (proximityPoi) {
+        // Snap to nearby POI
+        poi = {
+          ...proximityPoi,
+          id: `pick-${Date.now()}`,
+          lat: parseFloat(proximityPoi.lat), // Ensure numeric
+          lng: parseFloat(proximityPoi.lng)
+        };
+      } else {
+        // 2. Fallback: Reverse Geocode (use proxy to avoid CORS)
+        const response = await apiFetch(`/api/nominatim?lat=${latlng.lat}&lon=${latlng.lng}&format=json&zoom=18&addressdetails=1`);
+        addressData = await response.json();
 
-      const poi = {
-        id: `pick-${Date.now()}`,
-        name: name,
-        lat: parseFloat(latlng.lat),
-        lng: parseFloat(latlng.lng),
-        type: data.type || 'custom',
-        description: data.display_name,
-        address: data.address
-      };
+        const name = addressData.name ||
+          (addressData.address && (addressData.address.amenity || addressData.address.shop || addressData.address.tourism || addressData.address.road)) ||
+          (language === 'nl' ? 'Gekozen locatie' : 'Picked Location');
+
+        poi = {
+          id: `pick-${Date.now()}`,
+          name: name,
+          lat: parseFloat(latlng.lat),
+          lng: parseFloat(latlng.lng),
+          type: addressData.type || 'custom',
+          description: addressData.display_name,
+          address: addressData.address
+        };
+      }
 
       // 2. Route Edit Mode Logic - Update routeMarkers
       if (isRouteEditMode) {
@@ -3315,9 +3387,10 @@ function CityExplorerApp() {
             stats: { totalDistance: 0, walkDistance: 0, limitKm: 5 }
           });
 
-          // Update city if missing
-          if (!city && data.address && (data.address.city || data.address.town)) {
-            setCity(data.address.city || data.address.town);
+          // Update city if missing (from address geocode or POI metadata if available)
+          const cityFound = addressData?.address?.city || addressData?.address?.town || proximityPoi?.city;
+          if (!city && cityFound) {
+            setCity(cityFound);
           }
         } else {
           // Calculate route to this point

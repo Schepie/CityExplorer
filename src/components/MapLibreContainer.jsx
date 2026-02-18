@@ -144,7 +144,11 @@ const MapLibreContainer = ({
             const latDiff = Math.abs(viewState.latitude - center[0]);
             const lngDiff = Math.abs(viewState.longitude - center[1]);
             if (latDiff > 0.01 || lngDiff > 0.01) {
-                setViewState(prev => ({ ...prev, latitude: center[0], longitude: center[1] }));
+                setViewState(prev => ({
+                    ...prev,
+                    latitude: isNum(center[0]) ? center[0] : (prev.latitude || 52.3676),
+                    longitude: isNum(center[1]) ? center[1] : (prev.longitude || 4.9041)
+                }));
             }
         }
     }, [center, isRouteEditMode, isMapPickMode]);

@@ -64,7 +64,7 @@ if (supabase) {
 }
 
 // --- Health Check ---
-app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '3.3.2' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '4.1.0' }));
 
 // --- Groq Model Discovery Registry ---
 let groqModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]; // Fallback defaults
@@ -81,7 +81,13 @@ async function refreshGroqModels() {
         // Prioritize by capabilities and size keywords
         // Ranking: 70b > 32b/mixtral > 8b > smaller/others
         const ranked = list.data
-            .filter(m => m.active !== false && !m.id.includes('guard')) // Exclude guard models and inactive ones
+            .filter(m => {
+                const id = m.id.toLowerCase();
+                return m.active !== false &&
+                    !id.includes('guard') &&
+                    !id.includes('whisper') &&
+                    !id.includes('audio');
+            })
             .map(m => m.id)
             .sort((a, b) => {
                 const getRank = (name) => {
@@ -403,7 +409,17 @@ app.post('/api/groq', authMiddleware, async (req, res) => {
         }
 
         const groq = new Groq({ apiKey });
-        const attemptModels = [...groqModels]; // Use the dynamic list
+        // Defensive safeguard: Ensure we ONLY try chat-capable models by re-filtering here 
+        // in case the background list hasn't refreshed yet or contains stale entries.
+        const attemptModels = [...groqModels].filter(m => {
+            const id = m.toLowerCase();
+            return !id.includes('whisper') && !id.includes('audio');
+        });
+
+        if (attemptModels.length === 0) {
+            console.error("[Proxy] No valid chat models available in registry.");
+            return res.status(500).json({ error: 'No valid Groq chat models found. Please check API status.' });
+        }
 
         let lastError = null;
         // Start from the last known successful model index
@@ -717,6 +733,122 @@ app.post('/api/logs/clear', authMiddleware, (req, res) => {
 app.get('/api/logs/download', authMiddleware, (req, res) => {
     if (!fs.existsSync(LOG_FILE)) return res.status(404).send("No logs found");
     res.download(LOG_FILE, 'service_logs.txt');
+});
+
+// --- Official Site Meta Scraper ---
+app.get('/api/scrape-meta', authMiddleware, async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'url is required' });
+
+    // Safety: only allow http/https URLs
+    let parsed;
+    try {
+        parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return res.status(400).json({ error: 'Only http/https URLs allowed' });
+        }
+    } catch {
+        return res.status(400).json({ error: 'Invalid URL' });
+    }
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s hard timeout
+
+        const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+                // Robots-safe: identify as a bot, respect crawl etiquette
+                'User-Agent': 'CityExplorer/1.0 (educational; +https://cityexplorer.app/bot)',
+                'Accept': 'text/html,application/xhtml+xml',
+                'Accept-Language': 'nl,en;q=0.8'
+            },
+            redirect: 'follow'
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            return res.status(response.status).json({ error: `Site returned ${response.status}` });
+        }
+
+        // Content-type check: only parse HTML
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('text/html')) {
+            return res.status(415).json({ error: 'Not an HTML page' });
+        }
+
+        // Size limit: read max 150KB to avoid memory issues on large pages
+        const MAX_BYTES = 150 * 1024;
+        const reader = response.body.getReader();
+        const chunks = [];
+        let totalBytes = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            totalBytes += value.length;
+            chunks.push(value);
+            if (totalBytes >= MAX_BYTES) {
+                reader.cancel();
+                break;
+            }
+        }
+
+        const html = Buffer.concat(chunks.map(c => Buffer.from(c))).toString('utf-8');
+
+        // Extract meta tags with regex (sufficient for <meta> tags in <head>)
+        const getMeta = (name) => {
+            const patterns = [
+                new RegExp(`<meta[^>]+name=["']${name}["'][^>]+content=["']([^"']{1,500})["']`, 'i'),
+                new RegExp(`<meta[^>]+content=["']([^"']{1,500})["'][^>]+name=["']${name}["']`, 'i'),
+            ];
+            for (const p of patterns) {
+                const m = html.match(p);
+                if (m) return m[1].trim();
+            }
+            return null;
+        };
+
+        const getOg = (prop) => {
+            const patterns = [
+                new RegExp(`<meta[^>]+property=["']og:${prop}["'][^>]+content=["']([^"']{1,500})["']`, 'i'),
+                new RegExp(`<meta[^>]+content=["']([^"']{1,500})["'][^>]+property=["']og:${prop}["']`, 'i'),
+            ];
+            for (const p of patterns) {
+                const m = html.match(p);
+                if (m) return m[1].trim();
+            }
+            return null;
+        };
+
+        // Extract first readable paragraph (strip tags, min 60 chars)
+        const firstParagraph = (() => {
+            const pMatch = html.match(/<p[^>]*>([\s\S]{60,800}?)<\/p>/i);
+            if (!pMatch) return null;
+            return pMatch[1]
+                .replace(/<[^>]+>/g, ' ')   // Strip inner HTML tags
+                .replace(/\s+/g, ' ')
+                .trim()
+                .substring(0, 500);
+        })();
+
+        const title = getOg('title') || getMeta('title') || null;
+        const description = getOg('description') || getMeta('description') || firstParagraph;
+
+        if (!description) {
+            return res.json({ found: false });
+        }
+
+        console.log(`[scrape-meta] OK: ${url} → ${description.length} chars`);
+        res.json({ found: true, title, description, url });
+
+    } catch (e) {
+        if (e.name === 'AbortError') {
+            return res.status(408).json({ error: 'Fetch timed out' });
+        }
+        console.error('[scrape-meta] Error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // --- Static Files (Production) ---

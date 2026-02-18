@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Changelog from './Changelog';
+import { getApiUsageStats, clearApiUsageStats } from '../utils/usageTracker';
 
 const SidebarSettings = ({
     language, setLanguage,
@@ -386,6 +387,62 @@ const SidebarSettings = ({
                                                     </p>
                                                 </div>
                                             </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Nested: API KPI Dashboard */}
+                                <div className="flex flex-col">
+                                    <button
+                                        onClick={() => toggleSection('api_kpi')}
+                                        className="flex items-center justify-between w-full py-2 px-4 bg-black/20 border border-white/5 rounded-2xl group text-left hover:bg-black/30 transition-all"
+                                    >
+                                        <span className="text-xs font-black text-white/90 uppercase tracking-[0.05em] group-hover:text-white transition-colors">API KPI</span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-slate-500 transition-transform ${expandedSection === 'api_kpi' ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
+                                    {expandedSection === 'api_kpi' && (
+                                        <div className="mt-1 p-4 bg-black/20 rounded-2xl border border-white/5 animate-in slide-in-from-top-2 duration-200">
+                                            {(() => {
+                                                const stats = getApiUsageStats(7);
+                                                const dates = Object.keys(stats);
+
+                                                if (dates.length === 0) {
+                                                    return (
+                                                        <div className="text-center py-6 text-slate-500 text-[10px] uppercase font-black tracking-widest">
+                                                            {language === 'nl' ? 'Nog geen gebruiksgegevens.' : 'No usage data yet.'}
+                                                        </div>
+                                                    );
+                                                }
+
+                                                return (
+                                                    <div className="space-y-4">
+                                                        {dates.map(date => (
+                                                            <div key={date} className="space-y-1.5">
+                                                                <div className="text-[10px] font-black text-primary uppercase tracking-widest border-b border-primary/20 pb-1 mb-2">
+                                                                    {date}
+                                                                </div>
+                                                                {Object.entries(stats[date]).map(([api, count]) => (
+                                                                    <div key={api} className="flex justify-between items-center px-2 py-1 bg-white/5 rounded-lg border border-white/5">
+                                                                        <span className="text-[10px] font-bold text-slate-300">{api}</span>
+                                                                        <span className="text-[10px] font-black text-white bg-primary/20 px-2 py-0.5 rounded border border-primary/20">{count}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ))}
+                                                        <button
+                                                            onClick={() => {
+                                                                clearApiUsageStats();
+                                                                toggleSection(null);
+                                                            }}
+                                                            className="w-full mt-2 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-red-500/20 transition-all"
+                                                        >
+                                                            {language === 'nl' ? 'GESCHIEDENIS WISSEN' : 'CLEAR HISTORY'}
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     )}
                                 </div>

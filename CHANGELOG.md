@@ -2,6 +2,14 @@ I see # Changelog
 
 All notable changes to this project will be documented in this file.
 
+## [v4.1.0] - 2026-02-18
+### Fixed
+- **Groq API Stability**: Resolved a critical "400 Bad Request" error caused by incorrect model selection. The system now strictly filters out non-chat models (like Whisper) from the Groq registry.
+- **Data Fetching Fix**: Resolved a `ReferenceError` in the POI intelligence engine that could interrupt full detail fetches.
+
+### Changed
+- **Premium Image Filtering**: Expanded noise detection to exclude brand logos and assets from travel aggregators (Skyscanner, TripAdvisor, Booking.com, etc.), ensuring only relevant landmark photos are displayed.
+
 ## [v3.5.1] - 2026-02-18
 ### Added
 - Added "waste basket" icon to POIs in route options for easier deletion.

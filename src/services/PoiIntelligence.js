@@ -1,5 +1,5 @@
-
 import { apiFetch } from "../utils/api.js";
+import { safeSetItem } from "../utils/storageManager.js";
 
 /**
  * POI Intelligence Engine
@@ -62,12 +62,186 @@ async function logRemote(level, message, context = '') {
     }
 }
 
+// --- POI Name Normalization ---
+
+/**
+ * Known synonym pairs for common POI naming variations.
+ * Key = normalized alias → Value = canonical normalized form.
+ * Unifies cross-source name matching (e.g. OSM vs Wikipedia vs search).
+ */
+const POI_SYNONYMS = {
+    // Dutch ↔ English institution types
+    'stadhuis': 'city hall',
+    'gemeentehuis': 'city hall',
+    'raadhuis': 'city hall',
+    'town hall': 'city hall',
+    'kerk': 'church',
+    'basiliek': 'basilica',
+    'kathedraal': 'cathedral',
+    'kasteel': 'castle',
+    'slot': 'castle',
+    'burcht': 'castle',
+    'abdij': 'abbey',
+    'klooster': 'monastery',
+    'markt': 'market square',
+    'grote markt': 'market square',
+    'plein': 'square',
+    'brug': 'bridge',
+    'toren': 'tower',
+    'molen': 'windmill',
+    'windmolen': 'windmill',
+    'bibliotheek': 'library',
+    'theater': 'theatre',
+    'schouwburg': 'theatre',
+    'bioscoop': 'cinema',
+    'station': 'train station',
+    'treinstation': 'train station',
+    'ziekenhuis': 'hospital',
+    'universiteit': 'university',
+    'hogeschool': 'university',
+    'sporthal': 'sports hall',
+    'zwembad': 'swimming pool',
+    'begraafplaats': 'cemetery',
+    'kerkhof': 'cemetery',
+    'haven': 'harbour',
+    'jachthaven': 'marina',
+};
+
+/**
+ * Normalize a POI name for cross-source matching.
+ * - Lowercase
+ * - Remove diacritics (NFD decomposition)
+ * - Strip parenthetical suffixes: "Foo (Bar)" → "Foo"
+ * - Remove punctuation (keep alphanumeric + spaces)
+ * - Normalize whitespace
+ * - Apply synonym dictionary for known POI type aliases
+ *
+ * @param {string} name
+ * @returns {string} Normalized name
+ */
+function normalizePoiName(name) {
+    if (!name) return '';
+
+    let n = name
+        .toLowerCase()
+        .normalize('NFD')                    // Decompose: é → e + combining accent
+        .replace(/[\u0300-\u036f]/g, '')     // Strip combining diacritic marks
+        .replace(/\s*\([^)]*\)/g, '')        // Strip parenthetical suffixes
+        .replace(/[^a-z0-9\s]/g, ' ')       // Remove punctuation, keep alphanumeric + spaces
+        .replace(/\s+/g, ' ')               // Collapse multiple spaces
+        .trim();
+
+    // Apply synonym substitutions (whole-word match to avoid partial replacements)
+    for (const [alias, canonical] of Object.entries(POI_SYNONYMS)) {
+        const pattern = new RegExp(`\\b${alias}\\b`, 'g');
+        n = n.replace(pattern, canonical);
+    }
+
+    return n;
+}
+
+// --- Cross-Source Similarity Helpers ---
+
+/**
+ * Bigram-based Jaccard similarity between two strings.
+ * Deterministic, no external dependencies.
+ * Returns a value in [0, 1]: 1 = identical, 0 = no overlap.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function _textSimilarity(a, b) {
+    if (!a || !b) return 0;
+    // Build bigram sets
+    const bigrams = (str) => {
+        const set = new Set();
+        for (let i = 0; i < str.length - 1; i++) {
+            set.add(str.slice(i, i + 2));
+        }
+        return set;
+    };
+    const setA = bigrams(a);
+    const setB = bigrams(b);
+    if (setA.size === 0 || setB.size === 0) return 0;
+
+    let intersection = 0;
+    for (const bg of setA) {
+        if (setB.has(bg)) intersection++;
+    }
+    return intersection / (setA.size + setB.size - intersection); // Jaccard
+}
+
+/**
+ * Build a weighted agreement graph over scored signals.
+ * Returns a symmetric n×n adjacency matrix of edge weights ∈ [0, 1].
+ *
+ * Edge weight between signals i and j is the sum of:
+ *   +0.4  if both contents mention the POI name
+ *   +0.3  if both share a category keyword
+ *   +0–0.3 proportional to bigram Jaccard similarity of descriptions
+ * Clamped to [0, 1].
+ *
+ * @param {Array} scoredSignals - Signals already scored by Pass 1
+ * @param {string} poiName     - Normalized POI name
+ * @returns {number[][]}        - n×n symmetric adjacency matrix
+ */
+function _buildSignalGraph(scoredSignals, poiName) {
+    const n = scoredSignals.length;
+
+    // Precompute normalized content once — reused for all pairs
+    const contents = scoredSignals.map(s => normalizePoiName(s.content || ''));
+
+    // Category keywords — signals sharing a keyword are considered category-aligned
+    const CATEGORY_KEYWORDS = [
+        'museum', 'church', 'cathedral', 'castle', 'abbey', 'monastery',
+        'market', 'square', 'bridge', 'tower', 'windmill', 'library',
+        'theatre', 'cinema', 'station', 'hospital', 'university', 'cemetery',
+        'harbour', 'marina', 'park', 'garden', 'palace', 'monument',
+    ];
+    const categoryOf = text => CATEGORY_KEYWORDS.find(kw => text.includes(kw)) || null;
+
+    // Initialize n×n matrix with zeros
+    const graph = Array.from({ length: n }, () => new Array(n).fill(0));
+
+    for (let i = 0; i < n; i++) {
+        const ci = contents[i];
+        const catI = categoryOf(ci);
+
+        for (let j = i + 1; j < n; j++) {
+            const cj = contents[j];
+            const catJ = categoryOf(cj);
+
+            let weight = 0;
+
+            // Agreement 1: Both mention the POI name (+0.4)
+            if (poiName.length > 2 && ci.includes(poiName) && cj.includes(poiName))
+                weight += 0.4;
+
+            // Agreement 2: Both share a category keyword (+0.3)
+            if (catI !== null && catI === catJ)
+                weight += 0.3;
+
+            // Agreement 3: Description similarity — Jaccard × 0.3 (max +0.3)
+            if (ci.length > 40 && cj.length > 40)
+                weight += _textSimilarity(ci.substring(0, 300), cj.substring(0, 300)) * 0.3;
+
+            const clamped = Math.min(1, weight);
+            graph[i][j] = clamped;
+            graph[j][i] = clamped; // symmetric
+        }
+    }
+
+    return graph;
+}
+
 export class PoiIntelligence {
     constructor(config) {
         this.config = {
             ...config,
-            aiProvider: config.aiProvider || 'groq', // Default to Groq (free, fast)
-            searchProvider: config.searchProvider || 'tavily' // Default to Tavily (free)
+            aiProvider: config.aiProvider || 'groq',       // Default to Groq (free, fast)
+            searchProvider: config.searchProvider || 'tavily', // Default to Tavily (free)
+            enableExpensiveSearch: config.enableExpensiveSearch ?? false // Default OFF: skip web search when free signals suffice
         };
         this.trustScores = {
             "wikipedia": 0.9,
@@ -106,12 +280,14 @@ export class PoiIntelligence {
     }
 
     _setLocalCache(key, data) {
-        try {
-            const payload = { data, timestamp: Date.now(), version: "1.0" };
-            localStorage.setItem(key, JSON.stringify(payload));
-        } catch (e) {
-            console.warn("Local Cache Write Error:", e);
+        // Capping images array to save space in cache
+        let slimData = data;
+        if (data && Array.isArray(data.images)) {
+            slimData = { ...data, images: data.images.slice(0, 3) };
         }
+
+        const payload = { data: slimData, timestamp: Date.now(), version: "1.0" };
+        safeSetItem(key, payload, 'poi_');
     }
 
     async _getCloudCache(key) {
@@ -147,14 +323,23 @@ export class PoiIntelligence {
      * Returns an enriched POI with confidence metadata.
      */
     async evaluatePoi(candidate) {
+        // Step 0: Canonical Entity Resolution (optional enrichment — does NOT block pipeline)
+        // Queries Wikidata to resolve a canonical identity for this POI before signal gathering.
+        // Returns null safely on failure; existing behavior is completely unchanged.
+        const canonical = await this.resolveCanonicalEntity(candidate);
+
         // Step 1: Existence & Data Gathering (Parallel Triangulation)
         const signals = await this.gatherSignals(candidate);
 
         // Step 2: Semantic Classification & Analysis
         const analyzed = this.analyzeSignals(candidate, signals);
 
+        // Step 2b: Merge & structure signals for AI consumption
+        // Produces a ranked, deduplicated payload instead of raw signal array.
+        const merged = this.mergeSignals(analyzed);
+
         // Step 3: Gemini Synthesis (The Brain)
-        // We feed the raw signals into Gemini to produce a friendly, factual summary.
+        // We feed the structured merged payload into Gemini.
         let bestData = null;
 
         // Check if proxy is available via simple health check or just try
@@ -164,17 +349,18 @@ export class PoiIntelligence {
             // If signals is empty, we probably shouldn't ask Gemini to hallucinate.
             // However, maybe it knows it? Rule: "If information is unknown... return null".
             // Let's passed analyzed signals.
-            const geminiResult = await this.fetchGeminiDescription(candidate, analyzed, this.config.lengthMode || 'medium');
-            if (geminiResult && geminiResult.full_description && geminiResult.full_description !== 'unknown') {
+            const geminiResult = await this.fetchGeminiDescription(candidate, merged, this.config.lengthMode || 'medium');
+            if (geminiResult && geminiResult.structured_info?.full_description && geminiResult.structured_info.full_description !== 'unknown') {
                 // Extract link and image from signals if Gemini didn't find a better one
                 const signalData = this.resolveConflicts(analyzed);
 
                 // We store the rich structure in structured_info
                 bestData = {
-                    description: geminiResult.short_description + "\n\n" + geminiResult.full_description,
-                    structured_info: geminiResult,
+                    description: (geminiResult.short_description || "") + "\n\n" + (geminiResult.structured_info.full_description || ""),
+                    structured_info: geminiResult.structured_info,
                     link: geminiResult.link || signalData.link,
-                    image: signalData.image,
+                    image: geminiResult.image || signalData.image,
+                    images: geminiResult.images || signalData.images || [],
                     source: "Gemini Intelligence",
                     confidence: 0.95
                 };
@@ -191,7 +377,9 @@ export class PoiIntelligence {
         // Step 7: Output Formatting
         return {
             ...candidate,
+            canonical: canonical || null,
             description: bestData.description,
+            short_description: bestData.structured_info?.short_description || bestData.description?.split('\n')[0] || "",
             structured_info: bestData.structured_info || null,
             image: bestData.image || candidate.image || null,
             images: bestData.images || (bestData.image || candidate.image ? [bestData.image || candidate.image] : []),
@@ -207,29 +395,206 @@ export class PoiIntelligence {
 
     async gatherSignals(poi, signal = null) {
         const signals = [];
-        const queries = [
-            // Internal/External signals
+
+        // --- Phase 1: Cheap / Free signals (always run in parallel) ---
+        const cheapQueries = [
             this.fetchLocalArchive(poi.name),
             this.fetchWikipedia(poi.name, signal),
-            this.fetchWebSearch(poi, signal),
             this.fetchDuckDuckGo(poi.name, signal),
             this.fetchOverpassTags(poi, signal),
         ];
 
-        // Google Place Details disabled
-        // if (poi.place_id) {
-        //     queries.push(this.fetchGooglePlaceDetails(poi.place_id));
-        // }
-
-        const results = await Promise.allSettled(queries);
-
-        results.forEach((res, index) => {
-            if (res.status === 'fulfilled' && res.value) {
-                signals.push(res.value);
-            }
+        const cheapResults = await Promise.allSettled(cheapQueries);
+        cheapResults.forEach(res => {
+            if (res.status === 'fulfilled' && res.value) signals.push(res.value);
         });
 
+        // --- Phase 2: Expensive search (conditional) ---
+        // Skip fetchWebSearch if:
+        //   - feature flag enableExpensiveSearch is false (default), AND
+        //   - at least one of: wikipedia signal, official_site signal, or total trust >= 0.75
+        const hasWikipedia = signals.some(s => s.source === 'wikipedia');
+        const hasOfficialSite = signals.some(s => s.type === 'official_site' || s.source === 'official_website');
+        const totalTrust = signals.reduce((sum, s) => sum + (s.confidence ?? 0), 0) /
+            Math.max(signals.length, 1);
+        const alreadyWellCovered = hasWikipedia || hasOfficialSite || totalTrust >= 0.75;
+
+        const shouldSearch = this.config.enableExpensiveSearch || !alreadyWellCovered;
+
+        if (shouldSearch) {
+            console.log(`[gatherSignals] Running fetchWebSearch for "${poi.name}" ` +
+                `(wiki:${hasWikipedia}, official:${hasOfficialSite}, avgTrust:${totalTrust.toFixed(2)})`);
+            try {
+                const webResult = await this.fetchWebSearch(poi, signal);
+                if (webResult) signals.push(webResult);
+            } catch (e) {
+                console.warn('[gatherSignals] fetchWebSearch failed:', e.message);
+            }
+        } else {
+            console.log(`[gatherSignals] Skipping fetchWebSearch for "${poi.name}" — already well-covered ` +
+                `(wiki:${hasWikipedia}, official:${hasOfficialSite}, avgTrust:${totalTrust.toFixed(2)})`);
+        }
+
         return signals;
+    }
+
+    // --- Canonical Entity Resolution ---
+
+    /**
+     * Name normalization helper for cross-source matching.
+     * Lowercases, removes diacritics, strips parentheses, normalizes whitespace.
+     * @param {string} name
+     * @returns {string}
+     */
+    _normalizeNameForSearch(name) {
+        if (!name) return '';
+        return name
+            .toLowerCase()
+            .normalize('NFD')                        // Decompose diacritics (é → e + combining accent)
+            .replace(/[\u0300-\u036f]/g, '')         // Strip combining diacritic marks
+            .replace(/\s*\([^)]*\)/g, '')            // Strip parenthetical suffixes: "Foo (Bar)" → "Foo"
+            .replace(/[^a-z0-9\s]/g, ' ')           // Replace remaining special chars with space
+            .replace(/\s+/g, ' ')                    // Collapse multiple spaces
+            .trim();
+    }
+
+    /**
+     * Resolve a canonical Wikidata entity from a POI name + coordinates.
+     * Runs BEFORE gatherSignals() as an optional enrichment layer.
+     * Returns null safely on any failure — does NOT affect existing pipeline.
+     *
+     * @param {{ name: string, lat?: number, lng?: number }} poi
+     * @returns {Promise<{
+     *   canonicalName: string,
+     *   wikidataId: string,
+     *   aliases: string[],
+     *   wikipediaUrl: string|null,
+     *   officialWebsite: string|null,
+     *   image: string|null,
+     *   categories: string[]
+     * }|null>}
+     */
+    async resolveCanonicalEntity(poi) {
+        try {
+            const normalizedName = this._normalizeNameForSearch(poi.name);
+            if (!normalizedName) return null;
+
+            const lang = this.config.language || 'en';
+
+            // --- Step 1: Wikidata Entity Search ---
+            const searchParams = new URLSearchParams({
+                action: 'wbsearchentities',
+                search: normalizedName,
+                language: lang,
+                uselang: lang,
+                type: 'item',
+                limit: '5',
+                format: 'json',
+                origin: '*'
+            });
+            const searchUrl = `https://www.wikidata.org/w/api.php?${searchParams}`;
+
+            const controller1 = new AbortController();
+            const timeout1 = setTimeout(() => controller1.abort(), 5000);
+            const searchRes = await fetch(searchUrl, { signal: controller1.signal });
+            clearTimeout(timeout1);
+
+            if (!searchRes.ok) return null;
+            const searchData = await searchRes.json();
+            if (!searchData.search || searchData.search.length === 0) return null;
+
+            // --- Step 2: Score candidates by name similarity ---
+            const best = searchData.search.find(item => {
+                const label = (item.label || '').toLowerCase();
+                return label === normalizedName ||
+                    label.includes(normalizedName) ||
+                    normalizedName.includes(label);
+            }) || searchData.search[0];
+
+            if (!best || !best.id) return null;
+
+            // --- Step 3: Fetch full entity claims ---
+            // P18 = image, P856 = official website, P31 = instance of (categories)
+            const entityParams = new URLSearchParams({
+                action: 'wbgetentities',
+                ids: best.id,
+                props: 'labels|aliases|claims|sitelinks',
+                languages: `${lang}|en`,
+                sitefilter: `${lang}wiki|enwiki`,
+                format: 'json',
+                origin: '*'
+            });
+            const entityUrl = `https://www.wikidata.org/w/api.php?${entityParams}`;
+
+            const controller2 = new AbortController();
+            const timeout2 = setTimeout(() => controller2.abort(), 5000);
+            const entityRes = await fetch(entityUrl, { signal: controller2.signal });
+            clearTimeout(timeout2);
+
+            if (!entityRes.ok) return null;
+            const entityData = await entityRes.json();
+            const entity = entityData.entities?.[best.id];
+            if (!entity) return null;
+
+            // --- Step 4: Extract structured data ---
+
+            // Canonical name: prefer configured language, fallback to English, fallback to search label
+            const canonicalName =
+                entity.labels?.[lang]?.value ||
+                entity.labels?.en?.value ||
+                best.label ||
+                poi.name;
+
+            // Aliases in the configured language
+            const aliases = (entity.aliases?.[lang] || entity.aliases?.en || [])
+                .map(a => a.value)
+                .slice(0, 10);
+
+            // Wikipedia URL from sitelinks
+            const wikiSiteKey = `${lang}wiki`;
+            const wikiTitle = entity.sitelinks?.[wikiSiteKey]?.title ||
+                entity.sitelinks?.enwiki?.title;
+            const wikiLang = entity.sitelinks?.[wikiSiteKey]?.title ? lang : 'en';
+            const wikipediaUrl = wikiTitle
+                ? `https://${wikiLang}.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`
+                : null;
+
+            // Official website (P856)
+            const officialWebsite =
+                entity.claims?.P856?.[0]?.mainsnak?.datavalue?.value || null;
+
+            // Image (P18) — Wikimedia Commons filename → direct URL
+            const imageFile = entity.claims?.P18?.[0]?.mainsnak?.datavalue?.value;
+            let image = null;
+            if (imageFile) {
+                const encoded = encodeURIComponent(imageFile.replace(/ /g, '_'));
+                image = `https://commons.wikimedia.org/wiki/Special:FilePath/${encoded}?width=800`;
+            }
+
+            // Categories from P31 (instance of) — Wikidata IDs (e.g. Q33506 = museum)
+            const categories = (entity.claims?.P31 || [])
+                .map(c => c.mainsnak?.datavalue?.value?.id)
+                .filter(Boolean)
+                .slice(0, 5);
+
+            console.log(`[Canonical] Resolved "${poi.name}" → "${canonicalName}" (${best.id})`);
+
+            return {
+                canonicalName,
+                wikidataId: best.id,
+                aliases,
+                wikipediaUrl,
+                officialWebsite,
+                image,
+                categories
+            };
+
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                console.warn(`[Canonical] resolveCanonicalEntity failed for "${poi.name}":`, e.message);
+            }
+            return null; // Safe null — pipeline continues unchanged
+        }
     }
 
     // --- Gemini Integration ---
@@ -631,7 +996,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
     /**
      * STAGE 1: Fast Fetch - Description Only
      */
-    async fetchGeminiShortDescription(poi, signals, signal = null) {
+    async fetchGeminiShortDescription(poi, merged, signal = null) {
         const cacheKey = this._getCacheKey('short', poi.id || poi.name.replace(/\s+/g, '_'), this.config.language);
 
         // 1. Check Local Cache
@@ -652,9 +1017,22 @@ Je MOET antwoorden met een JSON object in dit formaat:
         // 3. API Call
         console.log(`[Source] ${poi.name}: Fetching fresh data from AI...`);
 
-        const contextData = signals.length > 0
-            ? signals.map(s => `[Source: ${s.source}] ${s.content}`).join('\n\n')
+        // Backward-compat: accept raw signals array from legacy callers
+        if (Array.isArray(merged)) {
+            merged = this.mergeSignals(this.analyzeSignals(poi, merged));
+        }
+
+        // Build structured context from merged signal payload
+        const rawContext = merged.descriptionCandidates.length > 0
+            ? [
+                `## Verified Descriptions (ranked by trust):`,
+                ...merged.descriptionCandidates,
+                merged.website ? `## Official Website: ${merged.website}` : '',
+                merged.facts.length ? `## Quick Facts:\n${merged.facts.map(f => `- ${f}`).join('\n')}` : '',
+                merged.categories.length ? `## Source Verification: ${merged.categories.join(', ')}` : '',
+            ].filter(Boolean).join('\n\n')
             : "No external data signals found.";
+        const contextData = rawContext.length > 2000 ? rawContext.substring(0, 2000) + '\n[...truncated]' : rawContext;
 
         const isNlShort = this.config.language === 'nl';
         const prompt = isNlShort ? `
@@ -739,27 +1117,15 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 }
                 const data = await response.json();
                 // Strip Chain-of-Thought thinking blocks and markdown
-                let cleanText = data.text
-                    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-                    .replace(/```json/g, '')
-                    .replace(/```/g, '')
-                    .trim();
+                const result = this._parseAiJson(data.text);
+                if (!result) return null;
 
-                const jsonStartHeader = cleanText.indexOf('{');
-                const jsonEndHeader = cleanText.lastIndexOf('}');
-                if (jsonStartHeader !== -1 && jsonEndHeader !== -1) {
-                    cleanText = cleanText.substring(jsonStartHeader, jsonEndHeader + 1);
-                }
-
-                const result = JSON.parse(cleanText);
-
-                const analyzed = this.analyzeSignals(poi, signals || []);
-                const resolved = this.resolveConflicts(analyzed);
+                const resolved = this.resolveConflicts([]);
 
                 const finalResult = {
                     short_description: result.description || "",
-                    image: resolved.image,
-                    images: resolved.images,
+                    image: merged.images?.[0] || null,
+                    images: merged.images || [],
                     structured_info: {
                         short_description: result.description || "",
                     }
@@ -784,7 +1150,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
      * STAGE 2: Deep Fetch - Full Details
      */
 
-    async fetchGeminiFullDetails(poi, signals, shortDesc, signal = null) {
+    async fetchGeminiFullDetails(poi, merged, shortDesc, signal = null) {
         const cacheKey = this._getCacheKey('full', poi.id || poi.name.replace(/\s+/g, '_'), this.config.language, this.config.interests);
 
         // 1. Check Local Cache
@@ -805,9 +1171,22 @@ Je MOET antwoorden met een JSON object in dit formaat:
         // 3. API Call
         console.log(`[Source] ${poi.name} (Full): Fetching fresh details from AI...`);
 
-        const contextData = signals.length > 0
-            ? signals.map(s => `[Source: ${s.source}] ${s.content} (Link: ${s.link})`).join('\n\n')
+        // Backward-compat: accept raw signals array from legacy callers (e.g. App.jsx)
+        if (Array.isArray(merged)) {
+            merged = this.mergeSignals(this.analyzeSignals(poi, merged));
+        }
+
+        // Build structured context from merged signal payload
+        const rawContextFull = merged.descriptionCandidates.length > 0
+            ? [
+                `## Verified Descriptions (ranked by trust):`,
+                ...merged.descriptionCandidates,
+                merged.website ? `## Official Website: ${merged.website}` : '',
+                merged.facts.length ? `## Quick Facts:\n${merged.facts.map(f => `- ${f}`).join('\n')}` : '',
+                merged.categories.length ? `## Source Verification: ${merged.categories.join(', ')}` : '',
+            ].filter(Boolean).join('\n\n')
             : "No external data signals found.";
+        const contextData = rawContextFull.length > 2000 ? rawContextFull.substring(0, 2000) + '\n[...truncated]' : rawContextFull;
 
         const isNlFull = this.config.language === 'nl';
         const prompt = isNlFull ? `
@@ -939,42 +1318,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     return null;
                 }
                 const data = await response.json();
-                // Strip Chain-of-Thought thinking blocks and markdown
-                const cleanText = data.text
-                    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-                    .replace(/```json/g, '')
-                    .replace(/```/g, '')
-                    .trim();
-
-                let result;
-                try {
-                    // Try to find JSON object if embedded in text
-                    const jsonStart = cleanText.indexOf('{');
-                    const jsonEnd = cleanText.lastIndexOf('}');
-
-                    if (jsonStart !== -1 && jsonEnd !== -1) {
-                        result = JSON.parse(cleanText.substring(jsonStart, jsonEnd + 1));
-                    } else {
-                        result = JSON.parse(cleanText);
-                    }
-                } catch (jsonError) {
-                    console.warn("JSON Parse Failed:", jsonError);
-                    console.warn("Raw Text was:", cleanText.substring(0, 100) + "...");
-
-                    // CRITICAL FIX: If the text looks like it was attempting to be JSON (contains brackets or keys),
-                    // DO NOT use it as a plain text description. It creates a bad user experience.
-                    // Instead, return null so the system falls back to Wikipedia/Google data.
-                    if (cleanText.includes('{') || cleanText.includes('"description"')) {
-                        return null;
-                    }
-
-                    // Only if it really looks like plain text (no JSON artifacts), accept it as a fallback.
-                    // This handles cases where the model ignores instructions and just chats.
-                    result = {
-                        standard_version: { description: cleanText, confidence: "Laag" },
-                        extended_version: { full_description: cleanText, full_description_confidence: "Laag" }
-                    };
-                }
+                const result = this._parseAiJson(data.text);
+                if (!result) return null;
 
                 const finalResult = {
                     structured_info: {
@@ -992,7 +1337,10 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         standard_description: result.standard_version?.description || "", // Duplicated for safety
                         one_fun_fact: result.standard_version?.fun_fact || ""
                     },
-                    ...this.resolveConflicts(this.analyzeSignals(poi, signals || []))
+                    ...this.resolveConflicts([]),
+                    image: merged.images?.[0] || null,
+                    images: merged.images || [],
+                    link: merged.website || null,
                 };
 
                 // Save to Cache
@@ -1214,11 +1562,11 @@ Je MOET antwoorden met een JSON object in dit formaat:
                 if (data.elements && data.elements.length > 0) {
                     // Client-side fuzzy matching
                     // Find the element that best matches the POI name
-                    const targetName = (poi.name || "").toLowerCase();
+                    const targetName = normalizePoiName(poi.name);
 
                     const match = data.elements.find(e => {
-                        const name = (e.tags.name || "").toLowerCase();
-                        return (name.includes(targetName) || targetName.includes(name)) &&
+                        const osmName = normalizePoiName(e.tags.name || "");
+                        return (osmName.includes(targetName) || targetName.includes(osmName)) &&
                             (e.tags['description:nl'] || e.tags.description || e.tags.website);
                     });
 
@@ -1236,6 +1584,11 @@ Je MOET antwoorden met een JSON object in dit formaat:
                             };
                         }
                         if (web) {
+                            // Upgrade: try to scrape the official site for real content
+                            const siteSignal = await this.fetchOfficialWebsite(web, externalSignal);
+                            if (siteSignal) return siteSignal;
+
+                            // Fallback: return link_only if scraping failed or timed out
                             return {
                                 type: 'link_only',
                                 source: 'OpenStreetMap',
@@ -1264,6 +1617,63 @@ Je MOET antwoorden met een JSON object in dit formaat:
         logRemote('error', 'All Overpass servers failed. Circuit breaker active.', `fetchOverpassTags [${this.config.city}]`);
         degradedProviders.overpass = true;
         return null;
+    }
+
+    /**
+     * Fetches and parses an official website URL found in OSM tags.
+     * Uses the /api/scrape-meta backend proxy to avoid CORS restrictions.
+     * Returns a high-trust 'official_site' signal, or null on failure.
+     *
+     * @param {string} url - The official website URL from OSM
+     * @param {AbortSignal} [externalSignal]
+     * @returns {Promise<{ type, source, content, link, confidence }|null>}
+     */
+    async fetchOfficialWebsite(url, externalSignal = null) {
+        if (!url) return null;
+
+        try {
+            const controller = new AbortController();
+            // 8s client timeout (proxy adds its own 6s server-side)
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+            if (externalSignal) {
+                if (externalSignal.aborted) { clearTimeout(timeoutId); return null; }
+                externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+            }
+
+            const proxyUrl = `/api/scrape-meta?url=${encodeURIComponent(url)}`;
+            const res = await apiFetch(proxyUrl, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!res.ok) return null;
+            const data = await res.json();
+
+            if (!data.found || !data.description) return null;
+
+            // Combine title + description for richer AI context
+            const content = data.title
+                ? `${data.title}: ${data.description}`
+                : data.description;
+
+            // Limit content length for AI prompt safety
+            const truncated = content.length > 800 ? content.substring(0, 800) + '…' : content;
+
+            console.log(`[OfficialSite] Scraped "${url}": ${truncated.length} chars`);
+
+            return {
+                type: 'official_site',
+                source: 'official_website',
+                content: truncated,
+                link: url,
+                confidence: 0.95
+            };
+
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                console.warn(`[OfficialSite] Failed to scrape "${url}":`, e.message);
+            }
+            return null; // Safe null — fetchOverpassTags falls back to link_only
+        }
     }
 
     async fetchLocalArchive(name) {
@@ -1404,7 +1814,7 @@ Je MOET antwoorden met een JSON object in dit formaat:
     async fetchWebSearch(poi, externalSignal = null) {
         try {
             const name = poi.name;
-            const cleanName = name.replace(/\s*\([^)]*\)/g, '').trim(); // Remove " (Het Vlonderpad)"
+            const cleanName = normalizePoiName(name); // Normalize: diacritics, synonyms, punctuation
             const context = poi.location_context || this.config.city || "Hasselt";
 
             // Build progressive search queries
@@ -1527,11 +1937,14 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     if (img) {
                         const low = img.toLowerCase();
                         // Block by filename/path keywords
-                        if (low.includes('logo') || low.includes('icon') || low.includes('placeholder') || low.includes('avatar') || low.includes('favicon') ||
-                            low.includes('profile') || low.includes('user') || low.includes('author') || low.includes('member') || low.includes('review') || low.includes('testimonial')) {
+                        if (low.includes('logo') || low.includes('icon') || low.includes('brand') ||
+                            low.includes('banner') || low.includes('header') ||
+                            low.includes('placeholder') || low.includes('avatar') || low.includes('favicon') ||
+                            low.includes('profile') || low.includes('user') || low.includes('author') ||
+                            low.includes('member') || low.includes('review') || low.includes('testimonial')) {
                             return { ...s, image: null };
                         }
-                        // Block by known non-POI image domains (app stores, social media, generic CDNs)
+                        // Block by known non-POI image domains (app stores, social media, generic CDNs, aggregators)
                         const noiseDomains = [
                             'mzstatic.com',       // Apple App Store images
                             'apps.apple.com',
@@ -1549,6 +1962,10 @@ Je MOET antwoorden met een JSON object in dit formaat:
                             'wp-content/plugins', // WordPress plugin images
                             'captcha',
                             'recaptcha',
+                            'skyscanner',         // Avoid Skyscanner logo/branding
+                            'tripadvisor',        // Avoid TripAdvisor logo/branding
+                            'expedia',            // Avoid Expedia branding
+                            'booking.com',        // Avoid Booking branding
                         ];
                         if (noiseDomains.some(domain => low.includes(domain))) {
                             return { ...s, image: null };
@@ -1577,12 +1994,13 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
     analyzeSignals(poi, signals) {
         if (!poi) return [];
-        const poiName = (poi.name || "Unknown Location").toLowerCase();
+        const poiName = normalizePoiName(poi.name || "Unknown Location");
 
-        return signals.map(signal => {
+        // --- Pass 1: Per-signal heuristic scoring ---
+        const scored = signals.map(signal => {
             // Heuristic: Penalize generic city descriptions
             let score = signal.confidence || 0.5;
-            const text = (signal.content || "").toLowerCase();
+            const text = normalizePoiName(signal.content || "");
             const url = (signal.link || "").toLowerCase();
 
             // GENERIC FIX: Semantic Domain Matching
@@ -1595,13 +2013,12 @@ Je MOET antwoorden met een JSON object in dit formaat:
             // ONLY penalize if the specific POI name is NOT in the text.
             if (text && (text.includes(this.config.city.toLowerCase() + " is") ||
                 text.includes("hoofdstad") ||
-                text.includes("provincie")) && !text.includes(poi.name.toLowerCase())) {
-                score = Math.min(score, 0.1); // Keep the high score if it was official, otherwise drop. 
-                // Actually, if it's official it won't have this generic text.
+                text.includes("provincie")) && !text.includes(poiName)) {
+                score = Math.min(score, 0.1);
             }
 
-            // Boost Search if it contains the exact name in the content
-            if ((signal.source === 'google_search' || signal.source === 'tavily_search') && text.includes(poi.name.toLowerCase())) {
+            // Boost Search if it contains the normalized name in the content
+            if ((signal.source === 'google_search' || signal.source === 'tavily_search') && text.includes(poiName)) {
                 score = Math.max(score, 0.9);
             }
 
@@ -1612,6 +2029,36 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
             return { ...signal, score };
         });
+
+        // --- Pass 2: Graph-based trust scoring ---
+        // Build a weighted agreement graph; compute weighted degree centrality
+        // per node; blend into final score: baseScore + centrality × 0.3 (max +0.30).
+        if (scored.length >= 2) {
+            const graph = _buildSignalGraph(scored, poiName);
+            const n = scored.length;
+
+            const result = scored.map((s, i) => {
+                // Weighted degree centrality: sum of edge weights / (n-1)
+                const degreeSum = graph[i].reduce((acc, w) => acc + w, 0);
+                const centrality = degreeSum / Math.max(n - 1, 1); // normalize to [0, 1]
+
+                const finalScore = Math.min(1.0, s.score + centrality * 0.3);
+
+                return {
+                    ...s,
+                    score: finalScore,
+                    graphCentrality: parseFloat(centrality.toFixed(3))
+                };
+            });
+
+            const boostedCount = result.filter(s => s.graphCentrality > 0).length;
+            if (boostedCount > 0) {
+                console.log(`[analyzeSignals] Graph scoring: ${boostedCount}/${n} signals have non-zero centrality for "${poi.name}"`);
+            }
+            return result;
+        }
+
+        return scored;
     }
 
     isLikelyOfficialLink(poiName, link) {
@@ -1673,6 +2120,81 @@ Je MOET antwoorden met een JSON object in dit formaat:
         };
     }
 
+    /**
+     * Merges and deduplicates scored signals into a structured payload for AI prompts.
+     * Runs after analyzeSignals() and before Gemini stages.
+     *
+     * @param {Array} scoredSignals - Output of analyzeSignals() (signals with .score)
+     * @returns {{
+     *   descriptionCandidates: string[],
+     *   categories: string[],
+     *   images: string[],
+     *   website: string|null,
+     *   facts: string[]
+     * }}
+     */
+    mergeSignals(scoredSignals) {
+        // Sort descending by trust score
+        const ranked = [...scoredSignals].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+        // --- Description candidates ---
+        // Collect content from trusted signals (score >= 0.4), deduplicate similar text
+        const descriptionCandidates = [];
+        const seenFingerprints = new Set();
+
+        for (const signal of ranked) {
+            if (!signal.content || (signal.score ?? 0) < 0.4) continue;
+
+            // Fingerprint: first 80 normalized chars to catch near-duplicates
+            const fingerprint = normalizePoiName(signal.content).substring(0, 80);
+            if (seenFingerprints.has(fingerprint)) continue;
+            seenFingerprints.add(fingerprint);
+
+            descriptionCandidates.push(
+                `[${signal.source} | trust:${(signal.score ?? 0).toFixed(2)}] ${signal.content.substring(0, 600)}`
+            );
+
+            if (descriptionCandidates.length >= 5) break; // Cap at 5 to keep prompt lean
+        }
+
+        // --- Images ---
+        // Collect unique image URLs from high-confidence signals (score >= 0.85)
+        const images = [...new Set(
+            ranked
+                .filter(s => (s.score ?? 0) >= 0.85)
+                .flatMap(s => s.images || (s.image ? [s.image] : []))
+                .filter(Boolean)
+        )].slice(0, 3);
+
+        // --- Website ---
+        // Prefer official_site signal, then any link from high-trust signals
+        const officialSignal = ranked.find(s => s.type === 'official_site' || s.source === 'official_website');
+        const website = officialSignal?.link ||
+            ranked.find(s => (s.score ?? 0) >= 0.8 && s.link)?.link ||
+            null;
+
+        // --- Categories ---
+        // Semantic verification hints derived from which sources contributed
+        const categoryHints = new Set();
+        for (const signal of ranked) {
+            if (signal.type === 'official_site') categoryHints.add('has_official_website');
+            if (signal.source === 'wikipedia') categoryHints.add('wikipedia_verified');
+            if (signal.source === 'OpenStreetMap') categoryHints.add('osm_verified');
+            if (signal.source === 'local_archive') categoryHints.add('locally_archived');
+        }
+        const categories = [...categoryHints];
+
+        // --- Facts ---
+        // Short snippets (< 200 chars) from high-trust signals, deduplicated
+        const facts = ranked
+            .filter(s => (s.score ?? 0) >= 0.7 && s.content && s.content.length < 200)
+            .map(s => s.content.trim())
+            .filter((f, i, arr) => arr.indexOf(f) === i)
+            .slice(0, 4);
+
+        return { descriptionCandidates, categories, images, website, facts };
+    }
+
     cleanText(text, limitOverride = null) {
         if (this.config.lengthMode === 'max') {
             // Return significantly more text for "Max" requests
@@ -1681,5 +2203,66 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
         const limit = limitOverride || (this.config.lengthMode === 'short' ? 2 : 6);
         return text.replace(/\s*\([^)]*\)/g, '').replace(/\[\d+\]/g, '').replace(/\[Alt:[^\]]*\]/g, '').split('. ').slice(0, limit).join('. ') + '.';
+    }
+
+    /**
+     * Robust AI JSON Parsing Utility
+     * Handles markdown blocks, thinking blocks, and truncated JSON outputs.
+     */
+    _parseAiJson(text) {
+        if (!text || typeof text !== 'string') return null;
+
+        // 1. Strip Chain-of-Thought (think) blocks
+        let cleanText = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+        // 2. Extract content from Markdown code blocks if present
+        const jsonMatch = cleanText.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+            cleanText = jsonMatch[1].trim();
+        } else {
+            // Remove generic code blocks
+            cleanText = cleanText.replace(/```/g, '').trim();
+        }
+
+        // 3. Find first { and last } to isolate JSON object
+        const start = cleanText.indexOf('{');
+        const end = cleanText.lastIndexOf('}');
+
+        if (start === -1) {
+            console.warn("[AI] No JSON object found in response");
+            return null;
+        }
+
+        let jsonCandidate = cleanText.substring(start, end !== -1 ? end + 1 : undefined);
+
+        // 4. Try parsing immediately
+        try {
+            return JSON.parse(jsonCandidate);
+        } catch (e) {
+            // 5. Recovery Phase: Handle truncation (Missing closing braces/brackets/quotes)
+            try {
+                let recovered = jsonCandidate;
+
+                // Close unclosed string if it exists
+                const quotes = (recovered.match(/(?<!\\)"/g) || []).length;
+                if (quotes % 2 !== 0) recovered += '"';
+
+                // Close unclosed braces
+                const opens = (recovered.match(/\{/g) || []).length;
+                const closes = (recovered.match(/\}/g) || []).length;
+                const missingBraces = opens - closes;
+                if (missingBraces > 0) {
+                    recovered += '}'.repeat(missingBraces);
+                }
+
+                const result = JSON.parse(recovered);
+                console.log("[AI] Successfully recovered truncated JSON response");
+                return result;
+            } catch (recoveryError) {
+                console.error("[AI] JSON Recovery failed:", recoveryError);
+                console.warn("[AI] Raw problematic text snippet:", cleanText.substring(0, 300));
+                return null;
+            }
+        }
     }
 }

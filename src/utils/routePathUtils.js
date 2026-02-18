@@ -23,13 +23,56 @@ export const sanitizeRouteData = (data, defaultCenter = [52.3676, 4.9041]) => {
 
     const isNum = (v) => typeof v === 'number' && !isNaN(v);
 
+    // Strip heavy enrichment-only fields that don't need to survive a page reload.
+    // Keeps all display fields (name, description, image, link, short_description, etc.)
+    const slimPoiForStorage = (p) => {
+        const {
+            // Graph scoring debug fields
+            graphCentrality,
+            consensusBoosted,
+            // Wikidata canonical entity (large object, re-fetched on next enrichment)
+            canonical,
+            // Raw signal arrays (never needed after enrichment)
+            signals,
+            rawSignals,
+            // structured_info can be large; keep only the display-critical sub-fields
+            structured_info,
+            // Cap images array at 1 item for storage
+            images,
+            // intelligence metadata
+            intelligence,
+            ...rest
+        } = p;
+
+        const slim = { ...rest };
+
+        // Keep only top image to save space
+        slim.image = slim.image || (images && images.length > 0 ? images[0] : null);
+        slim.images = slim.image ? [slim.image] : [];
+
+        // Preserve only the display-critical fields from structured_info
+        if (structured_info) {
+            slim.structured_info = {
+                short_description: structured_info.short_description || '',
+                full_description: structured_info.full_description || '',
+                fun_facts: structured_info.fun_facts || [],
+                one_fun_fact: structured_info.one_fun_fact || '',
+                visitor_tips: structured_info.visitor_tips || '',
+                two_minute_highlight: structured_info.two_minute_highlight || '',
+                matching_reasons: structured_info.matching_reasons || [],
+            };
+        }
+
+        return slim;
+    };
+
     let cleanCenter = data.center;
     if (!cleanCenter || !isNum(cleanCenter[0]) || !isNum(cleanCenter[1])) {
         cleanCenter = defaultCenter;
     }
 
     const cleanPois = (data.pois || []).map(p => ({
-        ...p,
+        ...slimPoiForStorage(p),
         lat: isNum(p.lat) ? p.lat : (isNum(parseFloat(p.lat)) ? parseFloat(p.lat) : cleanCenter[0]),
         lng: isNum(p.lng) ? p.lng : (isNum(parseFloat(p.lng)) ? parseFloat(p.lng) : cleanCenter[1])
     }));
@@ -39,28 +82,36 @@ export const sanitizeRouteData = (data, defaultCenter = [52.3676, 4.9041]) => {
     );
 
     const cleanSteps = (data.navigationSteps || []).map(step => {
-        if (step.maneuver && step.maneuver.location) {
-            const [lng, lat] = step.maneuver.location;
-            if (!isNum(lng) || !isNum(lat)) {
-                return { ...step, maneuver: { ...step.maneuver, location: null } };
-            }
-        }
-        return step;
+        // Slim navigation steps significantly
+        const slimStep = {
+            distance: step.distance,
+            duration: step.duration,
+            name: step.name,
+            maneuver: step.maneuver ? {
+                location: step.maneuver.location,
+                type: step.maneuver.type,
+                modifier: step.maneuver.modifier
+                // STRIPPED: instruction (long text), bearing_after, etc.
+            } : null
+        };
+        return slimStep;
     });
 
     return {
         ...data,
         center: cleanCenter,
         pois: cleanPois,
+        // originalPois is often redundant if it matches pois exactly
         originalPois: data.originalPois ? data.originalPois.map(p => ({
-            ...p,
+            ...slimPoiForStorage(p),
             lat: isNum(p.lat) ? p.lat : (isNum(parseFloat(p.lat)) ? parseFloat(p.lat) : cleanCenter[0]),
             lng: isNum(p.lng) ? p.lng : (isNum(parseFloat(p.lng)) ? parseFloat(p.lng) : cleanCenter[1])
-        })) : cleanPois,
+        })) : null,
         routePath: cleanRoutePath,
         navigationSteps: cleanSteps
     };
 };
+
 
 /**
  * Main Route Path & Steps Calculation

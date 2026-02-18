@@ -48,7 +48,7 @@ const GOOGLE_PLACES_KEY = process.env.VITE_GOOGLE_PLACES_KEY || process.env.GOOG
 const FOURSQUARE_KEY = process.env.VITE_FOURSQUARE_KEY || process.env.FOURSQUARE_KEY;
 
 // --- Health Check ---
-app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '3.1.1' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '4.1.0' }));
 
 // --- Groq Model Discovery Registry ---
 let groqModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]; // Fallback defaults
@@ -65,7 +65,13 @@ async function refreshGroqModels() {
         // Prioritize by capabilities and size keywords
         // Ranking: 70b > 32b/mixtral > 8b > smaller/others
         const ranked = list.data
-            .filter(m => m.active !== false && !m.id.includes('guard')) // Exclude guard models and inactive ones
+            .filter(m => {
+                const id = m.id.toLowerCase();
+                return m.active !== false &&
+                    !id.includes('guard') &&
+                    !id.includes('whisper') &&
+                    !id.includes('audio');
+            })
             .map(m => m.id)
             .sort((a, b) => {
                 const getRank = (name) => {

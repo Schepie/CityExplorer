@@ -53,23 +53,27 @@ const ItineraryList = ({
 
     const items = interleaved.map(item => {
         if (item.specialType === 'start') {
+            const startPoi = routeData.startIsPoi ? routeData.startPoi : {};
             return {
-                ...(routeData.startIsPoi ? routeData.startPoi : {}),
+                ...startPoi,
                 ...item,
+                // Preserve original ID in a separate prop so App.jsx can match it, 
+                // but keep 'sidebar-start' for UI/key stability if needed
+                originalId: startPoi.id,
                 id: 'sidebar-start',
                 name: routeData.startName || (language === 'nl' ? 'Startpunt' : 'Start Point'),
-                description: (routeData.startIsPoi && (routeData.startPoi?.description || routeData.startPoi?.structured_info?.short_description))
-                    ? (routeData.startPoi.description || routeData.startPoi?.structured_info?.short_description)
+                description: (routeData.startIsPoi && (startPoi.description || startPoi.structured_info?.short_description))
+                    ? (startPoi.description || startPoi.structured_info?.short_description)
                     : (routeData.startInfo || (language === 'nl' ? "Informatie over bereikbaarheid ophalen..." : "Fetching accessibility info...")),
                 arrivalInfo: routeData.startInfo,
-                isFullyEnriched: routeData.startIsPoi ? (routeData.startPoi?.isFullyEnriched) : (!!routeData.startInfo)
+                isFullyEnriched: routeData.startIsPoi ? (startPoi.isFullyEnriched) : (!!routeData.startInfo)
             };
         }
         if (item.isManualMarker) {
             return {
                 ...item,
-                isFullyEnriched: true,
-                short_description: language === 'nl' ? 'Ingepland punt' : 'Planned stop'
+                isFullyEnriched: item.isFullyEnriched || false, // Allow enrichment
+                short_description: item.short_description || (language === 'nl' ? 'Ingepland punt' : 'Planned stop')
             };
         }
         return item;

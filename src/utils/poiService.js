@@ -741,3 +741,51 @@ export const getInterestSuggestions = (failedInterest, language = 'en') => {
 
     return Array.from(suggestions).slice(0, 5); // Return top 5
 };
+
+/**
+ * Specialized proximity search for a single location.
+ * Uses Overpass 'around' to find the closest thematic POI within 10m.
+ */
+export const findClosestPoi = async (lat, lng, language = 'en') => {
+    try {
+        const tags = mapInterestToTags(''); // Broad fallback for sights/parks/museums
+        const query = `
+            [out:json][timeout:15];
+            (
+                ${tags.map(t => `nwr${t}(around:10, ${lat}, ${lng});`).join('\n')}
+            );
+            out center 1;
+        `.trim();
+
+        const servers = [
+            'https://overpass-api.de/api/interpreter',
+            'https://overpass.openstreetmap.fr/api/interpreter'
+        ];
+        const server = servers[Math.floor(Math.random() * servers.length)];
+        const url = `${server}?data=${encodeURIComponent(query)}`;
+
+        console.log(`[ProximitySearch] Checking for POIs within 10m of ${lat}, ${lng}`);
+
+        const res = await fetch(url, {
+            headers: {
+                'User-Agent': 'CityExplorer/1.0 (Student Project; educational use)',
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!res.ok) return null;
+        const data = await res.json();
+
+        if (data.elements && data.elements.length > 0) {
+            const transformed = transformOverpassResults(data.elements, "Nearby");
+            if (transformed.length > 0) {
+                console.log(`[ProximitySearch] Found POI: ${transformed[0].name}`);
+                return transformed[0];
+            }
+        }
+        return null;
+    } catch (e) {
+        console.warn("[ProximitySearch] Failed:", e);
+        return null;
+    }
+};

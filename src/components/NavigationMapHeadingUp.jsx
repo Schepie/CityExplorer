@@ -87,11 +87,20 @@ const NavigationMapHeadingUp = ({
         const bottomPad = 180;
         const topPad = (centerOffset * 2) + bottomPad;
 
+        // Sanitize all values before easeTo
+        const safeBearing = Number.isFinite(finalBearing) ? finalBearing : (map.getBearing() || 0);
+        const safePadding = {
+            top: Number.isFinite(topPad) ? Math.max(0, topPad) : 0,
+            right: 24,
+            bottom: bottomPad,
+            left: 24
+        };
+
         map.easeTo({
             center: [currentPos.lng, currentPos.lat],
-            bearing: finalBearing,
+            bearing: safeBearing,
             pitch: is3DMode ? 60 : 0,
-            padding: { top: Math.max(0, topPad), right: 24, bottom: bottomPad, left: 24 },
+            padding: safePadding,
             duration: 100, // Match throttle
             easing: (t) => t, // Linear easing for constant velocity
             essential: true

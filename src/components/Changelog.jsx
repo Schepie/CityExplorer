@@ -6,6 +6,38 @@ const Changelog = ({ language, setShowChangelog }) => {
             {[
                 {
                     date: "18 Feb 2026",
+                    version: "v4.1.0",
+                    items: language === 'nl' ? [
+                        { title: "Groq API Stabiliteit", desc: "Kritieke fout opgelost waarbij niet-chat modellen (zoals Whisper) werden geselecteerd. De app filtert deze nu strikt uit." },
+                        { title: "Premium Foto Filtering", desc: "Verbeterde filtering van merkklogo's en assets van boekingssites (Skyscanner, TripAdvisor) voor relevantere foto's." },
+                        { title: "Data Integriteit Fix", desc: "Een ReferenceError opgelost in de POI-engine die het ophalen van volledige details kon blokkeren." }
+                    ] : [
+                        { title: "Groq API Stability", desc: "Resolved critical 400 errors by strictly filtering out non-chat models (like Whisper) from the registry." },
+                        { title: "Premium Image Filtering", desc: "Expanded noise detection to exclude brand logos and travel aggregator assets (Skyscanner, TripAdvisor, etc.)." },
+                        { title: "Data Integrity Fix", desc: "Resolved a ReferenceError in the POI intelligence engine that could break detail fetches." }
+                    ]
+                },
+                {
+                    date: "18 Feb 2026",
+                    version: "v4.0.0",
+                    items: language === 'nl' ? [
+                        { title: "Signal Confidence Graph", desc: "POI-betrouwbaarheid wordt nu berekend via een gewogen graaf: signalen die het eens zijn over naam, categorie of beschrijving krijgen een hogere vertrouwensscore." },
+                        { title: "Slimme Zoekkosten", desc: "Dure webzoekopdrachten worden overgeslagen als Wikipedia, een officiële website of voldoende gratis signalen al goede data leveren." },
+                        { title: "Wikidata Integratie", desc: "Canonieke entiteitsresolutie via Wikidata vóór het ophalen van signalen voor nauwkeurigere namen, aliassen en categorieën." },
+                        { title: "Officiële Website Scraping", desc: "OSM-websitetags worden nu automatisch gescraped voor rijke beschrijvingen met hoge betrouwbaarheid (0.95)." },
+                        { title: "Naamnormalisatie", desc: "Centrale naamopschoning met diacritieken, synoniemen (NL↔EN) en afkortingen voor betere cross-source matching." },
+                        { title: "Gestructureerde AI Prompts", desc: "Gemini ontvangt nu gestructureerde context (beschrijvingen, feiten, website, verificatie) in plaats van ruwe signaaldata." },
+                    ] : [
+                        { title: "Signal Confidence Graph", desc: "POI trust is now computed via a weighted graph: signals agreeing on name, category, or description similarity earn higher trust scores." },
+                        { title: "Smart Search Cost", desc: "Expensive web searches are skipped when Wikipedia, an official site, or enough free signals already provide quality data." },
+                        { title: "Wikidata Integration", desc: "Canonical entity resolution via Wikidata before signal gathering for more accurate names, aliases, and categories." },
+                        { title: "Official Website Scraping", desc: "OSM website tags are now automatically scraped for rich, high-trust (0.95) descriptions." },
+                        { title: "Name Normalisation", desc: "Centralised name cleaning with diacritics, synonyms (NL↔EN) and abbreviations for better cross-source matching." },
+                        { title: "Structured AI Prompts", desc: "Gemini now receives structured context (descriptions, facts, website, verification) instead of raw signal data." },
+                    ]
+                },
+                {
+                    date: "18 Feb 2026",
                     version: "v3.5.1",
                     items: language === 'nl' ? [
                         { title: "Afvalbak Icoon", desc: "Verwijder stops nu handig via het nieuwe icoontje in de lijst." },
