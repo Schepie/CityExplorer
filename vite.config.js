@@ -52,7 +52,6 @@ export default defineConfig({
         manualChunks: {
           'react-vendor': ['react', 'react-dom'],
           'maplibre-vendor': ['maplibre-gl'],
-          'leaflet-vendor': ['leaflet', 'react-leaflet'],
           'ui-vendor': ['lucide-react']
         }
       }

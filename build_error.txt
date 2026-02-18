@@ -1,0 +1,24 @@
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32mÔ£ô[39m 42 modules transformed.
+x Build failed in 568ms
+error during build:
+[vite-plugin-pwa:build] There was an error during the build:
+  [plugin vite:build-import-analysis] src/utils/uiUtils.js (14:403): Failed to parse source for import analysis because the content contains invalid JS syntax. If you are using JSX, make sure to name the file with the .jsx or .tsx extension.
+Additionally, handling the error in the 'buildEnd' hook caused the following error:
+  [plugin vite:build-import-analysis] src/utils/uiUtils.js (14:403): Failed to parse source for import analysis because the content contains invalid JS syntax. If you are using JSX, make sure to name the file with the .jsx or .tsx extension.
+file: C:/Users/geert/Documents/Github/CityExplorer/src/utils/uiUtils.js:14:403
+
+12: 
+13:     if (category.includes('food') || category.includes('rest') || category.includes('cafe') || category.includes('drink')) {
+14:         return <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1" /><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" /><line x1="6" y1="1" x2="6" y2="4" /><line x1="10" y1="1" x2="10" y2="4" /><line x1="14" y1="1" x2="14" y2="4" /></svg>;
+                                                                                                                                                                                                                                                                                                                                                                                                                       ^
+15:     }
+16:     if (category.includes('nature') || category.includes('park') || category.includes('garden')) {
+
+    at getRollupError (file:///C:/Users/geert/Documents/Github/CityExplorer/node_modules/rollup/dist/es/shared/parseAst.js:401:41)
+    at file:///C:/Users/geert/Documents/Github/CityExplorer/node_modules/rollup/dist/es/shared/node-entry.js:23467:39
+    at async catchUnfinishedHookActions (file:///C:/Users/geert/Documents/Github/CityExplorer/node_modules/rollup/dist/es/shared/node-entry.js:22925:16)
+    at async rollupInternal (file:///C:/Users/geert/Documents/Github/CityExplorer/node_modules/rollup/dist/es/shared/node-entry.js:23450:5)
+    at async build (file:///C:/Users/geert/Documents/Github/CityExplorer/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65709:14)
+    at async CAC.<anonymous> (file:///C:/Users/geert/Documents/Github/CityExplorer/node_modules/vite/dist/node/cli.js:829:5)

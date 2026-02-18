@@ -11,19 +11,26 @@ export const getBestVoice = (availableVoices, targetLang, targetGender) => {
 
     // Helper to find gender match in a list of voices
     const findGenderMatch = (voices) => {
-        return voices.find(v => {
+        if (!voices || voices.length === 0) return null;
+
+        const filtered = voices.filter(v => {
             const n = v.name.toLowerCase();
             // Heuristic names for gender identification
-            const maleNames = ['male', 'man', 'xander', 'bart', 'arthur', 'david', 'frank', 'maarten', 'mark', 'stefan', 'rob', 'paul', 'daniel', 'george', 'james', 'david', 'mark'];
-            const femaleNames = ['female', 'woman', 'lady', 'ellen', 'claire', 'laura', 'google', 'zira', 'eva', 'katja', 'fenna', 'samantha', 'tessa', 'karen', 'fiona', 'moira', 'saskia', 'hazel', 'susan', 'heidi', 'elke', 'colette', 'zira'];
+            const maleNames = ['male', 'man', 'xander', 'bart', 'arthur', 'david', 'frank', 'maarten', 'mark', 'stefan', 'rob', 'paul', 'daniel', 'george', 'james', 'mark', 'oliver', 'jack', 'harry', 'noah', 'william'];
+            const femaleNames = ['female', 'woman', 'lady', 'ellen', 'claire', 'laura', 'google', 'zira', 'eva', 'katja', 'fenna', 'samantha', 'tessa', 'karen', 'fiona', 'moira', 'saskia', 'hazel', 'susan', 'heidi', 'elke', 'colette', 'zira', 'sophie', 'emma', 'olivia', 'mia', 'isabella'];
 
             if (targetGender === 'female' && n.includes('male')) return false;
             if (targetGender === 'male' && n.includes('female')) return false;
 
             if (targetGender === 'male') return maleNames.some(name => n.includes(name));
             if (targetGender === 'female') return femaleNames.some(name => n.includes(name));
-            return false;
+            return true; // Fallback if no specific gender markers found but we need a voice
         });
+
+        // Priority: 1. Google Voices (usually high quality), 2. Local voices, 3. Anything else
+        return filtered.find(v => v.name.includes('Google')) ||
+            filtered.find(v => v.localService) ||
+            filtered[0];
     };
 
     // Strategy 1: Exact Locale Match (e.g. nl-NL)

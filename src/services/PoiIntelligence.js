@@ -239,16 +239,17 @@ export class PoiIntelligence {
      */
     async fetchCityWelcomeMessage(poiList, signal = null) {
         const poiNames = poiList.slice(0, 8).map(p => p.name).join(', ');
-        const prompt = `
-Je bent "Je Gids", een ervaren, vriendelijke en enthousiaste digitale stadsgids die reizigers helpt een stad op een persoonlijke manier te ontdekken. 
-Je taak is om een introductie te geven vóór de wandeling of fietstocht begint.
+        const isNl = this.config.language === 'nl';
+        const prompt = isNl ? `
+Je bent "Je Gids", een ervaren, vriendelijke en enthousiaste digitale stadsgids die reizigers helpt een stad op een persoonlijke manier te ontdekken.
+Je taak is om een introductie te geven voor de wandeling of fietstocht begint.
 
 ### CONTEXT
-De citynavigation‑app heeft een tocht aangemaakt op basis van:
+De citynavigation-app heeft een tocht aangemaakt op basis van:
 - De gekozen stad: ${this.config.city}
 - De interesses van de gebruiker: ${this.config.interests || 'Algemeen'}
-- De geselecteerde POI’s langs de route: ${poiNames}
-- Eventuele thema’s of routecontext: ${this.config.routeContext || 'Stadswandeling'}
+- De geselecteerde POI's langs de route: ${poiNames}
+- Eventuele thema's of routecontext: ${this.config.routeContext || 'Stadswandeling'}
 
 ### DOEL
 Genereer een inspirerende, warme en duidelijke inleiding voor de tocht, die:
@@ -259,10 +260,10 @@ Genereer een inspirerende, warme en duidelijke inleiding voor de tocht, die:
 5. Het gevoel geeft dat dit een persoonlijke, zorgvuldig samengestelde route is
 6. Niet te veel verklapt over elke POI (dat gebeurt later), maar wel prikkelt
 7. Een menselijke, bezoekersvriendelijke toon gebruikt (niet encyclopedisch)
-8. Geschreven is in de gewenste taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+8. Schrijf UITSLUITEND in het NEDERLANDS.
 
 ### OUTPUTSTRUCTUUR
-Geef de output als één vloeiende tekst van 6 tot 10 zinnen, met:
+Geef de output als een vloeiende tekst van 6 tot 10 zinnen, met:
 - Een warme begroeting
 - Een korte introductie tot de stad
 - Een teaser van de tocht (stijl, sfeer, wat uniek is)
@@ -271,17 +272,58 @@ Geef de output als één vloeiende tekst van 6 tot 10 zinnen, met:
 
 ### STIJLREGELS & STRIKTE NAUWKEURIGHEID
 1. Doe GEEN aannames over specifieke POI-kenmerken die niet in de input staan.
-2. Als informatie niet met zekerheid bekend is: laat het weg of meld het als "Onbekend".
+2. Als informatie niet met zekerheid bekend is: laat het weg.
 3. Gebruik alleen expliciet genoemde bronnen of meegeleverde data.
 4. Vermijd verouderde informatie.
-5. Indien je over een POI spreekt: gebruik enkel feiten waar je zeker van bent.
-6. Gebruik duidelijke, natuurlijke, enthousiasmerende taal
-7. Schrijf als een lokale gids die de stad goed kent
-8. Maak het menselijk, warm en persoonlijk
-9. Noem de POI’s niet allemaal één voor één op; houd het high‑level maar pakkend
+5. Gebruik duidelijke, natuurlijke, enthousiasmerende taal.
+6. Schrijf als een lokale gids die de stad goed kent.
+7. Maak het menselijk, warm en persoonlijk.
+8. Noem de POI's niet allemaal een voor een op; houd het high-level maar pakkend.
 
 ### START NU
-Genereer de introductie voor de tocht in ${this.config.city}.
+Genereer de introductie in het NEDERLANDS voor de tocht in ${this.config.city}.
+` : `
+You are "Your Guide", an experienced, friendly and enthusiastic digital city guide helping travellers discover a city in a personal way.
+Your task is to provide an introduction before the walk or cycling tour begins.
+
+### CONTEXT
+The city navigation app has created a tour based on:
+- The chosen city: ${this.config.city}
+- The user's interests: ${this.config.interests || 'General sightseeing'}
+- The selected POIs along the route: ${poiNames}
+- Any themes or route context: ${this.config.routeContext || 'City walk'}
+
+### GOAL
+Generate an inspiring, warm and clear introduction for the tour that:
+1. Welcomes the user to ${this.config.city}
+2. Briefly explains what makes this tour special
+3. Naturally references the user's interests
+4. Paints a picture of what the visitor can expect along the route
+5. Gives the feeling that this is a personal, carefully curated route
+6. Does not reveal too much about each POI (that comes later), but teases
+7. Uses a human, visitor-friendly tone (not encyclopaedic)
+8. Is written ENTIRELY IN ENGLISH.
+
+### OUTPUT STRUCTURE
+Provide the output as one flowing text of 6 to 10 sentences, with:
+- A warm greeting
+- A brief introduction to the city
+- A teaser of the tour (style, atmosphere, what is unique)
+- Reference to the user's interests
+- An invitation to set off
+
+### STYLE RULES & STRICT ACCURACY
+1. Do NOT make assumptions about specific POI characteristics not mentioned in the input.
+2. If information is not known with certainty: leave it out.
+3. Only use explicitly mentioned sources or provided data.
+4. Avoid outdated information.
+5. Use clear, natural, enthusiastic language.
+6. Write as a local guide who knows the city well.
+7. Make it human, warm and personal.
+8. Do not list all POIs one by one; keep it high-level but engaging.
+
+### START NOW
+Generate the introduction IN ENGLISH for the tour in ${this.config.city}.
 `;
 
         try {
@@ -325,25 +367,29 @@ Genereer de introductie voor de tocht in ${this.config.city}.
             return cloud;
         }
 
-        const prompt = `
+        const isNlArrival = language === 'nl';
+        const prompt = isNlArrival ? `
 Je bent een lokale gids in ${city}. De gebruiker start zijn route aan: "${locationName}".
 GEEF SPECIFIEKE parkeer/reis instructies voor DEZE EXACTE locatie.
 
-CRITICAl RULES:
-1. Is "${locationName}" een specifieke plek (bv. "UZ Leuven", "Kanaalkom", "Abdij", "Campus")?
-   - Geef dan de parkeer/bus info die DAAR vlakbij is.
-   - VERBODEN om generieke stadscentrum info te geven (zoals "Grote Markt" of "Centraal Station") als de plek daar niet is.
-   - Voorbeeld: Voor "UZ Leuven" -> Zeg "Parkeer in Parking West of Oost op de campus. Bussen komen aan bij halte UZ Gasthuisberg."
+REGELS:
+1. Is "${locationName}" een specifieke plek? Geef dan de parkeer/bus info die DAAR vlakbij is.
+2. Is "${locationName}" generiek (alleen de stadsnaam)? Geef dan een algemene suggestie voor het centrum.
+3. Doe GEEN aannames over parkeertarieven of exacte busnummers als je het niet zeker weet.
+4. Als de parkeerinfo niet bekend is: schrijf "Parkeergegevens onbekend".
 
-2. Is "${locationName}" generiek (alleen de stadsnaam)?
-   - Geef dan pas een algemene suggestie voor het centrum.
+DOEL: 2 korte, praktische zinnen. Schrijf UITSLUITEND in het NEDERLANDS.
+` : `
+You are a local guide in ${city}. The user starts their route at: "${locationName}".
+PROVIDE SPECIFIC parking/travel instructions for THIS EXACT location.
 
-3. STRIKTE NAUWKEURIGHEID:
-   - Doe GEEN aannames over parkeertarieven of exacte busnummers als je het niet zeker weet.
-   - Als de parkeerinfo niet bekend is voor deze specifieke plek: schrijf "Parkeergegevens onbekend".
-   - Gebruik alleen betrouwbare, expliciete brondata.
+RULES:
+1. Is "${locationName}" a specific place? Give the parking/bus info closest to THAT location.
+2. Is "${locationName}" generic (just the city name)? Give a general suggestion for the city centre.
+3. Do NOT make assumptions about parking rates or exact bus numbers if you are not certain.
+4. If parking info is not known for this specific place: write "Parking information unknown".
 
-DOEL: 2 korte, praktische zinnen. Taal: ${language === 'nl' ? 'Nederlands' : 'Engels'}.
+GOAL: 2 short, practical sentences. Write ENTIRELY IN ENGLISH.
 `;
 
         const url = this.config.aiProvider === 'gemini' ? '/api/gemini' : '/api/groq';
@@ -610,7 +656,8 @@ Je MOET antwoorden met een JSON object in dit formaat:
             ? signals.map(s => `[Source: ${s.source}] ${s.content}`).join('\n\n')
             : "No external data signals found.";
 
-        const prompt = `
+        const isNlShort = this.config.language === 'nl';
+        const prompt = isNlShort ? `
                         Je bent een snelle, efficiënte gids.
                         Schrijf één pakkende, informatieve beschrijving van 5-7 regels voor "${poi.name}" (${this.config.city}).
                         Gebruik deze context indien relevant: ${contextData}
@@ -625,17 +672,43 @@ Je MOET antwoorden met een JSON object in dit formaat:
 
                         ### OUTPUT JSON
                         {
-                            "description": "5-7 regels tekst",
+                            "description": "5-7 regels tekst in het NEDERLANDS",
                             "confidence": "Hoog | Middel | Laag"
                         }
 
                         Richtlijnen:
-                        - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
+                        - Schrijf UITSLUITEND in het NEDERLANDS.
                         - Focus: Wat is het en waarom is het interessant?
                         - Geen inleiding of afsluiting.
                         - Antwoord ENKEL met de JSON.
 
                         Start Nu.
+                        ` : `
+                        You are a fast, efficient guide.
+                        Write one engaging, informative description of 5-7 lines for "${poi.name}" (${this.config.city}).
+                        Use this context where relevant: ${contextData}
+
+                        ### STRICT RULES (ESSENTIAL)
+                        1. Do NOT make assumptions.
+                        2. If information is not known with certainty: write "Unknown".
+                        3. Only use explicitly mentioned sources or provided data.
+                        4. Avoid outdated information.
+                        5. Estimate confidence (High / Medium / Low), but do NOT put this in the text itself.
+                        6. If sources contradict each other: mention this explicitly.
+
+                        ### OUTPUT JSON
+                        {
+                            "description": "5-7 lines of text IN ENGLISH",
+                            "confidence": "High | Medium | Low"
+                        }
+
+                        Guidelines:
+                        - Write ENTIRELY IN ENGLISH.
+                        - Focus: What is it and why is it interesting?
+                        - No introduction or conclusion.
+                        - Reply ONLY with the JSON.
+
+                        Start Now.
                         `;
 
         const url = this.config.aiProvider === 'gemini' ? '/api/gemini' : '/api/groq';
@@ -736,15 +809,15 @@ Je MOET antwoorden met een JSON object in dit formaat:
             ? signals.map(s => `[Source: ${s.source}] ${s.content} (Link: ${s.link})`).join('\n\n')
             : "No external data signals found.";
 
-        const prompt = `
+        const isNlFull = this.config.language === 'nl';
+        const prompt = isNlFull ? `
                         Je bent een ervaren lokale gids. We hebben al een korte beschrijving van "${poi.name}".
                         Nu willen we de diepte in.
 
-                        ### CONText
+                        ### CONTEXT
                         - POI: ${poi.name}
                         - Stad: ${this.config.city}
                         - Interesses: ${this.config.interests || 'Algemeen'}
-                        - Taal: ${this.config.language === 'nl' ? 'Nederlands' : 'English'}
                         - Context Data: ${contextData}
                         - Eerdere korte beschrijving: "${shortDesc}"
 
@@ -757,34 +830,84 @@ Je MOET antwoorden met een JSON object in dit formaat:
                         6. Voor ELK veld in de JSON: schat de zekerheid in (Hoog / Middel / Laag).
                         7. Zet de zekerheid NOOIT in de tekstvelden zelf.
                         8. Als bronnen elkaar tegenspreken: meld dit expliciet in de beschrijving.
+                        9. Schrijf ALLE tekstvelden UITSLUITEND in het NEDERLANDS.
 
                         ### TAAK
                         Genereer de uitgebreide details in JSON formaat.
 
                         ### OUTPUT JSON (ALLEEN JSON, GEEN MARKDOWN, GEEN UITLEG)
                         Zorg dat de JSON valide is. Geen tekst voor of na de JSON.
-                        Gebruik geen enters (\n) binnen strings tenzij noodzakelijk. Escape dubbele quotes (\") correct.
                         {
                             "standard_version": {
-                                "description": "10–15 regels tekst – duidelijke uitleg voor de meeste gebruikers.",
-                                "fun_fact": "Eén boeiend weetje of anekdote.",
+                                "description": "10-15 regels tekst in het NEDERLANDS.",
+                                "fun_fact": "Een boeiend weetje of anekdote in het NEDERLANDS.",
                                 "confidence": "Hoog | Middel | Laag"
                             },
                             "extended_version": {
-                                "full_description": "15–20 regels tekst, boeiend, diepgaand en duidelijk.",
+                                "full_description": "15-20 regels tekst in het NEDERLANDS, boeiend, diepgaand en duidelijk.",
                                 "full_description_confidence": "Hoog | Middel | Laag",
                                 "why_this_matches_your_interests": [
-                                    "3–5 redenen waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
+                                    "3-5 redenen in het NEDERLANDS waarom dit aansluit bij ${this.config.interests || 'Algemeen toerisme'}"
                                 ],
                                 "interests_confidence": "Hoog | Middel | Laag",
                                 "fun_facts": [
-                                    "2–4 leuke weetjes of anekdotes"
+                                    "2-4 leuke weetjes of anekdotes in het NEDERLANDS"
                                 ],
                                 "fun_facts_confidence": "Hoog | Middel | Laag",
-                                "if_you_only_have_2_minutes": "Wat moet je écht gezien hebben?",
+                                "if_you_only_have_2_minutes": "Wat moet je echt gezien hebben? In het NEDERLANDS.",
                                 "highlight_confidence": "Hoog | Middel | Laag",
-                                "visitor_tips": "Praktische info indien relevant.",
+                                "visitor_tips": "Praktische info in het NEDERLANDS indien relevant.",
                                 "tips_confidence": "Hoog | Middel | Laag"
+                            }
+                        }
+                        ` : `
+                        You are an experienced local guide. We already have a short description of "${poi.name}".
+                        Now we want to go deeper.
+
+                        ### CONTEXT
+                        - POI: ${poi.name}
+                        - City: ${this.config.city}
+                        - Interests: ${this.config.interests || 'General sightseeing'}
+                        - Context Data: ${contextData}
+                        - Previous short description: "${shortDesc}"
+
+                        ### STRICT RULES (ESSENTIAL)
+                        1. Do NOT make assumptions.
+                        2. Important: The 'Previous short description' contains the validated basis. If it says "Unknown", you may NOT invent history or details from your own memory, unless the 'Context Data' above explicitly provides new facts.
+                        3. If information is not known with certainty: write "Unknown".
+                        4. Only use sources explicitly listed in 'Context Data'.
+                        5. Avoid outdated information.
+                        6. For EVERY field in the JSON: estimate confidence (High / Medium / Low).
+                        7. NEVER put the confidence in the text fields themselves.
+                        8. If sources contradict each other: mention this explicitly in the description.
+                        9. Write ALL text fields ENTIRELY IN ENGLISH.
+
+                        ### TASK
+                        Generate the detailed information in JSON format.
+
+                        ### OUTPUT JSON (JSON ONLY, NO MARKDOWN, NO EXPLANATION)
+                        Ensure the JSON is valid. No text before or after the JSON.
+                        {
+                            "standard_version": {
+                                "description": "10-15 lines of text IN ENGLISH.",
+                                "fun_fact": "One interesting fact or anecdote IN ENGLISH.",
+                                "confidence": "High | Medium | Low"
+                            },
+                            "extended_version": {
+                                "full_description": "15-20 lines of text IN ENGLISH, engaging, in-depth and clear.",
+                                "full_description_confidence": "High | Medium | Low",
+                                "why_this_matches_your_interests": [
+                                    "3-5 reasons IN ENGLISH why this matches ${this.config.interests || 'general tourism'}"
+                                ],
+                                "interests_confidence": "High | Medium | Low",
+                                "fun_facts": [
+                                    "2-4 fun facts or anecdotes IN ENGLISH"
+                                ],
+                                "fun_facts_confidence": "High | Medium | Low",
+                                "if_you_only_have_2_minutes": "What must you really see? IN ENGLISH.",
+                                "highlight_confidence": "High | Medium | Low",
+                                "visitor_tips": "Practical info IN ENGLISH if relevant.",
+                                "tips_confidence": "High | Medium | Low"
                             }
                         }
                         `;
@@ -1403,8 +1526,31 @@ Je MOET antwoorden met een JSON object in dit formaat:
                     const img = s.image;
                     if (img) {
                         const low = img.toLowerCase();
+                        // Block by filename/path keywords
                         if (low.includes('logo') || low.includes('icon') || low.includes('placeholder') || low.includes('avatar') || low.includes('favicon') ||
                             low.includes('profile') || low.includes('user') || low.includes('author') || low.includes('member') || low.includes('review') || low.includes('testimonial')) {
+                            return { ...s, image: null };
+                        }
+                        // Block by known non-POI image domains (app stores, social media, generic CDNs)
+                        const noiseDomains = [
+                            'mzstatic.com',       // Apple App Store images
+                            'apps.apple.com',
+                            'play.google.com',
+                            'googleplay.com',
+                            'facebook.com',
+                            'fbcdn.net',          // Facebook CDN
+                            'twimg.com',          // Twitter/X images
+                            'instagram.com',
+                            'youtube.com',
+                            'ytimg.com',          // YouTube thumbnails
+                            'wikipedia.org/static', // Wikipedia logos/icons
+                            'wikimedia.org/static',
+                            'gravatar.com',
+                            'wp-content/plugins', // WordPress plugin images
+                            'captcha',
+                            'recaptcha',
+                        ];
+                        if (noiseDomains.some(domain => low.includes(domain))) {
                             return { ...s, image: null };
                         }
                     }

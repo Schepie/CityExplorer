@@ -8,7 +8,7 @@ import './index.css'; // Ensure styles are loaded
 import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import * as smartPoiUtils from './utils/smartPoiUtils';
-import { rotateCycle, reverseCycle } from './utils/routeUtils';
+import { rotateCycle, reverseCycle, interleaveRouteItems } from './utils/routeUtils';
 import { isLocationOnPath } from './utils/geometry';
 import { transformOSRMCoords, sanitizePath, isValidCoord } from './utils/coordinateUtils';
 import { decodePolyline6 } from './utils/polyline';
@@ -98,6 +98,7 @@ function CityExplorerApp() {
   const [isArMode, setIsArMode] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const speechUtteranceRef = useRef(null);
+  const lastAutoSavedKeyRef = useRef(null);
 
   // Settings: Load from LocalStorage or Default
   const [language, setLanguage] = useState(() => localStorage.getItem('app_language') || 'nl');
@@ -107,6 +108,15 @@ function CityExplorerApp() {
   // NEW PROVIDER SETTINGS
   const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('app_ai_provider') || 'groq');
   const [searchProvider, setSearchProvider] = useState(() => localStorage.getItem('app_search_provider') || 'tavily');
+
+  // Sync voice variant with language automatically
+  useEffect(() => {
+    setVoiceSettings(prev => ({
+      ...prev,
+      variant: language === 'en' ? 'en' : 'nl'
+    }));
+  }, [language]);
+
   const [searchSources, setSearchSources] = useState(() => {
     const saved = localStorage.getItem('searchSources');
     const defaults = { osm: true, foursquare: true, google: false };
@@ -130,6 +140,16 @@ function CityExplorerApp() {
 
   // Persist Simulation Setting
   useEffect(() => localStorage.setItem('app_simulation_enabled', isSimulationEnabled), [isSimulationEnabled]);
+
+  const [autoSave, setAutoSave] = useState(() => localStorage.getItem('app_auto_save') !== 'false');
+  const [confidenceThreshold, setConfidenceThreshold] = useState(() => parseFloat(localStorage.getItem('app_confidence_threshold')) || 0.5);
+
+  useEffect(() => localStorage.setItem('app_auto_save', autoSave), [autoSave]);
+  useEffect(() => localStorage.setItem('app_confidence_threshold', confidenceThreshold), [confidenceThreshold]);
+
+  const APP_VERSION = "v3.4.1";
+  const APP_AUTHOR = "Geert Schepers";
+  const APP_LAST_UPDATED = "18 Feb 2026";
   // Apply Theme Effect
   useEffect(() => {
     const root = document.documentElement;
@@ -187,13 +207,18 @@ function CityExplorerApp() {
       const resetPois = routeData.pois.map(p => ({
         ...p,
         isFullyEnriched: false,
-        isLoading: true
+        isLoading: true,
+        description: null,
+        structured_info: null
       }));
 
-      // Update state to show loading immediately
+      // Update state to show loading immediately and reset language-dependent fields
       setRouteData(prev => ({
         ...prev,
-        pois: resetPois
+        pois: resetPois,
+        startInfo: null,
+        endInfo: null,
+        explanation: null
       }));
 
       // Trigger enrichment with reset POIs
@@ -389,9 +414,18 @@ function CityExplorerApp() {
     const actualRoundtrip = loopOverride !== null ? loopOverride : isRoundtrip;
     const actualEditMode = editModeOverride !== null ? editModeOverride : isRouteEditMode;
 
+    const getCoord = (p) => {
+      const lat = typeof p.lat === 'number' && !isNaN(p.lat) ? p.lat : (typeof p.latitude === 'number' ? p.latitude : parseFloat(p.lat || p.latitude));
+      const lng = typeof p.lng === 'number' && !isNaN(p.lng) ? p.lng : (typeof p.lon === 'number' ? p.lon : (typeof p.longitude === 'number' ? p.longitude : parseFloat(p.lng || p.lon || p.longitude)));
+      return [lng, lat];
+    };
+
     const waypoints = [
       `${center[1]},${center[0]}`,
-      ...pois.map(p => `${p.lng},${p.lat}`)
+      ...pois.map(p => {
+        const [lng, lat] = getCoord(p);
+        return `${lng},${lat}`;
+      })
     ];
 
     // Explicitly handle loop closure: 
@@ -416,7 +450,7 @@ function CityExplorerApp() {
 
       if (json.code !== 'Ok') {
         console.warn(`[Routing] OSRM Error for URL: ${osrmUrl}`, json);
-        // Fall through to fallback instead of throwing, to preserve old behavior but with warning
+        throw new Error(`OSRM Error: ${json.code}`);
       } else if (json.routes && json.routes.length > 0) {
         const route = json.routes[0];
 
@@ -464,7 +498,10 @@ function CityExplorerApp() {
     }
 
     // Fallback: Straight lines
-    const pts = [center, ...pois.map(p => [p.lat, p.lng])];
+    const pts = [center, ...pois.map(p => {
+      const [lng, lat] = getCoord(p);
+      return [lat, lng]; // App uses [lat, lng] for internal path
+    })];
     if (isRoundtrip) pts.push(center);
 
     // Generate fallback legs
@@ -528,10 +565,39 @@ function CityExplorerApp() {
     };
   };
 
-  // Effect: Recalculate Route when Travel Mode changes
+  // Effect: Recalculate Route whenever relevant data changes
+  const poiFingerprint = useMemo(() => {
+    const pIds = routeData?.pois?.map(p => p.id).join(',') || '';
+    const mIds = routeData?.routeMarkers?.map(m => `${m.lat},${m.lng}`).join(',') || '';
+    return `${pIds}|${mIds}`;
+  }, [routeData?.pois, routeData?.routeMarkers]);
+
   useEffect(() => {
-    if (routeData && routeData.pois && routeData.pois.length > 0) {
-      calculateRoutePath(routeData.pois, routeData.center, travelMode, routeData.stopCenter, isRoundtrip, isRouteEditMode).then(res => {
+    const hasPois = routeData?.pois && routeData.pois.length > 0;
+    const hasMarkers = routeData?.routeMarkers && routeData.routeMarkers.length > 0;
+
+    if (routeData && (hasPois || hasMarkers)) {
+      // In Edit Mode, we primarily follow markers. 
+      // But we should really interleave them if we want a unified path.
+      // For now, let's use the same logic as interleaveRouteItems to get the visitation order.
+      // Actually, if in edit mode, we ONLY use markers (as the user is manually defining the path).
+      // If NOT in edit mode, we interleave markers and POIs.
+
+      let stops = [];
+      const startLoc = (hasMarkers) ? [routeData.routeMarkers[0].lat, routeData.routeMarkers[0].lng] : routeData.center;
+
+      if (isRouteEditMode && hasMarkers) {
+        stops = routeData.routeMarkers.slice(1);
+      } else if (hasMarkers && hasPois && routeData.routePath?.length > 0) {
+        // Use interleaved order if we have a path to project onto
+        const interleaved = interleaveRouteItems(routeData.routeMarkers, routeData.pois, routeData.routePath);
+        stops = interleaved.slice(1); // Remove start
+      } else {
+        // Fallback: Just POIs or just Markers
+        stops = hasPois ? routeData.pois : (routeData.routeMarkers?.slice(1) || []);
+      }
+
+      calculateRoutePath(stops, startLoc, travelMode, routeData.stopCenter, isRoundtrip, isRouteEditMode).then(res => {
         if (!res) return;
         setRouteData(prev => ({
           ...prev,
@@ -546,7 +612,7 @@ function CityExplorerApp() {
         }));
       });
     }
-  }, [travelMode, isRoundtrip, isRouteEditMode]);
+  }, [travelMode, isRoundtrip, isRouteEditMode, poiFingerprint]);
 
   // Save Route
   const handleSaveRoute = () => {
@@ -4259,10 +4325,12 @@ function CityExplorerApp() {
         currentPois.push(poi);
 
         const startCoords = routeData.center;
+        const stopCoords = routeData.stopCenter; // respect the destination if one exists
         const activeMode = travelMode || 'walking';
 
         try {
-          const routeResult = await calculateRoutePath(currentPois, startCoords, activeMode, null, isRoundtrip, isRouteEditMode);
+          // Trigger recalculation with the new point added to the end
+          const routeResult = await calculateRoutePath(currentPois, startCoords, activeMode, stopCoords, isRoundtrip, isRouteEditMode);
 
           setRouteData(prev => ({
             ...prev,
@@ -4286,6 +4354,7 @@ function CityExplorerApp() {
 
         } catch (calcErr) {
           console.error("Route calculation failed:", calcErr);
+          // Still add the point even if path calculation fails temporarily (straight lines fallback handles it in calculateRoutePath)
           setRouteData(prev => ({
             ...prev,
             pois: currentPois
@@ -4336,7 +4405,7 @@ function CityExplorerApp() {
           newMarkers.slice(1),
           startCoords,
           activeMode,
-          null,
+          routeData?.stopCenter,
           isRoundtrip,
           isRouteEditMode
         );
@@ -4404,7 +4473,7 @@ function CityExplorerApp() {
             newMarkers.slice(1),
             startCoords,
             activeMode,
-            isRoundtrip ? startCoords : null,
+            routeData?.stopCenter,
             isRoundtrip,
             isRouteEditMode
           );
@@ -4844,6 +4913,13 @@ function CityExplorerApp() {
           setNavPhase(NAV_PHASES.ACTIVE_ROUTE);
         }}
         isDiscoveryTriggered={isDiscoveryTriggered}
+        autoSave={autoSave}
+        setAutoSave={setAutoSave}
+        confidenceThreshold={confidenceThreshold}
+        setConfidenceThreshold={setConfidenceThreshold}
+        version={APP_VERSION}
+        author={APP_AUTHOR}
+        lastUpdated={APP_LAST_UPDATED}
       />
 
       {/* Map Pick Instruction Overlay - REMOVED per user request */}

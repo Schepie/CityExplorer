@@ -19,7 +19,8 @@ CityExplorer is ontworpen om zo veel mogelijk gebruik te maken van **gratis lage
 | **Supabase** | Cloud POI Cache (Database) | Supabase | **Gratis** (voldoende voor 1M+ entries) |
 | **Overpass** | Ontdekken van POI's | OpenStreetMap | **Gratis** (Open-source) |
 | **Wikipedia** | Historische informatie | Wikimedia | **Gratis** |
-| **Gemini 2.0** | Premium AI (Optioneel) | Google Cloud | **Gratis** (tot bepaalde limiet per minuut) |
+| **
+** | Premium AI (Optioneel) | Google Cloud | **Gratis** (tot bepaalde limiet per minuut) |
 | **Google Maps** | Zoeken & Kaarten (Optioneel) | Google Cloud | **Betaald** (na verbruik van $200 gratis tegoed/maand) |
 | **Resend** | Magic Link Emails (Login) | Resend | **Gratis** (tot 3.000 emails/maand) |
 

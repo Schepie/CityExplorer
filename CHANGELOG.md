@@ -1,6 +1,17 @@
-# Changelog
+I see # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [3.4.0] - 2026-02-18
+
+### Fixed
+- **AI Language Fix**: AI-generated POI descriptions, city welcome messages and arrival instructions are now correctly generated in the user's selected language (EN/NL). All prompts were previously hardcoded in Dutch.
+- **Smarter Image Filtering**: Images from App Stores (Apple/Google Play), social media (Facebook, Twitter, Instagram, YouTube) and other non-POI sources are now automatically rejected from search results.
+
+### Changed
+- **Compact About Section**: The "About this App" panel in settings now shows version, author and last-updated date as compact single-line rows instead of large cards.
+- **Changelog Theming**: The changelog screen now inherits the active colour theme (background gradient, accent colours) instead of a hardcoded dark style.
+- **Button Order**: Swapped SAVE/RESET button order in the itinerary toolbar (now: Audio → Reset → Save).
 
 ## [3.3.2] - 2026-02-17
 
