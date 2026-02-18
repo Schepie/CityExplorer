@@ -6,6 +6,15 @@ const Changelog = ({ language, setShowChangelog }) => {
             {[
                 {
                     date: "18 Feb 2026",
+                    version: "v3.4.1",
+                    items: language === 'nl' ? [
+                        { title: "UI Opgepoetst", desc: "Dubbele \"Duid aan op Kaart\"-knop in manuele modus opgelost." }
+                    ] : [
+                        { title: "UI Polish", desc: "Fixed duplicate \"Pick on Map\" button in Manual Mode." }
+                    ]
+                },
+                {
+                    date: "18 Feb 2026",
                     version: "v3.4.0",
                     items: language === 'nl' ? [
                         { title: "Taalcorrectie AI", desc: "AI-beschrijvingen van plekken, welkomstberichten en aankomstinstructies worden nu correct in de gekozen taal gegenereerd." },

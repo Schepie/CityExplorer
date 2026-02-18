@@ -27,8 +27,8 @@ const SidebarSettings = ({
     const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
 
     // UI state for accordions
-    const [expandedSection, setExpandedSection] = useState(null);
-    const [showAdvanced, setShowAdvanced] = useState(true);
+    const [expandedSection, setExpandedSection] = useState('about');
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     const handleFetchLogs = async () => {
         setIsRefreshingLogs(true);
@@ -60,14 +60,16 @@ const SidebarSettings = ({
 
     // Helper for Boolean Toggles
     const SettingToggle = ({ label, value, onChange }) => (
-        <div className="flex items-center justify-between py-2.5 px-4 bg-black/20 border border-white/5 rounded-2xl hover:bg-black/30 transition-all group">
-            <label className="text-xs font-black text-white/90 uppercase tracking-[0.05em] group-hover:text-white transition-colors">{label}</label>
-            <button
-                onClick={onChange}
+        <div
+            onClick={onChange}
+            className="flex items-center justify-between py-2.5 px-4 bg-black/20 border border-white/5 rounded-2xl hover:bg-black/30 transition-all group cursor-pointer"
+        >
+            <label className="text-xs font-black text-white/90 uppercase tracking-[0.05em] group-hover:text-white transition-colors cursor-pointer">{label}</label>
+            <span
                 className={`text-[11px] font-black uppercase tracking-widest transition-colors ${value ? 'text-primary' : 'text-slate-600'}`}
             >
                 {value ? (language === 'nl' ? 'AAN' : 'ON') : (language === 'nl' ? 'UIT' : 'OFF')}
-            </button>
+            </span>
         </div>
     );
 

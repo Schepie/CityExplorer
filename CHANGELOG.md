@@ -2,6 +2,13 @@ I see # Changelog
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.1] - 2026-02-18
+
+
+### Fixed
+- **UI Polish:** Resolved a layout issue where the "Pick on Map" button was duplicated in Manual Mode. The interface is now cleaner with a single, clear action button at the bottom.
+- **UI Opgepoetst:** Een layoutprobleem opgelost waarbij de "Duid aan op Kaart"-knop dubbel werd weergegeven in de manuele modus. De interface is nu schoner met één duidelijke actieknop onderaan.
+
 ## [3.4.0] - 2026-02-18
 
 ### Fixed
