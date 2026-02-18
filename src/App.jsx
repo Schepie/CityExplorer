@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
-import { PoiIntelligence } from './services/PoiIntelligence';
+// import { PoiIntelligence } from './services/PoiIntelligence'; // Moved to dynamic import
 const MapLibreContainer = React.lazy(() => import('./components/MapLibreContainer'));
-const ItinerarySidebar = React.lazy(() => import('./components/ItinerarySidebar')); // Also lazy load sidebar
-import CitySelector from './components/CitySelector'; // Keep critical critical
+const ItinerarySidebar = React.lazy(() => import('./components/ItinerarySidebar'));
+import CitySelector from './components/CitySelector';
 const ArView = React.lazy(() => import('./components/ArView'));
-import './index.css'; // Ensure styles are loaded
+import './index.css';
 import { getCombinedPOIs, fetchGenericSuggestions, getInterestSuggestions } from './utils/poiService';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import * as smartPoiUtils from './utils/smartPoiUtils';
@@ -12,41 +12,15 @@ import { rotateCycle, reverseCycle, interleaveRouteItems } from './utils/routeUt
 import { isLocationOnPath } from './utils/geometry';
 import { transformOSRMCoords, sanitizePath, isValidCoord } from './utils/coordinateUtils';
 import { decodePolyline6 } from './utils/polyline';
-import PoiProposalModal from './components/PoiProposalModal';
-import DistanceRefineConfirmation from './components/DistanceRefineConfirmation';
-import RouteEditPanel from './components/RouteEditPanel';
-import { getBestVoice } from './utils/speechUtils';
+import { sanitizeRouteData, calculateRoutePath, getDistance } from './utils/routePathUtils';
 
-// Theme Definitions
-// Theme Definitions
-// Consolidated App Themes
-const APP_THEMES = {
-  tech: {
-    id: 'tech',
-    label: { en: 'Tech', nl: 'Tech' },
-    colors: { primary: '#6366f1', hover: '#4f46e5', accent: '#f472b6', bgStart: '#0f172a', bgEnd: '#1e293b' } // Indigo + Slate
-  },
-  nature: {
-    id: 'nature',
-    label: { en: 'Nature', nl: 'Natuur' },
-    colors: { primary: '#10b981', hover: '#059669', accent: '#3b82f6', bgStart: '#022c22', bgEnd: '#064e3b' } // Emerald + Forest
-  },
-  urban: {
-    id: 'urban',
-    label: { en: 'Urban', nl: 'Stads' },
-    colors: { primary: '#06b6d4', hover: '#0891b2', accent: '#f59e0b', bgStart: '#083344', bgEnd: '#164e63' } // Cyan + Ocean
-  },
-  sunset: {
-    id: 'sunset',
-    label: { en: 'Sunset', nl: 'Zonsondergang' },
-    colors: { primary: '#f43f5e', hover: '#e11d48', accent: '#a855f7', bgStart: '#4c0519', bgEnd: '#881337' } // Rose + Wine
-  },
-  warmth: {
-    id: 'warmth',
-    label: { en: 'Warmth', nl: 'Warmte' },
-    colors: { primary: '#f59e0b', hover: '#d97706', accent: '#06b6d4', bgStart: '#451a03', bgEnd: '#78350f' } // Amber + Coffee
-  }
-};
+// Lazy load modals to improve initial load
+const PoiProposalModal = React.lazy(() => import('./components/PoiProposalModal'));
+const DistanceRefineConfirmation = React.lazy(() => import('./components/DistanceRefineConfirmation'));
+const RouteEditPanel = React.lazy(() => import('./components/RouteEditPanel'));
+
+import { getBestVoice } from './utils/speechUtils';
+import { APP_THEMES, applyTheme } from './utils/themeUtils';
 
 // Navigation Phases for strict tracking
 export const NAV_PHASES = {
@@ -54,7 +28,6 @@ export const NAV_PHASES = {
   IN_ROUTE: 'IN_ROUTE',     // On the generated path
   COMPLETED: 'COMPLETED'    // Finished the loop
 };
-
 
 
 import NavigationOverlay from './components/NavigationOverlay';
@@ -152,24 +125,7 @@ function CityExplorerApp() {
   const APP_LAST_UPDATED = "18 Feb 2026";
   // Apply Theme Effect
   useEffect(() => {
-    const root = document.documentElement;
-    const theme = APP_THEMES[activeTheme];
-
-    if (theme && theme.colors) {
-      const c = theme.colors;
-      root.style.setProperty('--primary', c.primary);
-      root.style.setProperty('--primary-hover', c.hover);
-      root.style.setProperty('--accent', c.accent);
-      root.style.setProperty('--bg-gradient-start', c.bgStart);
-      root.style.setProperty('--bg-gradient-end', c.bgEnd);
-
-      // Update button text color (default to white if undefined)
-      root.style.setProperty('--btn-text-color', c.btnText || 'white');
-
-      // Update global text colors (default to light values if undefined)
-      root.style.setProperty('--text-main', c.textMain || '#f8fafc');
-      root.style.setProperty('--text-muted', c.textMuted || '#94a3b8');
-    }
+    applyTheme(activeTheme);
   }, [activeTheme]);
 
   // Geolocation Tracking Effect
@@ -389,182 +345,6 @@ function CityExplorerApp() {
     return total;
   }, [routeData, activePoiIndex, navPhase]);
 
-  // Haversine Distance Helper (km)
-  const getDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the earth in km
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
-  };
-
-  // Helper: Calculate Route Path & Steps
-  const calculateRoutePath = async (pois, center, mode, endCenter = null, loopOverride = null, editModeOverride = null) => {
-    // Basic validation
-    if (!center || !Array.isArray(center) || center.length < 2) {
-      console.warn("calculateRoutePath: Invalid center coordinate", center);
-      return null;
-    }
-
-    // Determine values to use, prioritizing overrides
-    const actualRoundtrip = loopOverride !== null ? loopOverride : isRoundtrip;
-    const actualEditMode = editModeOverride !== null ? editModeOverride : isRouteEditMode;
-
-    const getCoord = (p) => {
-      const lat = typeof p.lat === 'number' && !isNaN(p.lat) ? p.lat : (typeof p.latitude === 'number' ? p.latitude : parseFloat(p.lat || p.latitude));
-      const lng = typeof p.lng === 'number' && !isNaN(p.lng) ? p.lng : (typeof p.lon === 'number' ? p.lon : (typeof p.longitude === 'number' ? p.longitude : parseFloat(p.lng || p.lon || p.longitude)));
-      return [lng, lat];
-    };
-
-    const waypoints = [
-      `${center[1]},${center[0]}`,
-      ...pois.map(p => {
-        const [lng, lat] = getCoord(p);
-        return `${lng},${lat}`;
-      })
-    ];
-
-    // Explicitly handle loop closure: 
-    // If endCenter is provided, use it. 
-    // If NOT provided, ONLY use isRoundtrip loop closure if NOT in edit mode
-    // because in edit mode we want to see the "open" path as we add points.
-    if (endCenter) {
-      waypoints.push(`${endCenter[1]},${endCenter[0]}`);
-    } else if (actualRoundtrip && !actualEditMode) {
-      waypoints.push(`${center[1]},${center[0]}`);
-    }
-
-    // Remove the radiuses parameter as it can be too strict and cause NoRoute errors
-    // also remove lanes=true as it's non-standard.
-    try {
-      const profile = mode === 'cycling' ? 'bike' : 'foot';
-      const osrmUrl = `https://routing.openstreetmap.de/routed-${profile}/route/v1/${profile}/${waypoints.join(';')}?steps=true&geometries=geojson&overview=full`;
-
-      console.log(`[Routing] Requesting: ${osrmUrl}`);
-      const res = await fetch(osrmUrl);
-      const json = await res.json();
-
-      if (json.code !== 'Ok') {
-        console.warn(`[Routing] OSRM Error for URL: ${osrmUrl}`, json);
-        throw new Error(`OSRM Error: ${json.code}`);
-      } else if (json.routes && json.routes.length > 0) {
-        const route = json.routes[0];
-
-        // Validated Transform: OSRM returns [lng, lat], transformOSRMCoords validates and swaps to [lat, lng]
-        const path = transformOSRMCoords(route.geometry.coordinates, 'calculated_route');
-        console.log(`[Routing] Success! Path has ${path.length} validated points.`);
-
-        const dist = route.distance / 1000;
-        let walkDist = 0;
-        let steps = [];
-
-        if (route.legs && route.legs.length >= 1) {
-          const poiLegs = (actualRoundtrip || endCenter) ? route.legs.slice(1, -1) : route.legs.slice(1);
-          walkDist = poiLegs.reduce((acc, leg) => acc + leg.distance, 0) / 1000;
-
-          route.legs.forEach((leg, legIdx) => {
-            if (leg.steps) {
-              // Reconstruct leg geometry from steps if available, or use overview
-              const rawCoords = leg.steps.flatMap((s, idx) => {
-                if (!s.geometry || !s.geometry.coordinates) return [];
-                const coords = s.geometry.coordinates; // [lng, lat]
-                return idx === 0 ? coords : coords.slice(1);
-              });
-
-              // sanitizePath removes invalid coords but keeps [lng, lat] format (needed for handleCycleStart)
-              leg.geometry = {
-                type: 'LineString',
-                coordinates: sanitizePath(rawCoords, `leg_${legIdx}_geometry`)
-              };
-            }
-          });
-          // Sanitize steps: ensure maneuver locations are valid
-          steps = route.legs.flatMap(l => l.steps).map(step => {
-            if (step.maneuver && step.maneuver.location && !isValidCoord(step.maneuver.location)) {
-              console.warn("[Routing] Invalid step maneuver location detected, nullifying:", step.maneuver.location);
-              return { ...step, maneuver: { ...step.maneuver, location: null } };
-            }
-            return step;
-          });
-        }
-        return { path, dist, walkDist, steps, legs: route.legs };
-      }
-    } catch (e) {
-      console.warn("Route calc failed", e);
-    }
-
-    // Fallback: Straight lines
-    const pts = [center, ...pois.map(p => {
-      const [lng, lat] = getCoord(p);
-      return [lat, lng]; // App uses [lat, lng] for internal path
-    })];
-    if (isRoundtrip) pts.push(center);
-
-    // Generate fallback legs
-    const fallbackLegs = pts.slice(0, -1).map((p, i) => {
-      const next = pts[i + 1];
-      return {
-        distance: getDistance(p[0], p[1], next[0], next[1]) * 1000,
-        duration: (getDistance(p[0], p[1], next[0], next[1]) / (mode === 'cycling' ? 15 : 5)) * 3600,
-        steps: [],
-        geometry: {
-          type: 'LineString',
-          coordinates: sanitizePath([[p[1], p[0]], [next[1], next[0]]], 'fallback_leg')
-        }
-      };
-    });
-
-    // Fallback steps
-    const fallbackSteps = pois.map(p => {
-      const pLat = typeof p.lat === 'number' && !isNaN(p.lat) ? p.lat : (typeof p.latitude === 'number' ? p.latitude : parseFloat(p.lat));
-      const pLng = typeof p.lng === 'number' && !isNaN(p.lng) ? p.lng : (typeof p.lon === 'number' ? p.lon : (typeof p.longitude === 'number' ? p.longitude : parseFloat(p.lng || p.lon)));
-      return {
-        maneuver: {
-          type: 'depart',
-          modifier: 'straight',
-          location: isValidCoord([pLng, pLat]) ? [pLng, pLat] : null
-        },
-        name: language === 'nl' ? `Ga naar ${p.name || 'bestemming'}` : `Walk to ${p.name || 'destination'}`,
-        distance: 0
-      };
-    }).filter(s => s.maneuver.location !== null);
-    // Calc simple dist
-    let fallbackDist = 0;
-    let fallbackWalkDist = 0;
-    let prevPoint = { lat: center[0], lng: center[1] };
-    pois.forEach((p, idx) => {
-      const pLat = typeof p.lat === 'number' && !isNaN(p.lat) ? p.lat : (typeof p.latitude === 'number' ? p.latitude : parseFloat(p.lat));
-      const pLng = typeof p.lng === 'number' && !isNaN(p.lng) ? p.lng : (typeof p.lon === 'number' ? p.lon : (typeof p.longitude === 'number' ? p.longitude : parseFloat(p.lng || p.lon)));
-
-      if (!isNaN(prevPoint.lat) && !isNaN(prevPoint.lng) && !isNaN(pLat) && !isNaN(pLng)) {
-        const d = getDistance(prevPoint.lat, prevPoint.lng, pLat, pLng);
-        fallbackDist += d;
-        if (idx > 0) fallbackWalkDist += d;
-      }
-      prevPoint = { lat: pLat, lng: pLng };
-    });
-    if (isRoundtrip && pois.length > 0) {
-      const last = pois[pois.length - 1];
-      const lastLat = typeof last.lat === 'number' && !isNaN(last.lat) ? last.lat : (typeof last.latitude === 'number' ? last.latitude : parseFloat(last.lat));
-      const lastLng = typeof last.lng === 'number' && !isNaN(last.lng) ? last.lng : (typeof last.lon === 'number' ? last.lon : (typeof last.longitude === 'number' ? last.longitude : parseFloat(last.lng || last.lon)));
-      if (!isNaN(lastLat) && !isNaN(lastLng)) {
-        fallbackDist += getDistance(lastLat, lastLng, center[0], center[1]);
-      }
-    }
-
-    return {
-      path: pts,
-      dist: Number((fallbackDist * 1.3) || 0),
-      walkDist: Number((fallbackWalkDist * 1.3) || 0),
-      steps: fallbackSteps,
-      legs: fallbackLegs
-    };
-  };
-
   // Effect: Recalculate Route whenever relevant data changes
   const poiFingerprint = useMemo(() => {
     const pIds = routeData?.pois?.map(p => p.id).join(',') || '';
@@ -597,7 +377,7 @@ function CityExplorerApp() {
         stops = hasPois ? routeData.pois : (routeData.routeMarkers?.slice(1) || []);
       }
 
-      calculateRoutePath(stops, startLoc, travelMode, routeData.stopCenter, isRoundtrip, isRouteEditMode).then(res => {
+      calculateRoutePath(stops, startLoc, travelMode, isRoundtrip, isRouteEditMode, language, routeData.stopCenter).then(res => {
         if (!res) return;
         setRouteData(prev => ({
           ...prev,
@@ -646,58 +426,6 @@ function CityExplorerApp() {
   };
 
 
-
-  // Centralized Sanitization for Route Data (Prevents MapLibre crashes with null/NaN)
-  const sanitizeRouteData = (data) => {
-    if (!data) return null;
-
-    // Helper: Ensure lat/lng are numbers
-    const isNum = (v) => typeof v === 'number' && !isNaN(v);
-
-    // 1. Sanitize Center
-    let cleanCenter = data.center;
-    if (!cleanCenter || !isNum(cleanCenter[0]) || !isNum(cleanCenter[1])) {
-      console.warn("[Sanitizer] Invalid center found, resetting to default.");
-      cleanCenter = [52.3676, 4.9041]; // Amsterdam default
-    }
-
-    // 2. Sanitize POIs
-    const cleanPois = (data.pois || []).map(p => ({
-      ...p,
-      lat: isNum(p.lat) ? p.lat : (isNum(parseFloat(p.lat)) ? parseFloat(p.lat) : cleanCenter[0]),
-      lng: isNum(p.lng) ? p.lng : (isNum(parseFloat(p.lng)) ? parseFloat(p.lng) : cleanCenter[1])
-    }));
-
-    // 3. Sanitize Route Path
-    const cleanRoutePath = (data.routePath || []).filter(coord =>
-      Array.isArray(coord) && isNum(coord[0]) && isNum(coord[1])
-    );
-
-    // 4. Sanitize Navigation Steps
-    const cleanSteps = (data.navigationSteps || []).map(step => {
-      if (step.maneuver && step.maneuver.location) {
-        const [lng, lat] = step.maneuver.location;
-        if (!isNum(lng) || !isNum(lat)) {
-          console.warn("[Sanitizer] Stripping maneuver location from step due to non-numeric data.");
-          return { ...step, maneuver: { ...step.maneuver, location: null } };
-        }
-      }
-      return step;
-    });
-
-    return {
-      ...data,
-      center: cleanCenter,
-      pois: cleanPois,
-      originalPois: data.originalPois ? data.originalPois.map(p => ({
-        ...p,
-        lat: isNum(p.lat) ? p.lat : (isNum(parseFloat(p.lat)) ? parseFloat(p.lat) : cleanCenter[0]),
-        lng: isNum(p.lng) ? p.lng : (isNum(parseFloat(p.lng)) ? parseFloat(p.lng) : cleanCenter[1])
-      })) : cleanPois,
-      routePath: cleanRoutePath,
-      navigationSteps: cleanSteps
-    };
-  };
 
   // Load Route
   const handleLoadRoute = async (file) => {
@@ -749,6 +477,9 @@ function CityExplorerApp() {
     const signal = controller.signal;
 
     setIsBackgroundUpdating(true); // START Indicator
+
+    // Dynamically load PoiIntelligence to reduce initial bundle parse time
+    const { PoiIntelligence } = await import('./services/PoiIntelligence');
 
     const engine = new PoiIntelligence({
       city: cityName,
